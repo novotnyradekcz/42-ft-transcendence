@@ -7,3 +7,7 @@ edition = "2021"
 
 [dependencies]
 actix-web = "4.12.1"
+openssl = "0.1"
+
+[replace]
+"libressl-pnacl-sys@1" = { path = '../ssl/libressl-pnacl-sys' }
