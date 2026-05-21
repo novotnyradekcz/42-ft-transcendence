@@ -1,23 +1,39 @@
 // Copyright (c) 2018, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved.
 
-use actix_web::{App, HttpServer, Responder, web};
-use std::io::Result;
-use std::io::Error;
+use actix_web::{App, HttpServer, HttpResponse, web, get};
 use serde::{Serialize, Deserialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct Info {
     user_ud: u32,
-    frien: String,
+    friend: String,
 }
 
-async fn index(path: web::Path<(String, String)>, json: web::Json<Info>) -> impl Responder {
-    Ok::<String, Error>("Welcome".to_owned() + &path.1 + json.to_string())
+async fn index() -> HttpResponse {
+    HttpResponse::Ok().body("Welcome")
+}
+
+#[get("/show")]
+async fn show_users() -> HttpResponse {
+    HttpResponse::Ok().body("Show users")
+}
+
+#[get("/show/{id}")]
+async fn user_detail(path: web::Path<(u32,)>) -> HttpResponse {
+    HttpResponse::Ok().body(format!("User detail: {}", path.into_inner().0))
 }
 
 #[actix_web::main]
-async fn main() -> Result<()> {
-    HttpServer::new(|| App::new().service(index))
+async fn main() -> std::io::Result<()> {
+    HttpServer::new(|| {
+        App::new()
+            .route("/", web::get().to(index))
+            .service(
+                web::scope("/users")
+                    .service(show_users)
+                    .service(user_detail),
+            )
+    })
         .bind(("127.0.0.1", 8080))?
         .run()
         .await
