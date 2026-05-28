@@ -85,6 +85,9 @@ export default function App() {
   }
 
   return (
+    // bg-neutral-600
+
+    // bg-[url('hapy.png')] bg-center bg-contain bg-no-repeat 
     <main className="min-h-screen bg-neutral-600 text-black">
       <nav className="flex items-center justify-between border-b border-black px-6 py-4">
         <button
