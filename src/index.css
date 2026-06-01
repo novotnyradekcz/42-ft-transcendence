@@ -1,1 +1,286 @@
 @import "tailwindcss";
+
+:root {
+  color: #f2f2f2;
+  background: #000;
+  font-family: "Courier New", Courier, monospace;
+  font-synthesis: none;
+  line-height: 1.35;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: #000;
+}
+
+input,
+textarea {
+  font: inherit;
+}
+
+.terminal-page {
+  min-height: 100vh;
+  padding: clamp(0.75rem, 2vw, 1.5rem);
+  background: #000;
+}
+
+.terminal-window {
+  width: min(100%, 78ch);
+  min-height: calc(100vh - clamp(1.5rem, 4vw, 3rem));
+  background: #000;
+}
+
+.terminal-header {
+  margin-bottom: 1rem;
+}
+
+.bbs-banner,
+.ascii-rule {
+  margin: 0;
+  color: #fff;
+  white-space: pre;
+}
+
+.bbs-banner {
+  margin-bottom: 0.75rem;
+}
+
+.welcome-logo {
+  margin: 0 0 1rem;
+  color: #fff;
+  font-size: clamp(0.85rem, 3.6vw, 1.15rem);
+  line-height: 1.05;
+  white-space: pre;
+}
+
+.ascii-rule {
+  margin: 0.75rem 0 0.5rem;
+  overflow: hidden;
+}
+
+.terminal-kicker,
+.terminal-session,
+.terminal-output,
+.terminal-footer,
+small {
+  color: #c8c8c8;
+}
+
+.terminal-kicker,
+.terminal-session {
+  margin: 0;
+}
+
+.terminal-output {
+  margin-bottom: 1rem;
+}
+
+.terminal-output p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.terminal-body {
+  min-height: 20rem;
+}
+
+.terminal-section {
+  max-width: 78ch;
+}
+
+.terminal-section h2 {
+  margin: 0 0 0.75rem;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.terminal-copy {
+  max-width: 78ch;
+  margin: 0 0 0.75rem;
+}
+
+.terminal-list {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.terminal-list li::before {
+  content: "> ";
+  color: #c8c8c8;
+}
+
+.terminal-list.numbered {
+  counter-reset: bbs-list;
+}
+
+.terminal-list.numbered li {
+  counter-increment: bbs-list;
+}
+
+.terminal-list.numbered li::before {
+  content: "[" counter(bbs-list, decimal-leading-zero) "] ";
+}
+
+.terminal-list span,
+code {
+  color: #fff;
+}
+
+.terminal-list small {
+  display: block;
+  margin-left: 3.3rem;
+}
+
+.terminal-facts {
+  display: grid;
+  grid-template-columns: 10rem minmax(0, 1fr);
+  gap: 0.15rem 1rem;
+  max-width: 78ch;
+  margin: 0 0 0.75rem;
+}
+
+.terminal-facts dt {
+  color: #c8c8c8;
+}
+
+.terminal-facts dt::after {
+  content: ":";
+}
+
+.terminal-facts dd {
+  margin: 0;
+  color: #fff;
+  overflow-wrap: anywhere;
+}
+
+.command-grid,
+.api-list {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.command-row,
+.api-list div {
+  display: grid;
+  grid-template-columns: 14rem minmax(0, 1fr);
+  gap: 0 1rem;
+  align-items: baseline;
+}
+
+.command-row small,
+.api-list small {
+  grid-column: 2;
+}
+
+.command-form input {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #fff;
+}
+
+.command-form input:focus {
+  outline: none;
+}
+
+.terminal-error {
+  margin: 0;
+  color: #fff;
+}
+
+.terminal-error::before {
+  content: "! ";
+}
+
+.write-status {
+  margin-top: 0.75rem;
+}
+
+.post-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.post-list article {
+  padding: 0;
+}
+
+.post-list header {
+  color: #c8c8c8;
+  margin-bottom: 0.15rem;
+}
+
+.post-list header::before {
+  content: ":: ";
+}
+
+.post-list p {
+  margin: 0;
+}
+
+.terminal-footer {
+  margin-top: 1rem;
+}
+
+.terminal-footer p {
+  margin: 0 0 0.35rem;
+  overflow-wrap: anywhere;
+}
+
+.terminal-footer span {
+  color: #fff;
+}
+
+.command-form {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.command-form label {
+  color: #fff;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .terminal-window {
+    width: 100%;
+  }
+
+  .bbs-banner,
+  .welcome-logo,
+  .ascii-rule {
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .command-row,
+  .api-list div,
+  .terminal-facts,
+  .command-form {
+    grid-template-columns: 1fr;
+  }
+
+  .command-row small,
+  .api-list small,
+  .terminal-list small {
+    grid-column: auto;
+    margin-left: 0;
+  }
+}
