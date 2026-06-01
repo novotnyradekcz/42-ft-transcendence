@@ -20,11 +20,12 @@ A brief overview of the project, its main goal, and key features.
 - **AI Usage:** Describe how AI was used, for which tasks, and which parts of the project.
 
 ## Team Information
-| Name      | Role(s)         | Responsibilities |
-|-----------|-----------------|------------------|
-| <login1>  | PO, Developer   | Brief description|
-| <login2>  | PM, Tech Lead   | Brief description|
-| ...       | ...             | ...              |
+| Name      | Role(s)              | Responsibilities                |
+|-----------|----------------------|---------------------------------|
+| rnovotny  | PO, Developer        | PRD, backlog                    |
+| spalevi   | PM, Developer        | meetings, deadlines             |
+| voparkan  | Tech Lead, Developer | architecture, technical details |
+| ...       | ...                  | ...                             |
 
 ## Project Management
 - **Organization:** How the team distributed tasks, held meetings, etc.
