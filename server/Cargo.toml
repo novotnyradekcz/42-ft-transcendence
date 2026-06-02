@@ -10,6 +10,7 @@ actix-web = { version = "4", features = ["openssl"] }
 openssl = { version = "0.10" } #, features = ["vendored"]
 serde = { version = "1.0.228", features = ["derive"] }
 diesel = { version = "2.2.0", features = ["postgres"] }
+diesel_migrations = { version = "2.2.0", features = ["postgres"] }
 pq-sys = { version = "0.6", features = ["bundled"] }
 openssl-sys = { version = "0.9.100", features = ["vendored"] }
 dotenvy = "0.15"
