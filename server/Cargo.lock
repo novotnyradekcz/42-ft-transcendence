@@ -1317,6 +1317,7 @@ dependencies = [
  "openssl-sys",
  "pq-sys",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

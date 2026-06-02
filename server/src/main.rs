@@ -1,37 +1,30 @@
-// Copyright (c) 2018, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved.
+// Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved.
 
-use actix_web::{App, HttpServer, HttpResponse, web, get};
+mod model;
+mod users;
+mod router;
+
+use actix_web::{App, HttpServer, web};
 use serde::{Serialize, Deserialize};
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Info {
-    user_ud: u32,
-    friend: String,
-}
-
-async fn index() -> HttpResponse {
-    HttpResponse::Ok().body("Welcome")
-}
-
-#[get("/show")]
-async fn show_users() -> HttpResponse {
-    HttpResponse::Ok().body("Show users")
-}
-
-#[get("/show/{id}")]
-async fn user_detail(path: web::Path<(u32,)>) -> HttpResponse {
-    HttpResponse::Ok().body(format!("User detail: {}", path.into_inner().0))
-}
+use crate::model::inittialize_db;
+use crate::router::*;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    let db = inittialize_db();
     HttpServer::new(|| {
         App::new()
             .route("/", web::get().to(index))
             .service(
                 web::scope("/users")
                     .service(show_users)
-                    .service(user_detail),
+                    .service(user_detail)
+                    .service(create_user),
+            )
+            .service(
+                web::scope("/games")
+                    .service(show_games)
+                    .service(game_detail),
             )
     })
         .bind(("127.0.0.1", 8080))?
