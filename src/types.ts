@@ -11,57 +11,48 @@ export type Page =
   | "discussion-detail"
   | "mail"
   | "mail-detail"
-  | "games"
-  | "api";
+  | "games";
 
 export type UserProfile = {
   id: number;
-  username: string;
+  name: string;
   email: string;
-  status: "online" | "away" | "offline";
-  bio: string;
 };
 
-export type SessionUser = Pick<UserProfile, "id" | "username" | "email">;
-
-export type RegisteredUser = UserProfile & {
-  password: string;
-};
+export type SessionUser = Pick<UserProfile, "id" | "name" | "email">;
 
 export type DiscussionPost = {
   id: number;
-  author: string;
+  author: number;
+  name: string;
+  perex: string;
   body: string;
-  createdAt: string;
+  images: string;
 };
 
 export type DiscussionThread = {
   id: number;
-  title: string;
-  author: string;
-  createdAt: string;
+  nPosts: number;
+  name: string;
+  info: string;
+  image: string;
   posts: DiscussionPost[];
 };
 
 export type MailMessage = {
   id: number;
-  from: string;
-  to: string;
+  sender: number;
+  recipient: number;
+  title: string;
   body: string;
-  createdAt: string;
-  read: boolean;
+  images: string;
 };
 
 export type GameSummary = {
   id: number;
+  author: number;
   name: string;
-  status: "coming-soon" | "available";
-};
-
-export type ApiRoute = {
-  method: "GET" | "POST" | "PATCH" | "DELETE";
-  path: string;
-  description: string;
+  body: string;
 };
 
 export type CommandDefinition = {

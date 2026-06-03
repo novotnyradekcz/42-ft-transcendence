@@ -85,17 +85,11 @@ export const commandDefinitions: CommandDefinition[] = [
     usage: "back",
     description: "Go back one level. Ctrl+C and Escape also do this.",
   },
-  {
-    command: "api",
-    aliases: ["routes"],
-    usage: "api",
-    description: "Show the mock API route list for the backend teammate.",
-  },
 ];
 
 const pageCommands: Record<Page, string[]> = {
   welcome: ["menu"],
-  home: ["help", "users", "login", "register", "logout", "profile", "discussions", "mail", "games", "api"],
+  home: ["help", "users", "login", "register", "logout", "profile", "discussions", "mail", "games"],
   help: ["menu", "back"],
   users: ["list", "enter <number>", "menu", "back"],
   "user-detail": ["users", "menu", "back"],
@@ -107,7 +101,6 @@ const pageCommands: Record<Page, string[]> = {
   mail: ["list", "enter <number>", "write", "menu", "back"],
   "mail-detail": ["mail", "menu", "back"],
   games: ["menu", "back"],
-  api: ["menu", "back"],
 };
 
 export function getAvailableCommands(page: Page, isLoggedIn = false): string[] {

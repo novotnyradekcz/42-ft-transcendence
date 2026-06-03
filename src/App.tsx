@@ -1,5 +1,5 @@
 import {
-  type FormEvent,
+  type ComponentProps,
   type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
@@ -11,12 +11,12 @@ import {
 import {
   createDiscussion,
   createPost,
-  getApiRoutes,
+  findUserName,
   getCurrentUser,
   getDiscussion,
   getMail,
   getUser,
-  getUserByUsername,
+  getUserByName,
   listDiscussions,
   listGames,
   listMail,
@@ -25,10 +25,9 @@ import {
   logout,
   register,
   sendMail,
-} from "./mock/mockApi";
+} from "./api";
 import { commandDefinitions, getAvailableCommands, isCommand, parseCommand } from "./commands";
 import type {
-  ApiRoute,
   DiscussionThread,
   GameSummary,
   MailMessage,
@@ -37,17 +36,19 @@ import type {
   UserProfile,
 } from "./types";
 
+type FormSubmitEvent = Parameters<NonNullable<ComponentProps<"form">["onSubmit"]>>[0];
+
 type AuthFlow =
   | null
   | {
       mode: "login";
-      step: "username" | "password";
-      username: string;
+      step: "name" | "password";
+      name: string;
     }
   | {
       mode: "register";
-      step: "username" | "email" | "password";
-      username: string;
+      step: "name" | "email" | "password";
+      name: string;
       email: string;
     };
 
@@ -64,25 +65,25 @@ type WriteFlow =
     }
   | {
       mode: "mail";
-      step: "recipient" | "body";
+      step: "recipient" | "title" | "body";
       recipient: string;
+      title: string;
     };
 
 const pagePaths: Record<Page, string> = {
   welcome: "/",
   home: "/menu",
-  help: "/api/help",
-  users: "/api/users",
-  "user-detail": "/api/users",
-  login: "/api/auth/login",
-  register: "/api/auth/register",
-  profile: "/api/me",
-  discussions: "/api/discussions",
-  "discussion-detail": "/api/discussions",
-  mail: "/api/mail",
-  "mail-detail": "/api/mail",
-  games: "/api/games",
-  api: "/api/routes",
+  help: "/help",
+  users: "/users/show",
+  "user-detail": "/users/show",
+  login: "/users/login",
+  register: "/users/create",
+  profile: "/users/me",
+  discussions: "/discussions/show",
+  "discussion-detail": "/discussions/show",
+  mail: "/mail/show",
+  "mail-detail": "/mail/show",
+  games: "/games/show",
 };
 
 function pageFromPath(pathname: string): Page {
@@ -94,40 +95,36 @@ function pageFromPath(pathname: string): Page {
     return "home";
   }
 
-  if (pathname.startsWith("/api/users")) {
+  if (pathname.startsWith("/users/show")) {
     return "users";
   }
 
-  if (pathname.startsWith("/api/discussions")) {
+  if (pathname.startsWith("/discussions/show")) {
     return "discussions";
   }
 
-  if (pathname.startsWith("/api/mail")) {
+  if (pathname.startsWith("/mail/show")) {
     return "mail";
   }
 
-  if (pathname === "/api/games") {
+  if (pathname === "/games/show") {
     return "games";
   }
 
-  if (pathname === "/api/help") {
+  if (pathname === "/help") {
     return "help";
   }
 
-  if (pathname === "/api/me") {
+  if (pathname === "/users/me") {
     return "profile";
   }
 
-  if (pathname === "/api/auth/login") {
+  if (pathname === "/users/login") {
     return "login";
   }
 
-  if (pathname === "/api/auth/register") {
+  if (pathname === "/users/create") {
     return "register";
-  }
-
-  if (pathname === "/api/routes") {
-    return "api";
   }
 
   return "welcome";
@@ -151,17 +148,16 @@ export default function App() {
   const [mail, setMail] = useState<MailMessage[]>([]);
   const [selectedMail, setSelectedMail] = useState<MailMessage | null>(null);
   const [games, setGames] = useState<GameSummary[]>([]);
-  const [apiRoutes, setApiRoutes] = useState<ApiRoute[]>([]);
 
   const [authFlow, setAuthFlow] = useState<AuthFlow>(() => {
     const initialPage = pageFromPath(window.location.pathname);
 
     if (initialPage === "login") {
-      return { mode: "login", step: "username", username: "" };
+      return { mode: "login", step: "name", name: "" };
     }
 
     if (initialPage === "register") {
-      return { mode: "register", step: "username", username: "", email: "" };
+      return { mode: "register", step: "name", name: "", email: "" };
     }
 
     return null;
@@ -188,9 +184,9 @@ export default function App() {
       const nextPage = pageFromPath(window.location.pathname);
       setPage(nextPage);
       if (nextPage === "login") {
-        setAuthFlow({ mode: "login", step: "username", username: "" });
+        setAuthFlow({ mode: "login", step: "name", name: "" });
       } else if (nextPage === "register") {
-        setAuthFlow({ mode: "register", step: "username", username: "", email: "" });
+        setAuthFlow({ mode: "register", step: "name", name: "", email: "" });
       } else {
         setAuthFlow(null);
       }
@@ -202,14 +198,13 @@ export default function App() {
   }, []);
 
   async function refreshBoard() {
-    const [currentUser, nextUsers, nextDiscussions, nextMail, nextGames, nextRoutes] =
+    const [currentUser, nextUsers, nextDiscussions, nextMail, nextGames] =
       await Promise.all([
         getCurrentUser(),
         listUsers(),
         listDiscussions(),
         listMail(),
         listGames(),
-        getApiRoutes(),
       ]);
 
     setSessionUser(currentUser);
@@ -217,7 +212,6 @@ export default function App() {
     setDiscussions(nextDiscussions);
     setMail(nextMail);
     setGames(nextGames);
-    setApiRoutes(nextRoutes);
   }
 
   function navigate(nextPage: Page, path = pagePaths[nextPage]) {
@@ -255,7 +249,7 @@ export default function App() {
     addLine(`refreshed ${page}.`);
   }
 
-  async function handleCommandSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleCommandSubmit(event: FormSubmitEvent) {
     event.preventDefault();
 
     const rawInput = commandInput.trim();
@@ -338,10 +332,10 @@ export default function App() {
         addLine("already logged in. use logout first.");
         return;
       }
-      setAuthFlow({ mode: "login", step: "username", username: "" });
+      setAuthFlow({ mode: "login", step: "name", name: "" });
       setAuthError("");
       navigate("login");
-      addLine("login started. enter username.");
+      addLine("login started. enter name.");
       return;
     }
 
@@ -350,10 +344,10 @@ export default function App() {
         addLine("already logged in. use logout first.");
         return;
       }
-      setAuthFlow({ mode: "register", step: "username", username: "", email: "" });
+      setAuthFlow({ mode: "register", step: "name", name: "", email: "" });
       setAuthError("");
       navigate("register");
-      addLine("register started. enter username.");
+      addLine("register started. enter name.");
       return;
     }
 
@@ -363,13 +357,12 @@ export default function App() {
       discussions: "discussions",
       mail: "mail",
       games: "games",
-      api: "api",
     };
 
     const nextPage = directPages[command];
     if (nextPage === "profile" && !sessionUser) {
       addLine("login first to view your profile.");
-      setAuthFlow({ mode: "login", step: "username", username: "" });
+      setAuthFlow({ mode: "login", step: "name", name: "" });
       setAuthError("");
       navigate("login");
       return;
@@ -387,14 +380,14 @@ export default function App() {
     }
 
     if (authFlow.mode === "login") {
-      if (authFlow.step === "username") {
-        setAuthFlow({ ...authFlow, step: "password", username: rawInput });
-        addLine("username accepted. enter password.");
+      if (authFlow.step === "name") {
+        setAuthFlow({ ...authFlow, step: "password", name: rawInput });
+        addLine("name accepted. enter password.");
         return;
       }
 
       try {
-        const nextUser = await login(authFlow.username, rawInput);
+        const nextUser = await login(authFlow.name, rawInput);
         setSessionUser(nextUser);
         setAuthFlow(null);
         setAuthError("");
@@ -402,18 +395,18 @@ export default function App() {
         setPage("home");
         setPageStack([]);
         window.history.pushState(null, "", pagePaths.home);
-        addLine(`logged in as ${nextUser.username}.`);
+        addLine(`logged in as ${nextUser.name}.`);
       } catch (error) {
         setAuthError(error instanceof Error ? error.message : "Login failed.");
-        addLine("login failed. press Ctrl+C or Esc to quit, or enter username again.");
-        setAuthFlow({ mode: "login", step: "username", username: "" });
+        addLine("login failed. press Ctrl+C or Esc to quit, or enter name again.");
+        setAuthFlow({ mode: "login", step: "name", name: "" });
       }
       return;
     }
 
-    if (authFlow.step === "username") {
-      setAuthFlow({ ...authFlow, step: "email", username: rawInput });
-      addLine("username accepted. enter email.");
+    if (authFlow.step === "name") {
+      setAuthFlow({ ...authFlow, step: "email", name: rawInput });
+      addLine("name accepted. enter email.");
       return;
     }
 
@@ -424,7 +417,7 @@ export default function App() {
     }
 
     try {
-      const nextUser = await register(authFlow.username, authFlow.email, rawInput);
+      const nextUser = await register(authFlow.name, authFlow.email, rawInput);
       setSessionUser(nextUser);
       setAuthFlow(null);
       setAuthError("");
@@ -432,11 +425,11 @@ export default function App() {
       setPage("home");
       setPageStack([]);
       window.history.pushState(null, "", pagePaths.home);
-      addLine(`registered and logged in as ${nextUser.username}.`);
+      addLine(`registered and logged in as ${nextUser.name}.`);
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "Registration failed.");
-      addLine("registration failed. press Ctrl+C or Esc to quit, or enter username again.");
-      setAuthFlow({ mode: "register", step: "username", username: "", email: "" });
+      addLine("registration failed. press Ctrl+C or Esc to quit, or enter name again.");
+      setAuthFlow({ mode: "register", step: "name", name: "", email: "" });
     }
   }
 
@@ -447,22 +440,29 @@ export default function App() {
 
     if (writeFlow.mode === "mail") {
       if (writeFlow.step === "recipient") {
-        const recipient = await getUserByUsername(rawInput);
+        const recipient = await getUserByName(rawInput);
 
         if (!recipient) {
-          setWriteError("Recipient username does not exist.");
-          addLine("recipient not found. enter another username, or press Ctrl+C/Esc.");
+          setWriteError("Recipient name does not exist.");
+          addLine("recipient not found. enter another name, or press Ctrl+C/Esc.");
           return;
         }
 
         setWriteError("");
-        setWriteFlow({ mode: "mail", step: "body", recipient: recipient.username });
-        addLine(`recipient accepted: ${recipient.username}. enter message.`);
+        setWriteFlow({ mode: "mail", step: "title", recipient: recipient.name, title: "" });
+        addLine(`recipient accepted: ${recipient.name}. enter title.`);
+        return;
+      }
+
+      if (writeFlow.step === "title") {
+        setWriteError("");
+        setWriteFlow({ ...writeFlow, step: "body", title: rawInput });
+        addLine("title accepted. enter message.");
         return;
       }
 
       try {
-        await sendMail(writeFlow.recipient, rawInput);
+        await sendMail(writeFlow.recipient, writeFlow.title, rawInput);
         setWriteFlow(null);
         setWriteError("");
         await refreshBoard();
@@ -487,7 +487,7 @@ export default function App() {
         setWriteFlow(null);
         setWriteError("");
         await refreshBoard();
-        navigate("discussion-detail", `/api/discussions/${discussion.id}`);
+        navigate("discussion-detail", `/discussions/show/${discussion.id}`);
         addLine("discussion posted.");
       } catch (error) {
         setWriteError(error instanceof Error ? error.message : "Could not write discussion.");
@@ -524,7 +524,7 @@ export default function App() {
         return;
       }
       setSelectedUser(await getUser(user.id));
-      navigate("user-detail", `/api/users/${user.id}`);
+      navigate("user-detail", `/users/show/${user.id}`);
       return;
     }
 
@@ -535,7 +535,7 @@ export default function App() {
         return;
       }
       setSelectedDiscussion(await getDiscussion(discussion.id));
-      navigate("discussion-detail", `/api/discussions/${discussion.id}`);
+      navigate("discussion-detail", `/discussions/show/${discussion.id}`);
       return;
     }
 
@@ -546,7 +546,7 @@ export default function App() {
         return;
       }
       setSelectedMail(await getMail(message.id));
-      navigate("mail-detail", `/api/mail/${message.id}`);
+      navigate("mail-detail", `/mail/show/${message.id}`);
       return;
     }
 
@@ -556,7 +556,7 @@ export default function App() {
   function handleWriteCommand() {
     if (!sessionUser) {
       addLine("login first to write.");
-      setAuthFlow({ mode: "login", step: "username", username: "" });
+      setAuthFlow({ mode: "login", step: "name", name: "" });
       setAuthError("");
       navigate("login");
       return;
@@ -581,9 +581,9 @@ export default function App() {
     }
 
     if (page === "mail") {
-      setWriteFlow({ mode: "mail", step: "recipient", recipient: "" });
+      setWriteFlow({ mode: "mail", step: "recipient", recipient: "", title: "" });
       setWriteError("");
-      addLine("enter recipient username.");
+      addLine("enter recipient name.");
       return;
     }
 
@@ -650,7 +650,7 @@ export default function App() {
           <p className="terminal-session">
             {page === "welcome"
               ? "connection waiting"
-              : `connected as ${sessionUser ? sessionUser.username : "guest"}`}
+              : `connected as ${sessionUser ? sessionUser.name : "guest"}`}
           </p>
         </header>
 
@@ -695,7 +695,6 @@ export default function App() {
           )}
           {page === "mail-detail" && <MailDetailPage message={selectedMail} />}
           {page === "games" && <GamesPage games={games} />}
-          {page === "api" && <ApiPage routes={apiRoutes} />}
         </section>
 
         <footer className="terminal-footer">
@@ -753,7 +752,7 @@ function getPromptLabel(
     return "guest@ft_transcendence:$";
   }
 
-  return `${sessionUser?.username ?? "guest"}@ft_transcendence:$`;
+  return `${sessionUser?.name ?? "guest"}@ft_transcendence:$`;
 }
 
 function WelcomePage() {
@@ -777,7 +776,7 @@ function HomePage({ sessionUser }: { sessionUser: SessionUser | null }) {
   return (
     <TerminalSection title="Main Menu">
       <p className="terminal-copy">
-        Welcome {sessionUser?.username ?? "guest"}. Choose a board section with commands.
+        Welcome {sessionUser?.name ?? "guest"}. Choose a board section with commands.
       </p>
       <ol className="terminal-list">
         <li>discussions - public posts and replies</li>
@@ -820,8 +819,8 @@ function UsersPage({ users }: { users: UserProfile[] }) {
       <ol className="terminal-list numbered">
         {users.map((user) => (
           <li key={user.id}>
-            <span>{user.username}</span>
-            <small>{user.status} / {user.email}</small>
+            <span>{user.name}</span>
+            <small>{user.email}</small>
           </li>
         ))}
       </ol>
@@ -835,14 +834,14 @@ function UserDetailPage({ user }: { user: UserProfile | null }) {
   }
 
   return (
-    <TerminalSection title={`User: ${user.username}`}>
+    <TerminalSection title={`User: ${user.name}`}>
       <dl className="terminal-facts">
+        <dt>ID</dt>
+        <dd>{user.id}</dd>
+        <dt>Name</dt>
+        <dd>{user.name}</dd>
         <dt>Email</dt>
         <dd>{user.email}</dd>
-        <dt>Status</dt>
-        <dd>{user.status}</dd>
-        <dt>Bio</dt>
-        <dd>{user.bio}</dd>
       </dl>
     </TerminalSection>
   );
@@ -867,7 +866,7 @@ function RegisterPage({ flow, error }: { flow: AuthFlow; error: string }) {
         Register happens in the command input. Current prompt:{" "}
         {flow?.mode === "register" ? flow.step : "idle"}.
       </p>
-      <p className="terminal-copy">Registration saves this user in the mock registeredUsers list.</p>
+      <p className="terminal-copy">Registration sends name, email, and password to `/users/create`.</p>
       <p className="terminal-copy">Press Ctrl+C or Esc to quit register.</p>
       {error && <p className="terminal-error">{error}</p>}
     </TerminalSection>
@@ -886,8 +885,8 @@ function ProfilePage({
   return (
     <TerminalSection title="Profile">
       <dl className="terminal-facts">
-        <dt>Username</dt>
-        <dd>{sessionUser.username}</dd>
+        <dt>Name</dt>
+        <dd>{sessionUser.name}</dd>
         <dt>Email</dt>
         <dd>{sessionUser.email}</dd>
       </dl>
@@ -909,9 +908,9 @@ function DiscussionsPage({
       <ol className="terminal-list numbered">
         {discussions.map((discussion) => (
           <li key={discussion.id}>
-            <span>{discussion.title}</span>
+            <span>{discussion.name}</span>
             <small>
-              by {discussion.author} / {discussion.posts.length} posts / {discussion.createdAt}
+              {discussion.nPosts} posts / {discussion.info}
             </small>
           </li>
         ))}
@@ -940,11 +939,12 @@ function DiscussionDetailPage({
   }
 
   return (
-    <TerminalSection title={discussion.title}>
+    <TerminalSection title={discussion.name}>
+      <p className="terminal-copy">{discussion.info}</p>
       <div className="post-list">
         {discussion.posts.map((post) => (
           <article key={post.id}>
-            <header>{post.author} / {post.createdAt}</header>
+            <header>{findUserName(post.author)} / {post.name}</header>
             <p>{post.body}</p>
           </article>
         ))}
@@ -975,12 +975,11 @@ function MailPage({
         <ol className="terminal-list numbered">
           {mail.map((message) => (
             <li key={message.id}>
-              <span>{message.body}</span>
+              <span>{message.title}</span>
               <small>
-                {message.from === sessionUser?.username
-                  ? `sent to ${message.to}`
-                  : `from ${message.from}`}{" "}
-                / {message.createdAt}
+                {message.sender === sessionUser?.id
+                  ? `sent to ${findUserName(message.recipient)}`
+                  : `from ${findUserName(message.sender)}`}
               </small>
             </li>
           ))}
@@ -1005,11 +1004,11 @@ function MailDetailPage({ message }: { message: MailMessage | null }) {
     <TerminalSection title="Mail">
       <dl className="terminal-facts">
         <dt>From</dt>
-        <dd>{message.from}</dd>
+        <dd>{findUserName(message.sender)}</dd>
         <dt>To</dt>
-        <dd>{message.to}</dd>
-        <dt>Date</dt>
-        <dd>{message.createdAt}</dd>
+        <dd>{findUserName(message.recipient)}</dd>
+        <dt>Title</dt>
+        <dd>{message.title}</dd>
       </dl>
       <p className="terminal-copy">{message.body}</p>
     </TerminalSection>
@@ -1026,27 +1025,11 @@ function GamesPage({ games }: { games: GameSummary[] }) {
           {games.map((game) => (
             <li key={game.id}>
               <span>{game.name}</span>
-              <small>{game.status}</small>
+              <small>by {findUserName(game.author)} / {game.body}</small>
             </li>
           ))}
         </ol>
       )}
-    </TerminalSection>
-  );
-}
-
-function ApiPage({ routes }: { routes: ApiRoute[] }) {
-  return (
-    <TerminalSection title="Mock API Routes">
-      <div className="api-list">
-        {routes.map((route) => (
-          <div key={`${route.method}-${route.path}`}>
-            <code>{route.method}</code>
-            <span>{route.path}</span>
-            <small>{route.description}</small>
-          </div>
-        ))}
-      </div>
     </TerminalSection>
   );
 }
