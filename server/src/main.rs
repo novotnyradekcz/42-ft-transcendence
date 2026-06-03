@@ -1,22 +1,26 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved.
 
 mod model;
-mod users;
 mod router;
+mod schema;
+mod users;
 
-use actix_web::{App, HttpServer, web};
-use serde::{Serialize, Deserialize};
+use std::sync::Mutex;
 use crate::model::inittialize_db;
 use crate::router::*;
+use actix_web::{web, App, HttpServer};
+use serde::{Deserialize, Serialize};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let db = inittialize_db();
-    HttpServer::new(|| {
+    let db = web::Data::new(Mutex::new(inittialize_db()));
+    HttpServer::new(move || {
         App::new()
+            .app_data(db.clone())
             .route("/", web::get().to(index))
             .service(
                 web::scope("/users")
+                    .service(login_user)
                     .service(show_users)
                     .service(user_detail)
                     .service(create_user),
@@ -27,7 +31,7 @@ async fn main() -> std::io::Result<()> {
                     .service(game_detail),
             )
     })
-        .bind(("127.0.0.1", 8080))?
-        .run()
-        .await
+    .bind(("127.0.0.1", 8080))?
+    .run()
+    .await
 }
