@@ -1,6 +1,8 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
 use std::sync::Mutex;
+use actix_security::prelude::AuthenticatedUser;
+use actix_security::{pre_authorize, secured};
 use serde::{Serialize, Deserialize};
 use serde_json;
 use downcast_rs::Downcast;
@@ -12,6 +14,18 @@ use crate::model::user_handler::CreateUserError;
 
 pub async fn index() -> HttpResponse {
     HttpResponse::Ok().body("Welcome")
+}
+
+#[secured("ADMIN")]
+#[get("/admin")]
+async fn admin(user: AuthenticatedUser) -> impl Responder {
+    HttpResponse::Ok().body(format!("Welcome, Admin {}!", user.get_username()))
+}
+
+#[pre_authorize("hasRole('USER') AND hasAuthority('posts:write')")]
+#[post("/posts")]
+async fn create_post(user: AuthenticatedUser) -> impl Responder {
+    HttpResponse::Created().body("Post created")
 }
 
 #[get("/show")]
