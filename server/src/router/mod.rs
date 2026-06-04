@@ -1,8 +1,8 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
 use std::sync::Mutex;
-use actix_security::prelude::AuthenticatedUser;
-use actix_security::{pre_authorize, secured};
+//use actix_security::prelude::AuthenticatedUser;
+//use actix_security::{pre_authorize, secured};
 use serde::{Serialize, Deserialize};
 use serde_json;
 use downcast_rs::Downcast;
@@ -16,7 +16,7 @@ pub async fn index() -> HttpResponse {
     HttpResponse::Ok().body("Welcome")
 }
 
-#[secured("ADMIN")]
+/*#[secured("ADMIN")]
 #[get("/admin")]
 async fn admin(user: AuthenticatedUser) -> impl Responder {
     HttpResponse::Ok().body(format!("Welcome, Admin {}!", user.get_username()))
@@ -26,11 +26,25 @@ async fn admin(user: AuthenticatedUser) -> impl Responder {
 #[post("/posts")]
 async fn create_post(user: AuthenticatedUser) -> impl Responder {
     HttpResponse::Created().body("Post created")
-}
+}*/
 
 #[get("/show")]
-pub async fn show_users() -> HttpResponse {
-    HttpResponse::Ok().body("Show users")
+pub async fn show_users() -> impl Responder {
+    HttpResponse::Created().json(serde_json::json!(
+        {"menu": ["main menu", "add friend"],"users": [{
+        "message": "User detail: 1",
+        "endpoint": "users/show/1",
+        "id": "1",
+        "name": "User Name",
+        "email": "user@email.ltd"
+        },{
+        "message": "User detail: 2",
+        "endpoint": "users/show/2",
+        "id": "2",
+        "name": "User Name",
+        "email": "user@email.ltd"
+        }]})
+    )
 }
 
 #[post("/login")]
@@ -72,7 +86,7 @@ pub async fn user_detail(path: web::Path<(u32,)>) -> impl Responder {
     HttpResponse::Created().json(serde_json::json!({
         "message": format!("User detail: {}", path.into_inner().0),
         "endpoint": "users/show/{id}",
-        "id": 1,
+        "id": "{id}",
         "name": "User Name",
         "email": "user@email.ltd"
     }))
