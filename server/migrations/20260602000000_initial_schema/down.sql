@@ -1,0 +1,5 @@
+DROP TABLE IF EXISTS ftt_games;
+DROP TABLE IF EXISTS ftt_posts;
+DROP TABLE IF EXISTS ftt_discussions;
+DROP TABLE IF EXISTS ftt_mail;
+DROP TABLE IF EXISTS ftt_users;
