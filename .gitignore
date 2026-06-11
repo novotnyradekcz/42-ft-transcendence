@@ -1,3 +1,4 @@
 .idea
+.agents
 server/target
 server/.env
