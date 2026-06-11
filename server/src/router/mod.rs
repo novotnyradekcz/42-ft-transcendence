@@ -1,8 +1,9 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 //use actix_security::prelude::AuthenticatedUser;
 //use actix_security::{pre_authorize, secured};
+use actix_security::http::security::{AuthenticatedUser, AuthenticationManager, AuthorizationManager, Argon2PasswordEncoder, PasswordEncoder, User, MemoryAuthenticator, RequestMatcherAuthorizer, Access};
 use serde::{Serialize, Deserialize};
 use serde_json;
 use downcast_rs::Downcast;
@@ -47,8 +48,27 @@ pub async fn show_users() -> impl Responder {
     )
 }
 
+// pub fn create_authenticator(pool: web::Data<Argon2PasswordEncoder>) -> MemoryAuthenticator {
+//     let encoder = pool.get_ref();
+//     AuthenticationManager::in_memory_authentication()
+//         .password_encoder(encoder.clone())
+//         .with_user(
+//             User::with_encoded_password("admin", encoder.encode("admin"))
+//                 .roles(&["ADMIN".into(), "USER".into()])
+//                 .authorities(&["posts:write".into()])
+//         )
+// }
+//
+// // Factory function: URL-based authorization rules
+// pub fn create_authorizer() -> RequestMatcherAuthorizer {
+//     AuthorizationManager::request_matcher()
+//         .http_basic()
+//         .add_matcher("/users/login", Access::new().roles(vec!["ADMIN"]))
+//     // add more matchers per route as needed
+// }
+
 #[post("/login")]
-pub async fn login_user(body: web::Json<LoginUser>) -> impl Responder {
+pub async fn authenticate(body: web::Json<LoginUser>) -> impl Responder {
     HttpResponse::Created().json(serde_json::json!({
         "message": format!("Lugged user: {}", body.name),
     }))

@@ -16,3 +16,4 @@ openssl-sys = { version = "0.9.100", features = ["vendored"] }
 dotenvy = "0.15"
 serde_json = "1.0.149"
 downcast-rs = "2.0.2"
+actix-security = { version = "0.2", features = ["argon2", "http-basic"] }
