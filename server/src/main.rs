@@ -7,28 +7,66 @@ mod users;
 mod authenticator;
 
 use std::sync::{Arc, Mutex};
-use crate::authenticator::{create_authenticator, create_authorizer};
 use crate::model::inittialize_db;
 use crate::router::{index, show_users, user_detail, create_user, show_games, game_detail};
-use actix_web::{web, App, HttpServer, Error as ActixError};
-use actix_security::http::security::{Argon2PasswordEncoder, PasswordEncoder};
+use actix_web::{web, App, HttpServer, Error as ActixError, cookie};
+use actix_web::cookie::CookieBuilder;
+use actix_security::http::security::{Argon2PasswordEncoder, PasswordEncoder, SessionFixationStrategy};
 use actix_security::http::security::middleware::SecurityTransform;
+use actix_security::prelude::{Authenticator, JwtAuthenticator, JwtTokenService, SessionConfig, User};
+use actix_session::{storage::CookieSessionStore, Session, SessionMiddleware};
+use actix_web::web::Data;
 use serde::{Deserialize, Serialize};
+use crate::authenticator::{create_authenticator, create_authorizer, init_user_store};
+use crate::model::user_handler::get_all_users_from_db;
+
+struct AppState {
+    users: Vec<User>,
+    encoder: Argon2PasswordEncoder,
+    session_config: SessionConfig,
+    jwt_authenticator: Option<JwtAuthenticator>,
+    jwt_token_service: Option<JwtTokenService>,
+}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let db = web::Data::new(Mutex::new(inittialize_db()));
+    env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));
+    let db = Data::new(Mutex::new(inittialize_db()));
     let encoder = Argon2PasswordEncoder::new();
+    let encoder_data: Data<Argon2PasswordEncoder> = Data::new(encoder.clone());
+    let dbusers = get_all_users_from_db(&db).expect("Users from DB failed.");
+    let users: Vec<User> = dbusers.iter().map(|user| {
+        User::with_encoded_password(user.name.as_str(), encoder.encode(user.password.as_str())).roles(&["USER".into()])
+    }).collect();
+
+    let session_config = SessionConfig::new().user_key("user").fixation_strategy(SessionFixationStrategy::MigrateSession);
+    let state = Arc::new(AppState {
+        users: users.clone(),
+        encoder,
+        session_config,
+        jwt_authenticator: None,
+        jwt_token_service: None,
+    });
+    let secret_key = cookie::Key::generate();
+
+    init_user_store(users);
+
     HttpServer::new(move || {
-        let enc = encoder.clone();
-        let dbc = db.clone();
+
         App::new()
+            .app_data(db.clone())
+            .app_data(Data::new(state.clone()))
+            .app_data(encoder_data.clone())
+            .wrap(
+                SessionMiddleware::builder(CookieSessionStore::default(), secret_key.clone())
+                    .cookie_secure(false)
+                    .build(),
+            )
             .wrap(
                 SecurityTransform::new()
                     .config_authenticator(create_authenticator)
-                    .config_authorizer(create_authorizer)
+                    .config_authorizer(create_authorizer),
             )
-            .app_data(dbc)
             .route("/", web::get().to(index))
             .service(
                 web::scope("/users")

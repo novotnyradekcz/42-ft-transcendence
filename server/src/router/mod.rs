@@ -8,10 +8,12 @@ use serde::{Serialize, Deserialize};
 use serde_json;
 use downcast_rs::Downcast;
 use actix_web::{App, HttpServer, HttpResponse, Responder, web, get, post};
+use crate::authenticator::register_user;
 use crate::users::{CreateUser, LoginUser};
 use crate::model::user_handler::{create_user_in_db};
 use crate::model::database_initializer::{DatabaseInitializer};
 use crate::model::user_handler::CreateUserError;
+
 
 pub async fn index() -> HttpResponse {
     HttpResponse::Ok().body("Welcome")
@@ -75,10 +77,19 @@ pub async fn authenticate(body: web::Json<LoginUser>) -> impl Responder {
 }
 
 #[post("/create")]
-pub async fn create_user(pool: web::Data<Mutex<DatabaseInitializer>>, body: web::Json<CreateUser>) -> impl Responder {
-    let mut db = pool.lock().unwrap();
-    match create_user_in_db(&mut db, &body) {
+pub async fn create_user(
+    pool: web::Data<Mutex<DatabaseInitializer>>,
+    encoder: web::Data<Argon2PasswordEncoder>,
+    body: web::Json<CreateUser>
+) -> impl Responder {
+    let mut db = pool.lock().expect("create_user expect DatabaseInitializer");
+    match create_user_in_db(&mut db, &body, encoder.get_ref()) {
         Ok(_) => {
+            let encoded = encoder.encode(&body.password);
+            let auth_user = User::with_encoded_password(&body.name, encoded)
+                .roles(&["USER".into()]);
+            register_user(auth_user);
+
             HttpResponse::Created().json(serde_json::json!({
                 "success": true,
                 "message": format!("Created user: {}", body.name),
