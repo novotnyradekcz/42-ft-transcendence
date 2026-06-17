@@ -18,7 +18,6 @@ import {
   getCurrentUser,
   getDiscussion,
   getMail,
-  getUser,
   getUserByName,
   listFriends,
   listDiscussions,
