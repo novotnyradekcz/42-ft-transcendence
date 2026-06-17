@@ -3,13 +3,13 @@ import type { CommandDefinition, Page } from "./types";
 export const commandDefinitions: CommandDefinition[] = [
   {
     command: "help",
-    aliases: ["?"],
+    aliases: ["?", "h"],
     usage: "help",
     description: "Show all available commands.",
   },
   {
     command: "menu",
-    aliases: ["home"],
+    aliases: ["home", "me"],
     usage: "menu",
     description: "Enter or return to the main board menu.",
   },
@@ -21,25 +21,43 @@ export const commandDefinitions: CommandDefinition[] = [
   },
   {
     command: "login",
-    aliases: [],
+    aliases: ["logi"],
     usage: "login",
     description: "Start command-line login.",
   },
   {
     command: "register",
-    aliases: ["signup"],
+    aliases: ["r", "reg"],
     usage: "register",
     description: "Start command-line registration.",
   },
   {
     command: "profile",
-    aliases: ["me"],
+    aliases: ["p"],
     usage: "profile",
     description: "Show your current profile.",
   },
   {
+    command: "friends",
+    aliases: ["f"],
+    usage: "friends",
+    description: "Open your friend list.",
+  },
+  {
+    command: "addfriend",
+    aliases: ["friend", "af"],
+    usage: "addfriend 1",
+    description: "Add a user as a friend from the current list or profile.",
+  },
+  {
+    command: "removefriend",
+    aliases: ["unfriend", "rf"],
+    usage: "removefriend 1",
+    description: "Remove a user from your friend list.",
+  },
+  {
     command: "logout",
-    aliases: [],
+    aliases: ["logo"],
     usage: "logout",
     description: "Log out of the current account.",
   },
@@ -63,13 +81,13 @@ export const commandDefinitions: CommandDefinition[] = [
   },
   {
     command: "list",
-    aliases: ["l"],
+    aliases: ["li"],
     usage: "list",
     description: "Refresh the list for the current page.",
   },
   {
     command: "enter",
-    aliases: ["open"],
+    aliases: ["open", "e"],
     usage: "enter 1",
     description: "Open an item from the current list.",
   },
@@ -81,7 +99,7 @@ export const commandDefinitions: CommandDefinition[] = [
   },
   {
     command: "back",
-    aliases: ["cancel", "ctrl+c", "esc"],
+    aliases: ["cancel", "ctrl+c", "esc", "b"],
     usage: "back",
     description: "Go back one level. Ctrl+C and Escape also do this.",
   },
@@ -89,13 +107,25 @@ export const commandDefinitions: CommandDefinition[] = [
 
 const pageCommands: Record<Page, string[]> = {
   welcome: ["menu"],
-  home: ["help", "users", "login", "register", "logout", "profile", "discussions", "mail", "games"],
+  home: [
+    "help",
+    "users",
+    "login",
+    "register",
+    "logout",
+    "profile",
+    "friends",
+    "discussions",
+    "mail",
+    "games",
+  ],
   help: ["menu", "back"],
-  users: ["list", "enter <number>", "menu", "back"],
-  "user-detail": ["users", "menu", "back"],
+  users: ["list", "enter <number>", "addfriend <number>", "menu", "back"],
+  "user-detail": ["addfriend", "removefriend", "users", "menu", "back"],
+  friends: ["list", "enter <number>", "removefriend <number>", "menu", "back"],
   login: ["Ctrl+C", "Esc"],
   register: ["Ctrl+C", "Esc"],
-  profile: ["logout", "menu", "back"],
+  profile: ["friends", "logout", "menu", "back"],
   discussions: ["list", "enter <number>", "write", "menu", "back"],
   "discussion-detail": ["write", "discussions", "menu", "back"],
   mail: ["list", "enter <number>", "write", "menu", "back"],
@@ -104,15 +134,23 @@ const pageCommands: Record<Page, string[]> = {
 };
 
 export function getAvailableCommands(page: Page, isLoggedIn = false): string[] {
-  if (page !== "home") {
-    return pageCommands[page];
+  const commands = pageCommands[page];
+
+  if (page === "home") {
+    if (isLoggedIn) {
+      return commands.filter((command) => command !== "login" && command !== "register");
+    }
+
+    return commands.filter((command) => command !== "logout");
   }
 
   if (isLoggedIn) {
-    return pageCommands.home.filter((command) => command !== "login" && command !== "register");
+    return commands;
   }
 
-  return pageCommands.home.filter((command) => command !== "logout");
+  return commands.filter(
+    (command) => !command.startsWith("addfriend") && !command.startsWith("removefriend"),
+  );
 }
 
 export function parseCommand(input: string): { name: string; args: string[] } {

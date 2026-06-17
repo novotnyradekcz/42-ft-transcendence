@@ -24,19 +24,31 @@ textarea {
 }
 
 .terminal-page {
-  min-height: 100vh;
+  height: 100vh;
   padding: clamp(0.75rem, 2vw, 1.5rem);
   background: #000;
+  display: flex;
+  flex-direction: column;
 }
 
 .terminal-window {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
   width: min(100%, 78ch);
-  min-height: calc(100vh - clamp(1.5rem, 4vw, 3rem));
   background: #000;
 }
 
 .terminal-header {
+  flex-shrink: 0;
   margin-bottom: 1rem;
+}
+
+.terminal-scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .bbs-banner,
@@ -86,7 +98,7 @@ small {
 }
 
 .terminal-body {
-  min-height: 20rem;
+  min-height: 0;
 }
 
 .terminal-section {
@@ -164,6 +176,97 @@ code {
   overflow-wrap: anywhere;
 }
 
+.user-list li {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 0 0.5rem;
+  align-items: center;
+}
+
+.user-list li::before {
+  grid-row: 1 / span 2;
+}
+
+.user-list .avatar-image {
+  grid-row: 1 / span 2;
+}
+
+.user-list small {
+  grid-column: 3;
+  margin-left: 0;
+}
+
+.avatar-image {
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid #c8c8c8;
+  background: #111;
+  object-fit: cover;
+}
+
+.avatar-image.large {
+  width: 7rem;
+  height: 7rem;
+}
+
+.profile-layout {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+  max-width: 78ch;
+}
+
+.profile-form {
+  display: grid;
+  gap: 0.5rem;
+  max-width: 38rem;
+  margin-top: 1rem;
+}
+
+.profile-form label {
+  display: grid;
+  gap: 0.15rem;
+  color: #c8c8c8;
+}
+
+.profile-form input,
+.profile-form textarea {
+  width: 100%;
+  padding: 0.35rem;
+  border: 1px solid #c8c8c8;
+  border-radius: 0;
+  background: #000;
+  color: #fff;
+}
+
+.profile-form textarea {
+  min-height: 5rem;
+  resize: vertical;
+}
+
+.terminal-button {
+  justify-self: start;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid #fff;
+  border-radius: 0;
+  background: #000;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.terminal-button:hover,
+.terminal-button:focus {
+  background: #fff;
+  color: #000;
+  outline: none;
+}
+
+.friend-actions {
+  margin-top: 0.75rem;
+}
+
 .command-grid {
   display: grid;
   gap: 0.15rem;
@@ -182,7 +285,7 @@ code {
 
 .command-form input {
   width: 100%;
-  padding: 0;
+  padding: 0.15rem 0;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -229,6 +332,7 @@ code {
 }
 
 .terminal-footer {
+  flex-shrink: 0;
   margin-top: 1rem;
 }
 
@@ -242,15 +346,81 @@ code {
 }
 
 .command-form {
-  display: grid;
+  display: inline-grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 0.5rem;
   align-items: center;
+  width: min(100%, 54ch);
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #c8c8c8;
+  cursor: text;
 }
 
 .command-form label {
   color: #fff;
   white-space: nowrap;
+}
+
+.command-help {
+  position: fixed;
+  right: clamp(0.75rem, 2vw, 1.25rem);
+  bottom: clamp(0.75rem, 2vw, 1.25rem);
+  z-index: 10;
+}
+
+.command-help-toggle {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid #fff;
+  border-radius: 50%;
+  background: #000;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.command-help-toggle:hover,
+.command-help-toggle:focus,
+.command-help.open .command-help-toggle {
+  background: #fff;
+  color: #000;
+  outline: none;
+}
+
+.command-help-popover {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.5rem);
+  display: grid;
+  gap: 0.25rem;
+  width: min(18rem, calc(100vw - 1.5rem));
+  max-height: min(28rem, calc(100vh - 6rem));
+  padding: 0.5rem;
+  border: 1px solid #fff;
+  background: #000;
+  overflow-y: auto;
+}
+
+.command-help-popover button {
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #333;
+  border-radius: 0;
+  background: #000;
+  color: #fff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.command-help-popover button:hover,
+.command-help-popover button:focus {
+  border-color: #fff;
+  background: #fff;
+  color: #000;
+  outline: none;
 }
 
 @media (max-width: 720px) {
@@ -267,8 +437,13 @@ code {
 
   .command-row,
   .terminal-facts,
+  .profile-layout {
+    grid-template-columns: 1fr;
+  }
+
   .command-form {
     grid-template-columns: 1fr;
+    width: min(100%, 32rem);
   }
 
   .command-row small,

@@ -4,6 +4,7 @@ export type Page =
   | "help"
   | "users"
   | "user-detail"
+  | "friends"
   | "login"
   | "register"
   | "profile"
@@ -17,9 +18,12 @@ export type UserProfile = {
   id: number;
   name: string;
   email: string;
+  bio: string;
+  avatarUrl: string;
+  status: "online" | "offline";
 };
 
-export type SessionUser = Pick<UserProfile, "id" | "name" | "email">;
+export type SessionUser = UserProfile;
 
 export type DiscussionPost = {
   id: number;

@@ -1,5 +1,6 @@
 import {
-  type ComponentProps,
+  type ChangeEvent,
+  type FormEvent,
   type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
@@ -9,6 +10,8 @@ import {
   useState,
 } from "react";
 import {
+  DEFAULT_AVATAR_URL,
+  addFriend,
   createDiscussion,
   createPost,
   findUserName,
@@ -17,6 +20,7 @@ import {
   getMail,
   getUser,
   getUserByName,
+  listFriends,
   listDiscussions,
   listGames,
   listMail,
@@ -24,7 +28,10 @@ import {
   login,
   logout,
   register,
+  removeFriend,
   sendMail,
+  updateCurrentUserProfile,
+  uploadAvatar,
 } from "./api";
 import { commandDefinitions, getAvailableCommands, isCommand, parseCommand } from "./commands";
 import type {
@@ -36,7 +43,7 @@ import type {
   UserProfile,
 } from "./types";
 
-type FormSubmitEvent = Parameters<NonNullable<ComponentProps<"form">["onSubmit"]>>[0];
+type FormSubmitEvent = FormEvent<HTMLFormElement>;
 
 type AuthFlow =
   | null
@@ -76,6 +83,7 @@ const pagePaths: Record<Page, string> = {
   help: "/help",
   users: "/users/show",
   "user-detail": "/users/show",
+  friends: "/friends/show",
   login: "/users/login",
   register: "/users/create",
   profile: "/users/me",
@@ -97,6 +105,10 @@ function pageFromPath(pathname: string): Page {
 
   if (pathname.startsWith("/users/show")) {
     return "users";
+  }
+
+  if (pathname.startsWith("/friends/show")) {
+    return "friends";
   }
 
   if (pathname.startsWith("/discussions/show")) {
@@ -133,6 +145,7 @@ function pageFromPath(pathname: string): Page {
 export default function App() {
   const [page, setPage] = useState<Page>(() => pageFromPath(window.location.pathname));
   const commandInputRef = useRef<HTMLInputElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
   const [, setPageStack] = useState<Page[]>([]);
   const [commandInput, setCommandInput] = useState("");
   const [terminalLines, setTerminalLines] = useState<string[]>([
@@ -142,6 +155,7 @@ export default function App() {
 
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [friends, setFriends] = useState<UserProfile[]>([]);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [discussions, setDiscussions] = useState<DiscussionThread[]>([]);
   const [selectedDiscussion, setSelectedDiscussion] = useState<DiscussionThread | null>(null);
@@ -163,34 +177,29 @@ export default function App() {
     return null;
   });
   const [authError, setAuthError] = useState("");
-  const [writeError, setWriteError] = useState("");
   const [writeFlow, setWriteFlow] = useState<WriteFlow>(null);
+  const [writeError, setWriteError] = useState("");
+  const [commandHelpOpen, setCommandHelpOpen] = useState(false);
 
+  const friendIds = useMemo(() => new Set(friends.map((friend) => friend.id)), [friends]);
   const availableCommands = useMemo(
     () => getAvailableCommands(page, Boolean(sessionUser)),
     [page, sessionUser],
   );
 
   useEffect(() => {
-    refreshBoard();
+    void refreshBoard();
   }, []);
 
   useEffect(() => {
-    commandInputRef.current?.focus();
-  }, [page, authFlow, writeFlow]);
+    if (scrollAreaRef.current) {
+      scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
+    }
+  }, [terminalLines]);
 
   useEffect(() => {
     function handlePopState() {
-      const nextPage = pageFromPath(window.location.pathname);
-      setPage(nextPage);
-      if (nextPage === "login") {
-        setAuthFlow({ mode: "login", step: "name", name: "" });
-      } else if (nextPage === "register") {
-        setAuthFlow({ mode: "register", step: "name", name: "", email: "" });
-      } else {
-        setAuthFlow(null);
-      }
-      clearWriteModes();
+      setPage(pageFromPath(window.location.pathname));
     }
 
     window.addEventListener("popstate", handlePopState);
@@ -198,10 +207,11 @@ export default function App() {
   }, []);
 
   async function refreshBoard() {
-    const [currentUser, nextUsers, nextDiscussions, nextMail, nextGames] =
+    const [currentUser, nextUsers, nextFriends, nextDiscussions, nextMail, nextGames] =
       await Promise.all([
         getCurrentUser(),
         listUsers(),
+        listFriends(),
         listDiscussions(),
         listMail(),
         listGames(),
@@ -209,9 +219,21 @@ export default function App() {
 
     setSessionUser(currentUser);
     setUsers(nextUsers);
+    setFriends(nextFriends);
     setDiscussions(nextDiscussions);
     setMail(nextMail);
     setGames(nextGames);
+    setSelectedUser((user) => {
+      if (!user) {
+        return user;
+      }
+
+      return (
+        nextUsers.find((nextUser) => nextUser.id === user.id) ??
+        nextFriends.find((nextUser) => nextUser.id === user.id) ??
+        user
+      );
+    });
   }
 
   function navigate(nextPage: Page, path = pagePaths[nextPage]) {
@@ -241,7 +263,7 @@ export default function App() {
   }
 
   function addLine(line: string) {
-    setTerminalLines((lines) => [...lines.slice(-8), line]);
+    setTerminalLines((lines) => [...lines.slice(-500), line]);
   }
 
   async function refreshCurrentPage() {
@@ -269,7 +291,15 @@ export default function App() {
       return;
     }
 
-    addLine(`> ${rawInput}`);
+    await executeCommand(rawInput);
+  }
+
+  async function executeCommand(rawInput: string, echo = true) {
+    setCommandHelpOpen(false);
+
+    if (echo) {
+      addLine(`> ${rawInput}`);
+    }
 
     const { name, args } = parseCommand(rawInput);
     const definition = commandDefinitions.find((command) => isCommand(name, command));
@@ -327,6 +357,11 @@ export default function App() {
       return;
     }
 
+    if (command === "addfriend" || command === "removefriend") {
+      await handleFriendCommand(command, args[0]);
+      return;
+    }
+
     if (command === "login") {
       if (sessionUser) {
         addLine("already logged in. use logout first.");
@@ -353,6 +388,7 @@ export default function App() {
 
     const directPages: Partial<Record<string, Page>> = {
       users: "users",
+      friends: "friends",
       profile: "profile",
       discussions: "discussions",
       mail: "mail",
@@ -360,8 +396,8 @@ export default function App() {
     };
 
     const nextPage = directPages[command];
-    if (nextPage === "profile" && !sessionUser) {
-      addLine("login first to view your profile.");
+    if ((nextPage === "profile" || nextPage === "friends") && !sessionUser) {
+      addLine(`login first to view ${nextPage === "profile" ? "your profile" : "friends"}.`);
       setAuthFlow({ mode: "login", step: "name", name: "" });
       setAuthError("");
       navigate("login");
@@ -372,6 +408,30 @@ export default function App() {
       await refreshBoard();
       navigate(nextPage);
     }
+  }
+
+  async function handleCommandHelpClick(commandLabel: string) {
+    const commandName = commandLabel.split(/\s+/)[0] ?? "";
+    const normalizedCommand = commandName.toLowerCase();
+    const needsValue = commandLabel.includes("<");
+
+    setCommandHelpOpen(false);
+
+    if (authFlow || writeFlow) {
+      if (["back", "cancel", "ctrl+c", "esc"].includes(normalizedCommand)) {
+        addLine(normalizedCommand === "ctrl+c" ? "^C" : commandName);
+        cancelInputMode();
+      }
+      return;
+    }
+
+    if (needsValue) {
+      setCommandInput(`${commandName} `);
+      window.setTimeout(() => commandInputRef.current?.focus(), 0);
+      return;
+    }
+
+    await executeCommand(commandName);
   }
 
   async function handleAuthFlowInput(rawInput: string) {
@@ -448,16 +508,14 @@ export default function App() {
           return;
         }
 
-        setWriteError("");
-        setWriteFlow({ mode: "mail", step: "title", recipient: recipient.name, title: "" });
-        addLine(`recipient accepted: ${recipient.name}. enter title.`);
+        setWriteFlow({ ...writeFlow, step: "title", recipient: rawInput });
+        addLine("recipient accepted. enter subject.");
         return;
       }
 
       if (writeFlow.step === "title") {
-        setWriteError("");
         setWriteFlow({ ...writeFlow, step: "body", title: rawInput });
-        addLine("title accepted. enter message.");
+        addLine("subject accepted. enter body.");
         return;
       }
 
@@ -466,179 +524,209 @@ export default function App() {
         setWriteFlow(null);
         setWriteError("");
         await refreshBoard();
-        addLine(`mail sent to ${writeFlow.recipient}.`);
+        addLine("mail sent.");
       } catch (error) {
         setWriteError(error instanceof Error ? error.message : "Could not send mail.");
-        addLine("mail failed. press Ctrl+C/Esc to quit, or enter message again.");
+        addLine("send failed. press Ctrl+C/Esc to cancel, or try again.");
       }
       return;
     }
 
     if (writeFlow.mode === "new-discussion") {
       if (writeFlow.step === "title") {
-        setWriteFlow({ mode: "new-discussion", step: "body", title: rawInput });
-        addLine("title accepted. enter first post.");
+        setWriteFlow({ ...writeFlow, step: "body", title: rawInput });
+        addLine("title accepted. enter body.");
         return;
       }
 
       try {
-        const discussion = await createDiscussion(writeFlow.title, rawInput);
-        setSelectedDiscussion(discussion);
+        await createDiscussion(writeFlow.title, rawInput);
         setWriteFlow(null);
         setWriteError("");
         await refreshBoard();
-        navigate("discussion-detail", `/discussions/show/${discussion.id}`);
-        addLine("discussion posted.");
+        addLine("discussion created.");
       } catch (error) {
-        setWriteError(error instanceof Error ? error.message : "Could not write discussion.");
-        addLine("discussion failed. press Ctrl+C/Esc to quit, or enter post again.");
+        setWriteError(error instanceof Error ? error.message : "Could not create discussion.");
+        addLine("create failed. press Ctrl+C/Esc to cancel, or try again.");
       }
       return;
     }
 
-    try {
-      const discussion = await createPost(writeFlow.discussionId, rawInput);
-      setSelectedDiscussion(discussion);
-      setWriteFlow(null);
-      setWriteError("");
-      await refreshBoard();
-      addLine("reply posted.");
-    } catch (error) {
-      setWriteError(error instanceof Error ? error.message : "Could not post reply.");
-      addLine("reply failed. press Ctrl+C/Esc to quit, or enter reply again.");
-    }
-  }
-
-  async function handleEnterCommand(indexValue?: string) {
-    const index = Number(indexValue) - 1;
-
-    if (!indexValue || Number.isNaN(index) || index < 0) {
-      addLine("usage: enter <number>");
-      return;
-    }
-
-    if (page === "users") {
-      const user = users[index];
-      if (!user) {
-        addLine("no user exists at that number.");
-        return;
+    if (writeFlow.mode === "reply") {
+      try {
+        const updated = await createPost(writeFlow.discussionId, rawInput);
+        setSelectedDiscussion(updated);
+        setWriteFlow(null);
+        setWriteError("");
+        addLine("reply posted.");
+      } catch (error) {
+        setWriteError(error instanceof Error ? error.message : "Could not post reply.");
+        addLine("post failed. press Ctrl+C/Esc to cancel, or try again.");
       }
-      setSelectedUser(await getUser(user.id));
-      navigate("user-detail", `/users/show/${user.id}`);
-      return;
     }
-
-    if (page === "discussions") {
-      const discussion = discussions[index];
-      if (!discussion) {
-        addLine("no discussion exists at that number.");
-        return;
-      }
-      setSelectedDiscussion(await getDiscussion(discussion.id));
-      navigate("discussion-detail", `/discussions/show/${discussion.id}`);
-      return;
-    }
-
-    if (page === "mail") {
-      const message = mail[index];
-      if (!message) {
-        addLine("no mail exists at that number.");
-        return;
-      }
-      setSelectedMail(await getMail(message.id));
-      navigate("mail-detail", `/mail/show/${message.id}`);
-      return;
-    }
-
-    addLine("enter is not available on this page.");
   }
 
   function handleWriteCommand() {
-    if (!sessionUser) {
-      addLine("login first to write.");
-      setAuthFlow({ mode: "login", step: "name", name: "" });
-      setAuthError("");
-      navigate("login");
-      return;
-    }
-
     if (page === "discussions") {
       setWriteFlow({ mode: "new-discussion", step: "title", title: "" });
-      setWriteError("");
       addLine("new discussion. enter title.");
       return;
     }
 
-    if (page === "discussion-detail") {
-      if (!selectedDiscussion) {
-        addLine("no discussion selected.");
-        return;
-      }
+    if (page === "discussion-detail" && selectedDiscussion) {
       setWriteFlow({ mode: "reply", discussionId: selectedDiscussion.id });
-      setWriteError("");
-      addLine("enter reply.");
+      addLine("reply. enter body.");
       return;
     }
 
     if (page === "mail") {
       setWriteFlow({ mode: "mail", step: "recipient", recipient: "", title: "" });
-      setWriteError("");
-      addLine("enter recipient name.");
+      addLine("new mail. enter recipient name.");
       return;
     }
 
     addLine("write is not available on this page.");
   }
 
-  function handleCommandKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.ctrlKey && event.key.toLowerCase() === "c") {
-      event.preventDefault();
-      addLine("^C");
-      cancelInputMode();
+  async function handleEnterCommand(target: string | undefined) {
+    const targetValue = target ?? "";
+
+    if (page === "users" || page === "friends") {
+      const index = parseInt(targetValue, 10) - 1;
+      const source = page === "users" ? users : friends;
+
+      function getFromIndex(): UserProfile | null {
+        return source[index] ?? null;
+      }
+
+      const user = Number.isFinite(index) ? getFromIndex() : null;
+
+      if (!user) {
+        return getUserByName(targetValue);
+      }
+
+      setSelectedUser(user);
+      navigate("user-detail");
       return;
     }
 
-    if (event.key === "Escape") {
-      event.preventDefault();
-      addLine("Esc");
-      cancelInputMode();
+    if (page === "discussions") {
+      const index = parseInt(targetValue, 10) - 1;
+      const discussion = discussions[index] ?? null;
+
+      if (!discussion) {
+        addLine("no discussion at that index.");
+        return;
+      }
+
+      const full = await getDiscussion(discussion.id);
+      setSelectedDiscussion(full);
+      navigate("discussion-detail");
+      return;
     }
+
+    if (page === "mail") {
+      const index = parseInt(targetValue, 10) - 1;
+      const message = mail[index] ?? null;
+
+      if (!message) {
+        addLine("no message at that index.");
+        return;
+      }
+
+      setSelectedMail(await getMail(message.id));
+      navigate("mail-detail");
+      return;
+    }
+
+    addLine("enter is not available on this page.");
+  }
+
+  async function handleFriendCommand(command: string, target: string | undefined) {
+    const targetValue = target ?? "";
+
+    function resolveUser(): UserProfile | null {
+      if (page === "user-detail") {
+        return selectedUser;
+      }
+
+      const index = parseInt(targetValue, 10) - 1;
+      const source = page === "users" ? users : friends;
+      return source[index] ?? null;
+    }
+
+    const user = resolveUser();
+
+    if (!user) {
+      addLine("no user selected or found at that index.");
+      return;
+    }
+
+    try {
+      if (command === "addfriend") {
+        await handleAddFriend(user.id);
+      } else {
+        await handleRemoveFriend(user.id);
+      }
+    } catch (error) {
+      addLine(error instanceof Error ? error.message : "Could not update friend.");
+    }
+  }
+
+  async function handleAddFriend(userId: number) {
+    const nextFriends = await addFriend(userId);
+    setFriends(nextFriends);
+    addLine("friend added.");
+  }
+
+  async function handleRemoveFriend(userId: number) {
+    const nextFriends = await removeFriend(userId);
+    setFriends(nextFriends);
+    addLine("friend removed.");
   }
 
   function cancelInputMode() {
-    if (authFlow) {
-      setAuthFlow(null);
-      setAuthError("");
-      setCommandInput("");
-      setPage("home");
-      window.history.pushState(null, "", pagePaths.home);
-      addLine("login/register cancelled.");
-      return;
-    }
-
-    if (writeFlow) {
-      setWriteFlow(null);
-      setWriteError("");
-      setCommandInput("");
-      addLine("write cancelled.");
-      return;
-    }
-
+    setAuthFlow(null);
+    setAuthError("");
+    clearWriteModes();
     goBack();
   }
 
-  function handleTerminalClick(event: MouseEvent<HTMLElement>) {
-    const target = event.target as HTMLElement;
+  function handleCommandKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Escape" || (event.key === "c" && event.ctrlKey)) {
+      event.preventDefault();
 
-    if (target.closest("input, textarea, label")) {
-      return;
+      if (authFlow || writeFlow) {
+        addLine(event.key === "Escape" ? "Esc" : "^C");
+        cancelInputMode();
+      }
     }
+  }
 
-    commandInputRef.current?.focus();
+  function handleCommandAreaClick(event: MouseEvent<HTMLElement>) {
+    if (event.target !== commandInputRef.current) {
+      commandInputRef.current?.focus();
+    }
+  }
+
+  async function handleProfileUpdate(update: { name: string; email: string; bio: string }) {
+    const nextUser = await updateCurrentUserProfile(update);
+    setSessionUser(nextUser);
+  }
+
+  async function handleAvatarUpload(file: File) {
+    const avatarUrl = await uploadAvatar(file);
+    const nextUser = await updateCurrentUserProfile({
+      name: sessionUser?.name ?? "",
+      email: sessionUser?.email ?? "",
+      bio: sessionUser?.bio ?? "",
+      avatarUrl,
+    });
+    setSessionUser(nextUser);
   }
 
   return (
-    <main className="terminal-page" onClick={handleTerminalClick}>
+    <main className="terminal-page">
       <section className="terminal-window" aria-label="ft_transcendence terminal">
         <header className="terminal-header">
           <pre className="bbs-banner" aria-label="ft_transcendence banner">
@@ -654,48 +742,68 @@ export default function App() {
           </p>
         </header>
 
-        <section className="terminal-output" aria-live="polite">
-          {terminalLines.map((line, index) => (
-            <p key={`${line}-${index}`}>{line}</p>
-          ))}
-        </section>
+        <div className="terminal-scroll-area" ref={scrollAreaRef}>
+          <section className="terminal-output" aria-live="polite">
+            {terminalLines.map((line, index) => (
+              <p key={`${line}-${index}`}>{line}</p>
+            ))}
+          </section>
 
-        <section className="terminal-body">
-          {page === "welcome" && <WelcomePage />}
-          {page === "home" && <HomePage sessionUser={sessionUser} />}
-          {page === "help" && <HelpPage isLoggedIn={Boolean(sessionUser)} />}
-          {page === "users" && <UsersPage users={users} />}
-          {page === "user-detail" && <UserDetailPage user={selectedUser} />}
-          {page === "login" && <LoginPage flow={authFlow} error={authError} />}
-          {page === "register" && <RegisterPage flow={authFlow} error={authError} />}
-          {page === "profile" && (
-            <ProfilePage sessionUser={sessionUser} />
-          )}
-          {page === "discussions" && (
-            <DiscussionsPage
-              discussions={discussions}
-              error={writeError}
-              writeFlow={writeFlow}
-            />
-          )}
-          {page === "discussion-detail" && (
-            <DiscussionDetailPage
-              discussion={selectedDiscussion}
-              error={writeError}
-              writeFlow={writeFlow}
-            />
-          )}
-          {page === "mail" && (
-            <MailPage
-              mail={mail}
-              error={writeError}
-              sessionUser={sessionUser}
-              writeFlow={writeFlow}
-            />
-          )}
-          {page === "mail-detail" && <MailDetailPage message={selectedMail} />}
-          {page === "games" && <GamesPage games={games} />}
-        </section>
+          <section className="terminal-body">
+            {page === "welcome" && <WelcomePage />}
+            {page === "home" && <HomePage sessionUser={sessionUser} />}
+            {page === "help" && <HelpPage isLoggedIn={Boolean(sessionUser)} />}
+            {page === "users" && <UsersPage users={users} friendIds={friendIds} />}
+            {page === "user-detail" && (
+              <UserDetailPage
+                user={selectedUser}
+                sessionUser={sessionUser}
+                isFriend={selectedUser ? friendIds.has(selectedUser.id) : false}
+                onAddFriend={handleAddFriend}
+                onRemoveFriend={handleRemoveFriend}
+              />
+            )}
+            {page === "friends" && <FriendsPage friends={friends} />}
+            {page === "login" && <LoginPage flow={authFlow} error={authError} />}
+            {page === "register" && <RegisterPage flow={authFlow} error={authError} />}
+            {page === "profile" && (
+              <ProfilePage
+                key={
+                  sessionUser
+                    ? `${sessionUser.id}:${sessionUser.name}:${sessionUser.email}`
+                    : "guest-profile"
+                }
+                sessionUser={sessionUser}
+                onUpdateProfile={handleProfileUpdate}
+                onAvatarUpload={handleAvatarUpload}
+              />
+            )}
+            {page === "discussions" && (
+              <DiscussionsPage
+                discussions={discussions}
+                error={writeError}
+                writeFlow={writeFlow}
+              />
+            )}
+            {page === "discussion-detail" && (
+              <DiscussionDetailPage
+                discussion={selectedDiscussion}
+                error={writeError}
+                writeFlow={writeFlow}
+              />
+            )}
+            {page === "mail" && (
+              <MailPage
+                mail={mail}
+                error={writeError}
+                sessionUser={sessionUser}
+                writeFlow={writeFlow}
+              />
+            )}
+            {page === "mail-detail" && <MailDetailPage message={selectedMail} />}
+            {page === "games" && <GamesPage games={games} />}
+          </section>
+        </div>
 
         <footer className="terminal-footer">
           <pre className="ascii-rule" aria-hidden="true">
@@ -705,7 +813,11 @@ export default function App() {
             available:{" "}
             <span>{availableCommands.join(" | ")}</span>
           </p>
-          <form onSubmit={handleCommandSubmit} className="command-form">
+          <form
+            onSubmit={handleCommandSubmit}
+            className="command-form"
+            onClick={handleCommandAreaClick}
+          >
             <label htmlFor="command-input">{getPromptLabel(authFlow, writeFlow, sessionUser)}</label>
             <input
               id="command-input"
@@ -719,6 +831,33 @@ export default function App() {
           </form>
         </footer>
       </section>
+      <div className={`command-help ${commandHelpOpen ? "open" : ""}`}>
+        {commandHelpOpen && (
+          <div className="command-help-popover" role="menu" aria-label="Available commands">
+            {availableCommands.map((command) => (
+              <button
+                key={command}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  void handleCommandHelpClick(command);
+                }}
+              >
+                {command}
+              </button>
+            ))}
+          </div>
+        )}
+        <button
+          type="button"
+          className="command-help-toggle"
+          aria-label="Show available commands"
+          aria-expanded={commandHelpOpen}
+          onClick={() => setCommandHelpOpen((isOpen) => !isOpen)}
+        >
+          ?
+        </button>
+      </div>
     </main>
   );
 }
@@ -759,11 +898,7 @@ function WelcomePage() {
   return (
     <TerminalSection title="Welcome">
       <pre className="welcome-logo" aria-label="42 ft_transcendence">
-{String.raw`   _  _   ____
-  | || | |___ \
-  | || |_  __) |
-  |__   _|/ __/
-     |_| |_____|
+{String.raw`TEST
 
 FT_TRANSCENDENCE`}
       </pre>
@@ -781,6 +916,7 @@ function HomePage({ sessionUser }: { sessionUser: SessionUser | null }) {
       <ol className="terminal-list">
         <li>discussions - public posts and replies</li>
         <li>users - board member list</li>
+        <li>friends - saved users and online status</li>
         <li>mail - non-live personal messages</li>
         <li>games - empty for now</li>
         <li>{sessionUser ? "logout - end this session" : "login / register - account access"}</li>
@@ -813,36 +949,124 @@ function HelpPage({ isLoggedIn }: { isLoggedIn: boolean }) {
   );
 }
 
-function UsersPage({ users }: { users: UserProfile[] }) {
+function AvatarImage({
+  user,
+  size = "small",
+}: {
+  user: Pick<UserProfile, "name" | "avatarUrl">;
+  size?: "small" | "large";
+}) {
+  return (
+    <img
+      className={`avatar-image ${size === "large" ? "large" : ""}`}
+      src={user.avatarUrl || DEFAULT_AVATAR_URL}
+      alt={`${user.name} avatar`}
+    />
+  );
+}
+
+function UsersPage({
+  users,
+  friendIds,
+}: {
+  users: UserProfile[];
+  friendIds: Set<number>;
+}) {
   return (
     <TerminalSection title="Users">
-      <ol className="terminal-list numbered">
-        {users.map((user) => (
-          <li key={user.id}>
-            <span>{user.name}</span>
-            <small>{user.email}</small>
-          </li>
-        ))}
-      </ol>
+      {users.length === 0 ? (
+        <p className="terminal-copy">No users available.</p>
+      ) : (
+        <ol className="terminal-list numbered user-list">
+          {users.map((user) => (
+            <li key={user.id}>
+              <AvatarImage user={user} />
+              <span>{user.name}</span>
+              <small>
+                {user.email} / {user.status}
+                {friendIds.has(user.id) ? " / friend" : ""}
+              </small>
+            </li>
+          ))}
+        </ol>
+      )}
     </TerminalSection>
   );
 }
 
-function UserDetailPage({ user }: { user: UserProfile | null }) {
+function UserDetailPage({
+  user,
+  sessionUser,
+  isFriend,
+  onAddFriend,
+  onRemoveFriend,
+}: {
+  user: UserProfile | null;
+  sessionUser: SessionUser | null;
+  isFriend: boolean;
+  onAddFriend: (userId: number) => Promise<void>;
+  onRemoveFriend: (userId: number) => Promise<void>;
+}) {
   if (!user) {
     return <TerminalSection title="User">No user selected.</TerminalSection>;
   }
 
+  const canManageFriendship = Boolean(sessionUser && sessionUser.id !== user.id);
+
   return (
     <TerminalSection title={`User: ${user.name}`}>
-      <dl className="terminal-facts">
-        <dt>ID</dt>
-        <dd>{user.id}</dd>
-        <dt>Name</dt>
-        <dd>{user.name}</dd>
-        <dt>Email</dt>
-        <dd>{user.email}</dd>
-      </dl>
+      <div className="profile-layout">
+        <AvatarImage user={user} size="large" />
+        <div>
+          <dl className="terminal-facts">
+            <dt>ID</dt>
+            <dd>{user.id}</dd>
+            <dt>Name</dt>
+            <dd>{user.name}</dd>
+            <dt>Email</dt>
+            <dd>{user.email}</dd>
+            <dt>Status</dt>
+            <dd>{user.status}</dd>
+            <dt>Bio</dt>
+            <dd>{user.bio}</dd>
+          </dl>
+          {canManageFriendship && (
+            <div className="friend-actions">
+              <button
+                className="terminal-button"
+                type="button"
+                onClick={() => {
+                  void (isFriend ? onRemoveFriend(user.id) : onAddFriend(user.id));
+                }}
+              >
+                {isFriend ? "remove friend" : "add friend"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </TerminalSection>
+  );
+}
+
+function FriendsPage({ friends }: { friends: UserProfile[] }) {
+  return (
+    <TerminalSection title="Friends">
+      {friends.length === 0 ? (
+        <p className="terminal-copy">No friends added yet.</p>
+      ) : (
+        <ol className="terminal-list numbered user-list">
+          {friends.map((friend) => (
+            <li key={friend.id}>
+              <AvatarImage user={friend} />
+              <span>{friend.name}</span>
+              <small>
+                {friend.email} / {friend.status}
+              </small>
+            </li>
+          ))}
+        </ol>
+      )}
     </TerminalSection>
   );
 }
@@ -875,21 +1099,95 @@ function RegisterPage({ flow, error }: { flow: AuthFlow; error: string }) {
 
 function ProfilePage({
   sessionUser,
+  onUpdateProfile,
+  onAvatarUpload,
 }: {
   sessionUser: SessionUser | null;
+  onUpdateProfile: (update: { name: string; email: string; bio: string }) => Promise<void>;
+  onAvatarUpload: (file: File) => Promise<void>;
 }) {
+  const [name, setName] = useState(sessionUser?.name ?? "");
+  const [email, setEmail] = useState(sessionUser?.email ?? "");
+  const [bio, setBio] = useState(sessionUser?.bio ?? "");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
   if (!sessionUser) {
     return <TerminalSection title="Profile">Not logged in.</TerminalSection>;
   }
 
+  async function handleSubmit(event: FormSubmitEvent) {
+    event.preventDefault();
+    setMessage("");
+    setError("");
+
+    try {
+      await onUpdateProfile({ name, email, bio });
+      setMessage("saved.");
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "could not save profile.");
+    }
+  }
+
+  async function handleAvatarChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setMessage("");
+    setError("");
+
+    try {
+      await onAvatarUpload(file);
+      setMessage("avatar saved.");
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "could not save avatar.");
+    } finally {
+      event.target.value = "";
+    }
+  }
+
   return (
     <TerminalSection title="Profile">
-      <dl className="terminal-facts">
-        <dt>Name</dt>
-        <dd>{sessionUser.name}</dd>
-        <dt>Email</dt>
-        <dd>{sessionUser.email}</dd>
-      </dl>
+      <div className="profile-layout">
+        <AvatarImage user={sessionUser} size="large" />
+        <div>
+          <dl className="terminal-facts">
+            <dt>Name</dt>
+            <dd>{sessionUser.name}</dd>
+            <dt>Email</dt>
+            <dd>{sessionUser.email}</dd>
+            <dt>Status</dt>
+            <dd>{sessionUser.status}</dd>
+            <dt>Bio</dt>
+            <dd>{sessionUser.bio}</dd>
+          </dl>
+          <form className="profile-form" onSubmit={handleSubmit}>
+            <label>
+              Name
+              <input value={name} onChange={(event) => setName(event.target.value)} />
+            </label>
+            <label>
+              Email
+              <input value={email} onChange={(event) => setEmail(event.target.value)} />
+            </label>
+            <label>
+              Bio
+              <textarea value={bio} onChange={(event) => setBio(event.target.value)} />
+            </label>
+            <label>
+              Avatar
+              <input type="file" accept="image/*" onChange={handleAvatarChange} />
+            </label>
+            <button className="terminal-button" type="submit">
+              save profile
+            </button>
+          </form>
+          {message && <p className="terminal-copy">{message}</p>}
+          {error && <p className="terminal-error">{error}</p>}
+        </div>
+      </div>
     </TerminalSection>
   );
 }
