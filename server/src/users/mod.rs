@@ -1,6 +1,7 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
 use serde::{Deserialize, Serialize};
+use diesel::{Queryable, Selectable};
 
 #[derive(Serialize, Deserialize)]
 pub struct CreateUser {
@@ -83,4 +84,14 @@ pub struct MailInfo {
     pub title: String,
     pub body: String,
     pub images: String,
+}
+
+#[derive(Serialize, Deserialize, Queryable, Selectable, Debug, Clone)]
+#[diesel(table_name = crate::schema::ftt_games)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct GameInfo {
+    pub id: i32,
+    pub author: i32,
+    pub name: String,
+    pub body: String,
 }

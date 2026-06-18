@@ -4,6 +4,7 @@ mod model;
 mod router;
 mod schema;
 mod users;
+mod games;
 
 use crate::model::inittialize_db;
 use crate::router::*;
@@ -13,10 +14,13 @@ use std::sync::Mutex;
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     let db = web::Data::new(Mutex::new(inittialize_db()));
+    let lobby = web::Data::new(Mutex::new(crate::games::Lobby::new()));
     HttpServer::new(move || {
         let dbc = db.clone();
+        let lobbyc = lobby.clone();
         App::new()
             .app_data(dbc)
+            .app_data(lobbyc)
             .route("/", web::get().to(index))
             .service(
                 web::scope("/users")
@@ -28,7 +32,8 @@ async fn main() -> std::io::Result<()> {
             .service(
                 web::scope("/games")
                     .service(show_games)
-                    .service(game_detail),
+                    .service(game_detail)
+                    .service(crate::games::play_game_ws),
             )
             .service(
                 web::scope("/discussions")

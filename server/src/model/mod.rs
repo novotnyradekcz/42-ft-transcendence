@@ -3,14 +3,17 @@
 pub(crate) mod database_initializer;
 mod database_migrations;
 pub mod user_handler;
+pub mod game_handler;
 
-use database_initializer::DatabaseInitializer;
+pub(crate) use database_initializer::DatabaseInitializer;
 use user_handler::seed_users_in_db;
+use game_handler::seed_games_in_db;
 
 pub fn inittialize_db() -> DatabaseInitializer {
     let mut dbinitializer = DatabaseInitializer::new();
     dbinitializer.connect();
     seed_users_in_db(&mut dbinitializer).expect("Failed to seed database users");
+    seed_games_in_db(&mut dbinitializer).expect("Failed to seed database games");
     dbinitializer
 }
 

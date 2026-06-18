@@ -1,3 +1,14 @@
+# OS files
+.DS_Store
+
+# Build artifacts
+frontend/public/glue.wasm
 frontend/node_modules/
 frontend/dist/
+
 server/target/
+
+# Local env configs
+.env
+.env.local
+*/.env

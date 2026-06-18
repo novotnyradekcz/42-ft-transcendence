@@ -12,7 +12,8 @@ export type Page =
   | "discussion-detail"
   | "mail"
   | "mail-detail"
-  | "games";
+  | "games"
+  | "game-play";
 
 export type UserProfile = {
   id: number;

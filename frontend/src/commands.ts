@@ -130,7 +130,8 @@ const pageCommands: Record<Page, string[]> = {
   "discussion-detail": ["write", "discussions", "menu", "back"],
   mail: ["list", "enter <number>", "write", "menu", "back"],
   "mail-detail": ["mail", "menu", "back"],
-  games: ["menu", "back"],
+  games: ["list", "enter <number>", "menu", "back"],
+  "game-play": ["back"],
 };
 
 export function getAvailableCommands(page: Page, isLoggedIn = false): string[] {
