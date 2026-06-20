@@ -518,6 +518,7 @@ code {
   font-weight: bold;
   cursor: pointer;
   user-select: none;
+  white-space: pre;
   /* Phosphor glow effect */
   text-shadow: 0 0 3px currentColor;
   transition: background-color 0.1s;

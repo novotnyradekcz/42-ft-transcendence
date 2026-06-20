@@ -128,14 +128,20 @@ export default function GamePlayPage({
           luaEngineRef.current = lua;
 
           // Expose draw_cell (1-indexed for Lua, maps to 0-indexed JS array)
-          lua.global.set("draw_cell", (x: number, y: number, char: string, color: string) => {
+          lua.global.set("draw_cell", (x: number, y: number, text: string, color: string) => {
             const r = y - 1;
-            const c = x - 1;
-            if (r >= 0 && r < GRID_ROWS && c >= 0 && c < GRID_COLS) {
-              gridRef.current[r][c] = {
-                char: char || " ",
-                color: color || "green",
-              };
+            const cStart = x - 1;
+            if (r >= 0 && r < GRID_ROWS) {
+              const str = String(text ?? " ");
+              for (let i = 0; i < str.length; i++) {
+                const c = cStart + i;
+                if (c >= 0 && c < GRID_COLS) {
+                  gridRef.current[r][c] = {
+                    char: str[i],
+                    color: color || "green",
+                  };
+                }
+              }
             }
           });
 
