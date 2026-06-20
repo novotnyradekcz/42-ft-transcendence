@@ -80,6 +80,19 @@ async fn main() -> std::io::Result<()> {
                     .service(show_games)
                     .service(game_detail),
             )
+            .service(
+                web::scope("/discussions")
+                    .service(show_discussions)
+                    .service(discussion_detail)
+                    .service(create_discussion)
+                    .service(create_discussion_post),
+            )
+            .service(
+                web::scope("/mail")
+                    .service(show_mail)
+                    .service(mail_detail)
+                    .service(create_mail),
+            )
     })
     .bind(("0.0.0.0", 8080))?
     .run()

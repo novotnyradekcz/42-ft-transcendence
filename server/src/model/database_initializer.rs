@@ -3,19 +3,19 @@
 use super::database_migrations::run_migrations;
 use diesel::prelude::*;
 use dotenvy::dotenv_override;
+use dotenvy::dotenv;
 use std::env;
 
 struct ServerEnvironment {
     database_url: String,
-    database_pwd: String,
 }
 
 impl ServerEnvironment {
     fn new() -> ServerEnvironment {
         dotenv_override().expect("TODO: panic message for dotenv_override");
+        dotenv().ok();
         Self {
             database_url: env::var("DATABASE_URL").expect("DATABASE_URL must be set"),
-            database_pwd: env::var("DATABASE_PASSWORD").expect("DATABASE_PWD must be set"),
         }
     }
 }

@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use actix_web::guard::Guard;
 use actix_web::web::Json;
 use crate::model::database_initializer::DatabaseInitializer;
-use crate::users::{CreateUser, UserInfo};
+use crate::users::{CreateUser, LoginUser, UserInfo};
 use diesel::prelude::*;
 use diesel::result::Error;
 use actix_security::prelude::{Argon2PasswordEncoder, Authenticator, PasswordEncoder, User};
@@ -12,6 +12,7 @@ use actix_web::web;
 
 #[derive(Queryable, Selectable, Clone)]
 #[diesel(table_name = crate::schema::ftt_users)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct DbUser {
     pub id: i32,
     pub name: String,
@@ -41,6 +42,54 @@ impl From<Error> for CreateUserError {
     }
 }
 
+fn public_user(user: User) -> UserInfo {
+    UserInfo {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        bio: "No profile info yet.".to_string(),
+        avatar_url: "/images/profile.png".to_string(),
+        status: "offline".to_string(),
+    }
+}
+
+fn connection(db: &mut DatabaseInitializer) -> &mut PgConnection {
+    db.connection
+        .as_mut()
+        .expect("Database connection is not established")
+}
+
+pub fn seed_users_in_db(db: &mut DatabaseInitializer) -> Result<(), diesel::result::Error> {
+    use crate::schema::ftt_users::dsl::*;
+
+    let conn = connection(db);
+    let seed_users = [
+        ("test", "test@example.local", "test"),
+        ("admin", "admin@example.local", "admin"),
+        ("guest", "guest@example.local", "guest"),
+    ];
+
+    for (seed_name, seed_email, seed_password) in seed_users {
+        let existing = ftt_users
+            .filter(name.eq(seed_name).or(email.eq(seed_email)))
+            .select(id)
+            .first::<i32>(conn)
+            .optional()?;
+
+        if existing.is_none() {
+            diesel::insert_into(ftt_users)
+                .values(&NewUser {
+                    name: seed_name,
+                    email: seed_email,
+                    password: seed_password,
+                })
+                .execute(conn)?;
+        }
+    }
+
+    Ok(())
+}
+
 pub fn get_user_from_db_by_name(db: &mut DatabaseInitializer, user_name: String) -> Option<DbUser> {
     use crate::schema::ftt_users::dsl::*;
 
@@ -55,6 +104,19 @@ pub fn get_user_from_db_by_name(db: &mut DatabaseInitializer, user_name: String)
         .select(DbUser::as_select())
         .first(conn)
         .optional().ok()?
+}
+
+pub fn list_users_in_db(
+    db: &mut DatabaseInitializer,
+) -> Result<Vec<UserInfo>, diesel::result::Error> {
+    use crate::schema::ftt_users::dsl::*;
+
+    let rows = ftt_users
+        .order(id.asc())
+        .select(User::as_select())
+        .load::<User>(connection(db))?;
+
+    Ok(rows.into_iter().map(public_user).collect())
 }
 
 pub fn get_all_users_from_db(pool: &web::Data<Mutex<DatabaseInitializer>>) -> Option<Vec<DbUser>> {
@@ -84,6 +146,21 @@ pub fn get_user_from_db_by_name_or_email(conn: &mut PgConnection, user_name: &St
         .select(DbUser::as_select())
         .first(conn)
         .optional().ok()?
+}
+
+pub fn get_user_in_db(
+    db: &mut DatabaseInitializer,
+    user_id: i32,
+) -> Result<Option<UserInfo>, diesel::result::Error> {
+    use crate::schema::ftt_users::dsl::*;
+
+    let user = ftt_users
+        .filter(id.eq(user_id))
+        .select(User::as_select())
+        .first::<User>(connection(db))
+        .optional()?;
+
+    Ok(user.map(public_user))
 }
 
 /// Creates a new user in ftt_users if no existing row shares the same name or email.
@@ -118,12 +195,7 @@ pub fn create_user_in_db(
         .returning(DbUser::as_returning())
         .get_result(conn)?;
 
-    Ok(UserInfo {
-        user_id: inserted.id as u32,
-        user_name: inserted.name,
-        user_email: inserted.email,
-        friends: vec![],
-    })
+    Ok(public_user(inserted))
 }
 
 #[cfg(test)]
