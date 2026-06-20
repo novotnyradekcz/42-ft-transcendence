@@ -8,7 +8,7 @@ mod authenticator;
 
 use std::sync::{Arc, Mutex};
 use crate::model::inittialize_db;
-use crate::router::{index, show_users, user_detail, create_user, show_games, game_detail};
+use crate::router::{index, show_users, user_detail, create_user, show_games, game_detail, show_discussions, discussion_detail, create_discussion, create_discussion_post, show_mail, mail_detail, create_mail};
 use actix_web::{web, App, HttpServer, Error as ActixError, cookie};
 use actix_web::cookie::CookieBuilder;
 use actix_security::http::security::{Argon2PasswordEncoder, PasswordEncoder, SessionFixationStrategy};

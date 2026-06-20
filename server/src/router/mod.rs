@@ -8,14 +8,12 @@ use serde::{Serialize, Deserialize};
 use serde_json;
 use downcast_rs::Downcast;
 use actix_web::{App, HttpServer, HttpResponse, Responder, web, get, post};
-use diesel::{Insertable, Queryable, Selectable};
+use diesel::{Insertable, PgConnection, Queryable, Selectable, SelectableHelper};
 use crate::authenticator::register_user;
-use crate::users::{CreateUser, LoginUser};
-use crate::model::user_handler::{create_user_in_db};
 use crate::model::database_initializer::{DatabaseInitializer};
 use crate::model::user_handler::CreateUserError;
 use crate::model::user_handler::{
-    create_user_in_db, get_user_in_db, list_users_in_db, login_user_in_db,
+    create_user_in_db, get_user_in_db, list_users_in_db,
 };
 use crate::users::{CreateDiscussion, CreateMail, CreatePost, CreateUser, LoginUser, MailQuery};
 
@@ -338,7 +336,11 @@ async fn create_post(user: AuthenticatedUser) -> impl Responder {
 #[get("/show")]
 pub async fn show_users(pool: web::Data<Mutex<DatabaseInitializer>>) -> impl Responder {
     let mut db = pool.lock().unwrap();
-    match list_users_in_db(&mut db) {
+    let conn = db
+        .connection
+        .as_mut()
+        .expect("create_user_in_db: Database connection is not established");
+    match list_users_in_db(conn) {
         Ok(users) => HttpResponse::Ok().json(users),
         Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
             "message": format!("Could not load users: {}", err),
@@ -365,22 +367,22 @@ pub async fn show_users(pool: web::Data<Mutex<DatabaseInitializer>>) -> impl Res
 //     // add more matchers per route as needed
 // }
 
-#[post("/login")]
-pub async fn login_user(
-    pool: web::Data<Mutex<DatabaseInitializer>>,
-    body: web::Json<LoginUser>,
-) -> impl Responder {
-    let mut db = pool.lock().unwrap();
-    match login_user_in_db(&mut db, &body) {
-        Ok(Some(user)) => HttpResponse::Ok().json(user),
-        Ok(None) => HttpResponse::Unauthorized().json(serde_json::json!({
-            "message": "Name or password is incorrect.",
-        })),
-        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "message": format!("Could not log in: {}", err),
-        })),
-    }
-}
+// #[post("/login")]
+// pub async fn login_user(
+//     pool: web::Data<Mutex<DatabaseInitializer>>,
+//     body: web::Json<LoginUser>,
+// ) -> impl Responder {
+//     let mut db = pool.lock().unwrap();
+//     match login_user_in_db(&mut db, &body) {
+//         Ok(Some(user)) => HttpResponse::Ok().json(user),
+//         Ok(None) => HttpResponse::Unauthorized().json(serde_json::json!({
+//             "message": "Name or password is incorrect.",
+//         })),
+//         Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
+//             "message": format!("Could not log in: {}", err),
+//         })),
+//     }
+// }
 
 #[post("/create")]
 pub async fn create_user(

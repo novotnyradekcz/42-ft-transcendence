@@ -42,7 +42,7 @@ impl From<Error> for CreateUserError {
     }
 }
 
-fn public_user(user: User) -> UserInfo {
+fn public_user(user: DbUser) -> UserInfo {
     UserInfo {
         id: user.id,
         name: user.name,
@@ -107,14 +107,14 @@ pub fn get_user_from_db_by_name(db: &mut DatabaseInitializer, user_name: String)
 }
 
 pub fn list_users_in_db(
-    db: &mut DatabaseInitializer,
+    conn: &mut PgConnection,
 ) -> Result<Vec<UserInfo>, diesel::result::Error> {
     use crate::schema::ftt_users::dsl::*;
 
     let rows = ftt_users
         .order(id.asc())
-        .select(User::as_select())
-        .load::<User>(connection(db))?;
+        .select(DbUser::as_select())
+        .load(conn)?;
 
     Ok(rows.into_iter().map(public_user).collect())
 }
@@ -156,8 +156,8 @@ pub fn get_user_in_db(
 
     let user = ftt_users
         .filter(id.eq(user_id))
-        .select(User::as_select())
-        .first::<User>(connection(db))
+        .select(DbUser::as_select())
+        .first::<DbUser>(connection(db))
         .optional()?;
 
     Ok(user.map(public_user))
