@@ -2,8 +2,10 @@
 
 use super::database_migrations::run_migrations;
 use diesel::prelude::*;
+use dotenvy::dotenv_override;
 use dotenvy::dotenv;
 use std::env;
+use crate::users::user_handler::seed_users_in_db;
 
 struct ServerEnvironment {
     database_url: String,
@@ -11,6 +13,7 @@ struct ServerEnvironment {
 
 impl ServerEnvironment {
     fn new() -> ServerEnvironment {
+        dotenv_override().expect("TODO: panic message for dotenv_override");
         dotenv().ok();
         Self {
             database_url: env::var("DATABASE_URL").expect("DATABASE_URL must be set"),
@@ -40,5 +43,29 @@ impl DatabaseInitializer {
         run_migrations(&mut connection);
         self.database_connected = true;
         self.connection = Some(connection);
+    }
+}
+
+pub fn inittialize_db() -> DatabaseInitializer {
+    let mut dbinitializer = DatabaseInitializer::new();
+    dbinitializer.connect();
+    seed_users_in_db(&mut dbinitializer).expect("Failed to seed database users");
+    dbinitializer
+}
+
+pub fn connection(db: &mut DatabaseInitializer) -> &mut PgConnection {
+    db.connection
+        .as_mut()
+        .expect("Database connection is not established")
+}
+
+#[cfg(test)]
+mod test {
+    use crate::model::database_initializer::inittialize_db;
+
+    #[test]
+    fn initialize_db_work() {
+        let db = inittialize_db();
+        assert_eq!(db.database_connected, true)
     }
 }
