@@ -1,16 +1,10 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock, RwLock};
-use actix_security::http::security::{Access, AuthenticationManager, AuthorizationManager, MemoryAuthenticator, RequestMatcherAuthorizer};
+use std::sync::{OnceLock, RwLock};
+use actix_security::http::security::{Access, AuthorizationManager, RequestMatcherAuthorizer};
 use actix_security::prelude::{Argon2PasswordEncoder, Authenticator, PasswordEncoder, User};
-use actix_web::{web, FromRequest, HttpRequest, HttpMessage, Responder};
-use actix_web::dev::{Payload, ServiceRequest};
-use actix_web::guard::Guard;
-use diesel::row::NamedRow;
-use crate::model::database_initializer::DatabaseInitializer;
-use crate::model::inittialize_db;
-use crate::model::user_handler::get_user_from_db_by_name;
+use actix_web::dev::{ServiceRequest};
 
 static USER_STORE: OnceLock<RwLock<HashMap<String, User>>> = OnceLock::new();
 
@@ -98,7 +92,7 @@ mod tests {
     #[test]
     fn register_and_lookup_user() {
         // Use a fresh map to avoid OnceLock collision across tests
-        let mut store: RwLock<HashMap<String, User>> = RwLock::new(HashMap::new());
+        let store: RwLock<HashMap<String, User>> = RwLock::new(HashMap::new());
         let user = alice();
         store.write().unwrap().insert(user.get_username().to_string(), user.clone());
         assert!(store.read().unwrap().contains_key("alice"));
@@ -107,7 +101,7 @@ mod tests {
     // Edge case: unknown username returns None
     #[test]
     fn unknown_user_not_found() {
-        let mut store: RwLock<HashMap<String, User>> = RwLock::new(HashMap::new());
+        let store: RwLock<HashMap<String, User>> = RwLock::new(HashMap::new());
         assert!(store.read().unwrap().get("bob").is_none());
     }
 

@@ -2,25 +2,6 @@
 
 pub(crate) mod database_initializer;
 mod database_migrations;
-pub mod user_handler;
+pub(crate) mod users;
+pub(crate) mod discussions;
 
-use database_initializer::DatabaseInitializer;
-use user_handler::seed_users_in_db;
-
-pub fn inittialize_db() -> DatabaseInitializer {
-    let mut dbinitializer = DatabaseInitializer::new();
-    dbinitializer.connect();
-    seed_users_in_db(&mut dbinitializer).expect("Failed to seed database users");
-    dbinitializer
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn initialize_db_work() {
-        let db = inittialize_db();
-        assert_eq!(db.database_connected, true)
-    }
-}

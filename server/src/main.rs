@@ -5,20 +5,20 @@ mod router;
 mod schema;
 mod users;
 mod authenticator;
+mod discussions;
+mod mails;
 
 use std::sync::{Arc, Mutex};
-use crate::model::inittialize_db;
+use model::database_initializer::inittialize_db;
 use crate::router::{index, show_users, user_detail, create_user, show_games, game_detail, show_discussions, discussion_detail, create_discussion, create_discussion_post, show_mail, mail_detail, create_mail};
-use actix_web::{web, App, HttpServer, Error as ActixError, cookie};
-use actix_web::cookie::CookieBuilder;
+use actix_web::{web, App, HttpServer, cookie};
 use actix_security::http::security::{Argon2PasswordEncoder, PasswordEncoder, SessionFixationStrategy};
 use actix_security::http::security::middleware::SecurityTransform;
-use actix_security::prelude::{Authenticator, JwtAuthenticator, JwtTokenService, SessionConfig, User};
-use actix_session::{storage::CookieSessionStore, Session, SessionMiddleware};
+use actix_security::prelude::{JwtAuthenticator, JwtTokenService, SessionConfig, User};
+use actix_session::{storage::CookieSessionStore, SessionMiddleware};
 use actix_web::web::Data;
-use serde::{Deserialize, Serialize};
 use crate::authenticator::{create_authenticator, create_authorizer, init_user_store};
-use crate::model::user_handler::get_all_users_from_db;
+use users::user_handler::get_all_users_from_db;
 
 struct AppState {
     users: Vec<User>,
@@ -36,6 +36,7 @@ async fn main() -> std::io::Result<()> {
     let encoder_data: Data<Argon2PasswordEncoder> = Data::new(encoder.clone());
     let dbusers = get_all_users_from_db(&db).expect("Users from DB failed.");
     let users: Vec<User> = dbusers.iter().map(|user| {
+        //TODO change later to plain password_hash from database, where passwords will be already encoded
         User::with_encoded_password(user.name.as_str(), encoder.encode(user.password.as_str())).roles(&["USER".into()])
     }).collect();
 
