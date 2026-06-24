@@ -22,17 +22,11 @@ type StoredUser = UserProfile & {
 
 type UserPayload = {
   id?: number | string;
-  user_id?: number | string;
   name?: string;
-  user_name?: string;
-  username?: string;
   email?: string;
-  user_email?: string;
   password?: string;
   bio?: string;
   avatarUrl?: string;
-  avatar_url?: string;
-  avatar?: string;
   status?: string;
 };
 
@@ -51,6 +45,7 @@ class ApiRequestError extends Error {
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
+    credentials: "include",
     ...init,
     headers: {
       Accept: "application/json",
@@ -98,9 +93,9 @@ function normalizedStatus(userId: number, status: unknown): UserProfile["status"
 
 function normalizeUser(payload: unknown): UserProfile {
   const user = payload as UserPayload;
-  const id = numberValue(user.id ?? user.user_id);
-  const name = textValue(user.name) || textValue(user.username) || textValue(user.user_name);
-  const email = textValue(user.email) || textValue(user.user_email);
+  const id = numberValue(user.id);
+  const name = textValue(user.name);
+  const email = textValue(user.email);
 
   if (id === null || !name || !email) {
     throw new Error("Invalid user payload.");
@@ -111,11 +106,7 @@ function normalizeUser(payload: unknown): UserProfile {
     name,
     email,
     bio: textValue(user.bio) || "No profile info yet.",
-    avatarUrl:
-      textValue(user.avatarUrl) ||
-      textValue(user.avatar_url) ||
-      textValue(user.avatar) ||
-      DEFAULT_AVATAR_URL,
+    avatarUrl: textValue(user.avatarUrl) || DEFAULT_AVATAR_URL,
     status: normalizedStatus(id, user.status),
   });
 }
@@ -260,13 +251,23 @@ export function findUserName(id: number): string {
 }
 
 export async function getCurrentUser(): Promise<SessionUser | null> {
-  currentUser = currentUser
-    ? {
-        ...applyStoredProfile(currentUser),
-        status: "online",
-      }
-    : null;
-  return currentUser;
+  try {
+    const user = normalizeUser(await requestJson<unknown>("/users/me"));
+    currentUser = {
+      ...user,
+      status: "online",
+    };
+    rememberUser(currentUser);
+    return currentUser;
+  } catch {
+    currentUser = currentUser
+      ? {
+          ...applyStoredProfile(currentUser),
+          status: "online",
+        }
+      : null;
+    return currentUser;
+  }
 }
 
 export async function login(name: string, password: string): Promise<SessionUser> {
@@ -293,6 +294,10 @@ export async function login(name: string, password: string): Promise<SessionUser
     rememberUser(currentUser);
     return currentUser;
   } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 401) {
+      throw new Error("Name or password is incorrect.", { cause: error });
+    }
+
     if (!shouldUseLocalFallback(error)) {
       throw error;
     }
@@ -327,23 +332,19 @@ export async function register(
   }
 
   try {
-    const user = normalizeUser(
-      await requestJson<unknown>("/users/create", {
-        method: "POST",
-        body: JSON.stringify({
-          name: cleanName,
-          email: cleanEmail,
-          password,
-        }),
+    await requestJson<unknown>("/users/create", {
+      method: "POST",
+      body: JSON.stringify({
+        name: cleanName,
+        email: cleanEmail,
+        password,
       }),
-    );
-    currentUser = {
-      ...user,
-      status: "online",
-    };
-    rememberUser(currentUser);
-    return currentUser;
+    });
   } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 417) {
+      throw new Error("Name or email is already registered.", { cause: error });
+    }
+
     if (!shouldUseLocalFallback(error)) {
       throw error;
     }
@@ -370,9 +371,28 @@ export async function register(
     rememberUser(currentUser);
     return currentUser;
   }
+
+  try {
+    return await login(cleanName, password);
+  } catch {
+    const user = await getUserByName(cleanName);
+    if (user) {
+      currentUser = {
+        ...applyStoredProfile(user),
+        status: "online",
+      };
+      rememberUser(currentUser);
+      return currentUser;
+    }
+    throw new Error("Account created. Please log in to continue.");
+  }
 }
 
 export async function logout(): Promise<void> {
+  await fetch(`${apiBaseUrl}/users/logout`, {
+    method: "POST",
+    credentials: "include",
+  }).catch(() => {});
   currentUser = null;
 }
 
@@ -473,6 +493,7 @@ export async function uploadAvatar(file: File): Promise<string> {
   });
   const response = await fetch(`/avatar-upload?${params.toString()}`, {
     method: "POST",
+    credentials: "include",
     headers: {
       "Content-Type": file.type,
     },

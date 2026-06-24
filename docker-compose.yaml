@@ -12,9 +12,25 @@ services:
       # Bind-mount the source tree so the container can build & run it.
       # The compiled artefacts (target/) stay on the host for layer caching.
       - ./server:/app
+    networks:
+      default:
+        aliases:
+          - backend
     depends_on:
       db:
         condition: service_healthy
+    restart: on-failure
+
+  # ── Frontend (Vite build and nginx) ─────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: /api
+    ports:
+      - "3000:80"
+    depends_on:
+      - server
     restart: on-failure
 
   # ── PostgreSQL 17 ─────────────────────────────────────────────────────────
