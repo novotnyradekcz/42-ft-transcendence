@@ -2,8 +2,6 @@
 
 use serde::{Deserialize, Serialize};
 
-pub mod user_handler;
-
 #[derive(Serialize, Deserialize)]
 pub struct CreateUser {
     pub name: String,

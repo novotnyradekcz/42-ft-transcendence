@@ -4,4 +4,3 @@ pub(crate) mod database_initializer;
 mod database_migrations;
 pub(crate) mod users;
 pub(crate) mod discussions;
-
