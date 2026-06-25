@@ -1,6 +1,12 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
 use diesel::prelude::*;
+use crate::model::database_initializer::DatabaseInitializer;
+use crate::users::{CreateUser, UserInfo};
+use std::convert::From;
+use std::sync::Mutex;
+use actix_security::prelude::{Argon2PasswordEncoder, PasswordEncoder};
+use actix_web::web;
 
 #[derive(Queryable, Selectable, Clone)]
 #[diesel(table_name = crate::schema::ftt_users)]
@@ -40,4 +46,194 @@ impl<'a> NewUser<'a> {
             password,
         }
     }
+}
+
+trait UserConversion {
+    type UserInfo;
+
+    fn try_into(self) -> Option<Self::UserInfo>;
+}
+
+impl From<DbUser> for UserInfo {
+
+    fn from(item: DbUser) -> Self {
+        Self {
+            id: item.id,
+            name: item.name,
+            email: item.email,
+            bio: "No profile info yet.".to_string(),
+            avatar_url: "/images/profile.png".to_string(),
+            status: "offline".to_string(),
+        }
+    }
+}
+
+impl UserConversion for Option<DbUser> {
+    type UserInfo = UserInfo;
+
+    fn try_into(self) -> Option<UserInfo> {
+        if let Some(item) = self {
+            Some(UserInfo::from(item))
+        } else {
+            None
+        }
+
+    }
+}
+
+
+pub enum CreateUserError {
+    /// A user with the same name or email already exists
+    AlreadyExists,
+    /// An unexpected database error occurred
+    DatabaseError(diesel::result::Error),
+}
+
+fn connection(db: &mut DatabaseInitializer) -> &mut PgConnection {
+    db.connection
+        .as_mut()
+        .expect("Database connection is not established")
+}
+
+pub fn seed_users_in_db(db: &mut DatabaseInitializer) -> Result<(), diesel::result::Error> {
+    use crate::schema::ftt_users::dsl::*;
+
+    let conn = connection(db);
+    let seed_users = [
+        ("test", "test@example.local", "test"),
+        ("admin", "admin@example.local", "admin"),
+        ("guest", "guest@example.local", "guest"),
+    ];
+
+    for (seed_name, seed_email, seed_password) in seed_users {
+        let existing = ftt_users
+            .filter(name.eq(seed_name).or(email.eq(seed_email)))
+            .select(id)
+            .first::<i32>(conn)
+            .optional()?;
+
+        if existing.is_none() {
+            diesel::insert_into(ftt_users)
+                .values(&NewUser {
+                    name: seed_name,
+                    email: seed_email,
+                    password: seed_password,
+                })
+                .execute(conn)?;
+        }
+    }
+
+    Ok(())
+}
+
+pub fn get_all_users_from_db(pool: &web::Data<Mutex<DatabaseInitializer>>) -> Option<Vec<DbUser>> {
+    use crate::schema::ftt_users::dsl::*;
+
+    let mut db = pool.lock().expect("create_user expect DatabaseInitializer");
+    let conn = connection(&mut db);
+
+
+    // Reject if name or email is already taken
+    ftt_users
+        .select(DbUser::as_select())
+        .load(conn)
+        .optional().ok()?
+}
+
+pub fn list_users_in_db(
+    db: &mut DatabaseInitializer,
+) -> Result<Vec<UserInfo>, diesel::result::Error> {
+    use crate::schema::ftt_users::dsl::*;
+
+    let rows = ftt_users
+        .order(id.asc())
+        .select(DbUser::as_select())
+        .load::<DbUser>(connection(db))?;
+
+    Ok(rows.into_iter().map(|user| UserInfo::from(user)).collect())
+}
+
+pub fn get_user_in_db(
+    db: &mut DatabaseInitializer,
+    user_id: i32,
+) -> Result<Option<UserInfo>, diesel::result::Error> {
+    use crate::schema::ftt_users::dsl::*;
+
+    let user = ftt_users
+        .filter(id.eq(user_id))
+        .select(DbUser::as_select())
+        .first::<DbUser>(connection(db))
+        .optional()?;
+
+    Ok(UserConversion::try_into(user))
+}
+
+pub fn login_user_in_db(
+    db: &mut DatabaseInitializer,
+    login: &DbUser,
+) -> Result<Option<UserInfo>, diesel::result::Error> {
+    use crate::schema::ftt_users::dsl::*;
+
+    let user = ftt_users
+        .filter(name.eq(&login.name).and(password.eq(&login.password)))
+        .select(DbUser::as_select())
+        .first::<DbUser>(connection(db))
+        .optional()?;
+
+    Ok(UserConversion::try_into(user))
+}
+
+impl From<diesel::result::Error> for CreateUserError {
+    fn from(e: diesel::result::Error) -> Self {
+        CreateUserError::DatabaseError(e)
+    }
+}
+
+/// Creates a new user in ftt_users if no existing row shares the same name or email.
+/// Returns the created user's info on success, or a `CreateUserError` on failure.
+pub fn create_user_in_db(
+    db: &mut DatabaseInitializer,
+    new_user: &CreateUser,
+    encoder: &Argon2PasswordEncoder,
+) -> Result<UserInfo, CreateUserError> {
+    use crate::schema::ftt_users::dsl::*;
+
+    let conn = connection(db);
+
+    // Reject if name or email is already taken
+    let existing = ftt_users
+        .filter(name.eq(&new_user.name).or(email.eq(&new_user.email)))
+        .select(DbUser::as_select())
+        .first(conn)
+        .optional()?;
+
+    if existing.is_some() {
+        return Err(CreateUserError::AlreadyExists);
+    }
+
+    // Insert and return the newly created row
+    let inserted_user: DbUser = diesel::insert_into(ftt_users)
+        .values(&NewUser {
+            name: &new_user.name,
+            email: &new_user.email,
+            password: &encoder.encode(&new_user.password),
+        })
+        .returning(DbUser::as_returning())
+        .get_result(conn)?;
+
+    Ok(UserInfo::from(inserted_user))
+}
+
+pub fn find_user_id_by_name(
+    db: &mut DatabaseInitializer,
+    user_name: &str,
+) -> Result<Option<i32>, diesel::result::Error> {
+    use crate::model::database_initializer;
+    use crate::schema::ftt_users::dsl as users;
+
+    users::ftt_users
+        .filter(users::name.eq(user_name))
+        .select(users::id)
+        .first::<i32>(database_initializer::connection(db))
+        .optional()
 }
