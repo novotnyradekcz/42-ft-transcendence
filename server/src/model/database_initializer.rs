@@ -5,7 +5,7 @@ use diesel::prelude::*;
 use dotenvy::dotenv_override;
 use dotenvy::dotenv;
 use std::env;
-use crate::users::user_handler::seed_users_in_db;
+use crate::model::users::seed_users_in_db;
 
 struct ServerEnvironment {
     database_url: String,
@@ -39,7 +39,7 @@ impl DatabaseInitializer {
 
     pub fn connect(&mut self) {
         let mut connection = PgConnection::establish(self.database_url.as_str())
-            .unwrap_or_else(|_| panic!("Error connecting to {}", self.database_url));
+            .unwrap_or_else(|_| panic!("Error: Database does not probably running, Can't connect to {}", self.database_url));
         run_migrations(&mut connection);
         self.database_connected = true;
         self.connection = Some(connection);

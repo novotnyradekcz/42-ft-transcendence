@@ -8,17 +8,20 @@ mod authenticator;
 mod discussions;
 mod mails;
 
-use std::sync::{Arc, Mutex};
-use model::database_initializer::inittialize_db;
+
+use crate::authenticator::{create_authenticator, create_authorizer, init_user_store};
+use crate::model::users::get_all_users_from_db;
 use crate::router::{index, show_users, user_detail, create_user, show_games, game_detail, show_discussions, discussion_detail, create_discussion, create_discussion_post, show_mail, mail_detail, create_mail};
+
 use actix_web::{web, App, HttpServer, cookie};
 use actix_security::http::security::{Argon2PasswordEncoder, PasswordEncoder, SessionFixationStrategy};
 use actix_security::http::security::middleware::SecurityTransform;
 use actix_security::prelude::{JwtAuthenticator, JwtTokenService, SessionConfig, User};
 use actix_session::{storage::CookieSessionStore, SessionMiddleware};
 use actix_web::web::Data;
-use crate::authenticator::{create_authenticator, create_authorizer, init_user_store};
-use users::user_handler::get_all_users_from_db;
+use model::database_initializer::inittialize_db;
+use std::sync::{Arc, Mutex};
+
 
 struct AppState {
     users: Vec<User>,
