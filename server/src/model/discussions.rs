@@ -142,12 +142,11 @@ impl<'a> NewPost<'a> {
     }
 }
 
-fn discussion_with_posts(
+pub fn discussion_with_posts(
     conn: &mut PgConnection,
     discussion: Discussion,
 ) -> Result<DiscussionInfo, Error> {
     use crate::discussions::discussion_response_factory;
-    use crate::schema::ftt_posts::dsl as posts;
 
     discussion_response_factory::create_discussion_response_factory(conn, discussion)
 }
