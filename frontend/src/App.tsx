@@ -34,6 +34,7 @@ import {
   uploadAvatar,
 } from "./api";
 import { commandDefinitions, getAvailableCommands, isCommand, parseCommand } from "./commands";
+import GamePlayPage from "./GamePlayPage";
 import type {
   DiscussionThread,
   GameSummary,
@@ -92,6 +93,7 @@ const pagePaths: Record<Page, string> = {
   mail: "/mail/show",
   "mail-detail": "/mail/show",
   games: "/games/show",
+  "game-play": "/games/play",
 };
 
 function pageFromPath(pathname: string): Page {
@@ -117,6 +119,10 @@ function pageFromPath(pathname: string): Page {
 
   if (pathname.startsWith("/mail/show")) {
     return "mail";
+  }
+
+  if (pathname.startsWith("/games/play")) {
+    return "game-play";
   }
 
   if (pathname === "/games/show") {
@@ -161,6 +167,7 @@ export default function App() {
   const [mail, setMail] = useState<MailMessage[]>([]);
   const [selectedMail, setSelectedMail] = useState<MailMessage | null>(null);
   const [games, setGames] = useState<GameSummary[]>([]);
+  const [selectedGame, setSelectedGame] = useState<GameSummary | null>(null);
 
   const [authFlow, setAuthFlow] = useState<AuthFlow>(() => {
     const initialPage = pageFromPath(window.location.pathname);
@@ -627,6 +634,24 @@ export default function App() {
       return;
     }
 
+    if (page === "games") {
+      const selected = games[index];
+      if (!selected) {
+        addLine("no game exists at that number.");
+        return;
+      }
+      if (!sessionUser) {
+        addLine("login first to play games.");
+        setAuthFlow({ mode: "login", step: "name", name: "" });
+        setAuthError("");
+        navigate("login");
+        return;
+      }
+      setSelectedGame(selected);
+      navigate("game-play", `/games/play/${selected.id}`);
+      return;
+    }
+
     addLine("enter is not available on this page.");
   }
 
@@ -894,6 +919,13 @@ export default function App() {
           )}
           {page === "mail-detail" && <MailDetailPage message={selectedMail} />}
           {page === "games" && <GamesPage games={games} />}
+          {page === "game-play" && (
+            <GamePlayPage
+              game={selectedGame}
+              sessionUser={sessionUser}
+              onBack={() => navigate("games")}
+            />
+          )}
         </section>
 
         <footer className="terminal-footer">
@@ -1418,7 +1450,7 @@ function GamesPage({ games }: { games: GameSummary[] }) {
           {games.map((game) => (
             <li key={game.id}>
               <span>{game.name}</span>
-              <small>by {findUserName(game.author)} / {game.body}</small>
+              <small>by {findUserName(game.author)}</small>
             </li>
           ))}
         </ol>

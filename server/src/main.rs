@@ -4,6 +4,7 @@ mod model;
 mod router;
 mod schema;
 mod users;
+mod games;
 mod authenticator;
 mod discussions;
 mod mails;
@@ -35,6 +36,7 @@ struct AppState {
 async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));
     let db = Data::new(Mutex::new(inittialize_db()));
+    let lobby = Data::new(Mutex::new(crate::games::Lobby::new()));
     let encoder = Argon2PasswordEncoder::new();
     let encoder_data: Data<Argon2PasswordEncoder> = Data::new(encoder.clone());
     let dbusers = get_all_users_from_db(&db).expect("Users from DB failed.");
@@ -59,6 +61,7 @@ async fn main() -> std::io::Result<()> {
 
         App::new()
             .app_data(db.clone())
+            .app_data(lobby.clone())
             .app_data(Data::new(state.clone()))
             .app_data(encoder_data.clone())
             .wrap(
@@ -82,7 +85,8 @@ async fn main() -> std::io::Result<()> {
             .service(
                 web::scope("/games")
                     .service(show_games)
-                    .service(game_detail),
+                    .service(game_detail)
+                    .service(crate::games::play_game_ws),
             )
             .service(
                 web::scope("/discussions")

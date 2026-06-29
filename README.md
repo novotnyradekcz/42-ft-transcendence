@@ -20,8 +20,7 @@ Or run Compose directly in detached mode:
 ```sh
 docker compose up --build -d
 ```
-If the installed CLI on your workstation is the legacy Compose v1 binary, the
-equivalent command is:
+If the installed CLI on your workstation is the legacy Compose v1 binary, the equivalent command is:
 ```sh
 docker-compose up --build -d
 ```

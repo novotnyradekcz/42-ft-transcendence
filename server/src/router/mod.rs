@@ -3,11 +3,12 @@
 use crate::authenticator::register_user;
 use crate::discussions::{CreateDiscussion, CreatePost, DiscussionInfo};
 use crate::mails::{CreateMail, MailInfo, MailQuery};
-use crate::model::database_initializer::DatabaseInitializer;
+use crate::model::database_initializer::{DatabaseInitializer, connection};
 use crate::model::discussions::{Discussion, Post};
 use crate::model::users::CreateUserError;
 use crate::model::users::{create_user_in_db, get_user_in_db, list_users_in_db};
 use crate::users::CreateUser;
+use crate::games::GameInfo;
 use actix_security::http::security::{Argon2PasswordEncoder, PasswordEncoder, User};
 use actix_web::{get, HttpResponse, post, Responder, web};
 use std::sync::Mutex;
@@ -279,14 +280,58 @@ pub async fn create_mail(
     }
 }
 
+pub fn list_games_in_db(
+    db: &mut DatabaseInitializer,
+) -> Result<Vec<GameInfo>, diesel::result::Error> {
+    use crate::schema::ftt_games::dsl as games;
+
+    let conn = connection(db);
+    games::ftt_games
+        .order(games::id.asc())
+        .select(GameInfo::as_select())
+        .load::<GameInfo>(conn)
+}
+
+pub fn get_game_in_db(
+    db: &mut DatabaseInitializer,
+    game_id: i32,
+) -> Result<Option<GameInfo>, diesel::result::Error> {
+    use crate::schema::ftt_games::dsl as games;
+
+    let conn = connection(db);
+    games::ftt_games
+        .filter(games::id.eq(game_id))
+        .select(GameInfo::as_select())
+        .first::<GameInfo>(conn)
+        .optional()
+}
+
 #[get("/show")]
-pub async fn show_games() -> impl Responder {
-    HttpResponse::Ok().json(serde_json::json!([]))
+pub async fn show_games(pool: web::Data<Mutex<DatabaseInitializer>>) -> impl Responder {
+    let mut db = pool.lock().unwrap();
+    match list_games_in_db(&mut db) {
+        Ok(games) => HttpResponse::Ok().json(games),
+        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "message": format!("Could not load games: {}", err),
+        })),
+    }
 }
 
 #[get("/show/{id}")]
-pub async fn game_detail(path: web::Path<(u32,)>) -> impl Responder {
-    HttpResponse::NotFound().json(serde_json::json!({
-        "message": format!("Game {} is not installed yet.", path.into_inner().0),
-    }))
+pub async fn game_detail(
+    pool: web::Data<Mutex<DatabaseInitializer>>,
+    path: web::Path<(i32,)>,
+) -> impl Responder {
+    let mut db = pool.lock().unwrap();
+    let game_id = path.into_inner().0;
+
+    match get_game_in_db(&mut db, game_id) {
+        Ok(Some(game)) => HttpResponse::Ok().json(game),
+        Ok(None) => HttpResponse::NotFound().json(serde_json::json!({
+            "message": format!("Game {} was not found.", game_id),
+        })),
+        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "message": format!("Could not load game {}: {}", game_id, err),
+        })),
+    }
 }
