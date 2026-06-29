@@ -1,3 +1,5 @@
+// Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
+
 use diesel::PgConnection;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 

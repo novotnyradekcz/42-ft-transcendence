@@ -1,12 +1,12 @@
-// Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
-
 pub(crate) mod database_initializer;
 mod database_migrations;
-pub mod user_handler;
 pub mod game_handler;
 
+pub(crate) mod users;
+pub(crate) mod discussions;
+pub(crate) mod mails;
 pub(crate) use database_initializer::DatabaseInitializer;
-use user_handler::seed_users_in_db;
+use users::seed_users_in_db;
 use game_handler::seed_games_in_db;
 
 pub fn inittialize_db() -> DatabaseInitializer {
@@ -27,3 +27,4 @@ mod test {
         assert_eq!(db.database_connected, true)
     }
 }
+

@@ -1,5 +1,11 @@
-# OS files
 .DS_Store
+.idea
+.agents
+
+# Local env configs
+.env
+.env.local
+*/.env
 
 # Build artifacts
 frontend/public/glue.wasm
@@ -7,8 +13,4 @@ frontend/node_modules/
 frontend/dist/
 
 server/target/
-
-# Local env configs
-.env
-.env.local
-*/.env
+server/.env

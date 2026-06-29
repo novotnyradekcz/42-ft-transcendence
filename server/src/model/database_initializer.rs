@@ -4,6 +4,7 @@ use super::database_migrations::run_migrations;
 use diesel::prelude::*;
 use dotenvy::dotenv;
 use std::env;
+use crate::model::users::seed_users_in_db;
 
 struct ServerEnvironment {
     database_url: String,
@@ -36,9 +37,33 @@ impl DatabaseInitializer {
 
     pub fn connect(&mut self) {
         let mut connection = PgConnection::establish(self.database_url.as_str())
-            .unwrap_or_else(|_| panic!("Error connecting to {}", self.database_url));
+            .unwrap_or_else(|_| panic!("Error: Database does not probably running, Can't connect to {}", self.database_url));
         run_migrations(&mut connection);
         self.database_connected = true;
         self.connection = Some(connection);
+    }
+}
+
+pub fn inittialize_db() -> DatabaseInitializer {
+    let mut dbinitializer = DatabaseInitializer::new();
+    dbinitializer.connect();
+    seed_users_in_db(&mut dbinitializer).expect("Failed to seed database users");
+    dbinitializer
+}
+
+pub fn connection(db: &mut DatabaseInitializer) -> &mut PgConnection {
+    db.connection
+        .as_mut()
+        .expect("Database connection is not established")
+}
+
+#[cfg(test)]
+mod test {
+    use crate::model::database_initializer::inittialize_db;
+
+    #[test]
+    fn initialize_db_work() {
+        let db = inittialize_db();
+        assert_eq!(db.database_connected, true)
     }
 }

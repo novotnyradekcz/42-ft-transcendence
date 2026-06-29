@@ -93,7 +93,7 @@ pub async fn play_game_ws(
     // Get user name from DB
     let user_name = {
         let mut db_lock = db.lock().unwrap();
-        match crate::model::user_handler::get_user_in_db(&mut db_lock, user_id) {
+        match crate::model::users::get_user_in_db(&mut db_lock, user_id) {
             Ok(Some(u)) => u.name,
             _ => format!("User#{}", user_id),
         }
