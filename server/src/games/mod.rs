@@ -5,8 +5,19 @@ use std::sync::Mutex;
 use actix_ws::{Session, Message};
 use serde::{Serialize, Deserialize};
 use actix_web::{get, web, Error, HttpRequest, HttpResponse};
+use diesel::{Queryable, Selectable};
 use crate::model::DatabaseInitializer;
 use crate::router::get_game_in_db;
+
+#[derive(Serialize, Deserialize, Queryable, Selectable, Debug, Clone)]
+#[diesel(table_name = crate::schema::ftt_games)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct GameInfo {
+    pub id: i32,
+    pub author: i32,
+    pub name: String,
+    pub body: String,
+}
 
 #[derive(Clone)]
 pub struct Player {
