@@ -1450,7 +1450,7 @@ function GamesPage({ games }: { games: GameSummary[] }) {
           {games.map((game) => (
             <li key={game.id}>
               <span>{game.name}</span>
-              <small>by {findUserName(game.author)} / {game.body}</small>
+              <small>by {findUserName(game.author)}</small>
             </li>
           ))}
         </ol>

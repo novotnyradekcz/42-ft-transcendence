@@ -132,6 +132,11 @@ small {
   content: "[" counter(bbs-list, decimal-leading-zero) "] ";
 }
 
+.terminal-list.numbered li span,
+.terminal-list.numbered li small {
+  display: inline;
+}
+
 .terminal-list span,
 code {
   color: #fff;
@@ -443,19 +448,20 @@ code {
 .game-play-container {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  width: 100%;
 }
 
 .game-status-bar {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
   align-items: center;
-  width: 100%;
-  max-width: 600px;
+  gap: 8px;
+  width: 480px;
   margin-bottom: 15px;
-  padding: 5px 10px;
-  border: 1px solid #33ff33;
+  padding: 10px 0;
+  border-top: 2px dashed #33ff33;
+  border-bottom: 2px dashed #33ff33;
+  border-left: none;
+  border-right: none;
   background-color: rgba(0, 20, 0, 0.5);
   font-family: "Courier New", Courier, monospace;
 }
@@ -481,10 +487,6 @@ code {
 
 .terminal-grid-wrapper {
   background-color: #000;
-  padding: 15px;
-  border: 3px double #33ff33;
-  box-shadow: 0 0 20px rgba(51, 255, 51, 0.15), inset 0 0 10px rgba(0, 0, 0, 0.8);
-  border-radius: 5px;
   position: relative;
   overflow: hidden;
 }
