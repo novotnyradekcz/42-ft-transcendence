@@ -5,6 +5,7 @@ use std::sync::{OnceLock, RwLock};
 use actix_security::http::security::{Access, AuthorizationManager, RequestMatcherAuthorizer};
 use actix_security::prelude::{Argon2PasswordEncoder, Authenticator, PasswordEncoder, User};
 use actix_web::dev::{ServiceRequest};
+use crate::AppState;
 
 static USER_STORE: OnceLock<RwLock<HashMap<String, User>>> = OnceLock::new();
 
@@ -25,20 +26,19 @@ pub fn register_user(user: User) {
 #[derive(Clone)]
 pub struct AuthMiddleware {
     store: &'static RwLock<HashMap<String, User>>,
-    encoder: Argon2PasswordEncoder,
 }
 
 impl AuthMiddleware {
     fn new() -> Self {
         Self {
             store: USER_STORE.get().expect("AuthMiddleware: call init_user_store() before HttpServer::new()"),
-            encoder: Argon2PasswordEncoder::new(),
         }
     }
 }
 
 impl Authenticator for AuthMiddleware {
     fn get_user(&self, req: &ServiceRequest) -> Option<User> {
+        let encoder = Argon2PasswordEncoder::new();
         // Parse HTTP Basic Auth: "Authorization: Basic base64(user:pass)"
         let header = req.headers().get("Authorization")?.to_str().ok()?;
         let b64 = header.strip_prefix("Basic ")?;
@@ -53,7 +53,7 @@ impl Authenticator for AuthMiddleware {
         let store = self.store.read().expect("USER_STORE RwLock poisoned");
         let user = store.get(username)?;
 
-        if self.encoder.matches(raw_password, user.get_password()) {
+        if encoder.matches(raw_password, user.get_password()) {
             Some(user.clone())
         } else {
             None

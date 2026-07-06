@@ -11,12 +11,13 @@ use crate::users::CreateUser;
 use crate::games::GameInfo;
 use actix_security::http::security::{Argon2PasswordEncoder, PasswordEncoder, User};
 use actix_web::{get, HttpResponse, post, Responder, web};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use crate::model::mails::Mail;
 use diesel::prelude::*;
 use diesel::result::Error;
 use serde_json;
+use crate::AppState;
 use crate::model::{discussions, mails, users};
 
 pub async fn index() -> HttpResponse {
@@ -36,8 +37,8 @@ async fn create_post(user: AuthenticatedUser) -> impl Responder {
 }*/
 
 #[get("/show")]
-pub async fn show_users(pool: web::Data<Mutex<DatabaseInitializer>>) -> impl Responder {
-    let mut db = pool.lock().unwrap();
+pub async fn show_users(pool: web::Data<Arc<AppState>>) -> impl Responder {
+    let mut db = pool.database.lock().expect("show_users expect DatabaseInitializer");
     match list_users_in_db(&mut db) {
         Ok(users) => HttpResponse::Ok().json(users),
         Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
@@ -48,11 +49,11 @@ pub async fn show_users(pool: web::Data<Mutex<DatabaseInitializer>>) -> impl Res
 
 #[post("/create")]
 pub async fn create_user(
-    pool: web::Data<Mutex<DatabaseInitializer>>,
+    pool: web::Data<Arc<AppState>>,
     encoder: web::Data<Argon2PasswordEncoder>,
     body: web::Json<CreateUser>,
 ) -> impl Responder {
-    let mut db = pool.lock().expect("create_user expect DatabaseInitializer");
+    let mut db = pool.database.lock().expect("create_user expect DatabaseInitializer");
     match create_user_in_db(&mut db, &body, encoder.get_ref()) {
         Ok(_) => {
             let encoded = encoder.encode(&body.password);
@@ -82,10 +83,10 @@ pub async fn create_user(
 
 #[get("/show/{id}")]
 pub async fn user_detail(
-    pool: web::Data<Mutex<DatabaseInitializer>>,
+    pool: web::Data<Arc<AppState>>,
     path: web::Path<(i32,)>,
 ) -> impl Responder {
-    let mut db = pool.lock().unwrap();
+    let mut db = pool.database.lock().unwrap();
     let user_id = path.into_inner().0;
 
     match get_user_in_db(&mut db, user_id) {
@@ -100,8 +101,8 @@ pub async fn user_detail(
 }
 
 #[get("/show")]
-pub async fn show_discussions(pool: web::Data<Mutex<DatabaseInitializer>>) -> impl Responder {
-    let mut db = pool.lock().unwrap();
+pub async fn show_discussions(pool: web::Data<Arc<AppState>>) -> impl Responder {
+    let mut db = pool.database.lock().expect("show_discussions expect DatabaseInitializer");
     match discussions::list_discussions_in_db(&mut db) {
         Ok(discussions) => HttpResponse::Ok().json(discussions),
         Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
@@ -112,10 +113,10 @@ pub async fn show_discussions(pool: web::Data<Mutex<DatabaseInitializer>>) -> im
 
 #[get("/show/{id}")]
 pub async fn discussion_detail(
-    pool: web::Data<Mutex<DatabaseInitializer>>,
+    pool: web::Data<Arc<AppState>>,
     path: web::Path<(i32,)>,
 ) -> impl Responder {
-    let mut db = pool.lock().unwrap();
+    let mut db = pool.database.lock().expect("discussion_detail expect DatabaseInitializer");
     let discussion_id = path.into_inner().0;
 
     match discussions::get_discussion_in_db(&mut db, discussion_id) {
@@ -131,7 +132,7 @@ pub async fn discussion_detail(
 
 #[post("/create")]
 pub async fn create_discussion(
-    pool: web::Data<Mutex<DatabaseInitializer>>,
+    pool: web::Data<Arc<AppState>>,
     body: web::Json<CreateDiscussion>,
 ) -> impl Responder {
     let author_id = match body.author {
@@ -149,7 +150,7 @@ pub async fn create_discussion(
         }));
     }
 
-    let mut db = pool.lock().unwrap();
+    let mut db = pool.database.lock().expect("create_discussion expect DatabaseInitializer");
     match discussions::create_discussion_in_db(&mut db, &body, author_id) {
         Ok(discussion) => HttpResponse::Created().json(discussion),
         Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
@@ -160,7 +161,7 @@ pub async fn create_discussion(
 
 #[post("/{id}/posts")]
 pub async fn create_discussion_post(
-    pool: web::Data<Mutex<DatabaseInitializer>>,
+    pool: web::Data<Arc<AppState>>,
     path: web::Path<(i32,)>,
     body: web::Json<CreatePost>,
 ) -> impl Responder {
@@ -179,7 +180,7 @@ pub async fn create_discussion_post(
         }));
     }
 
-    let mut db = pool.lock().unwrap();
+    let mut db = pool.database.lock().expect("create_discussion_post expect DatabaseInitializer");
     match discussions::create_post_in_db(&mut db, path.into_inner().0, &body, author_id) {
         Ok(discussion) => HttpResponse::Created().json(discussion),
         Err(diesel::result::Error::NotFound) => HttpResponse::NotFound().json(serde_json::json!({
@@ -193,7 +194,7 @@ pub async fn create_discussion_post(
 
 #[get("/show")]
 pub async fn show_mail(
-    pool: web::Data<Mutex<DatabaseInitializer>>,
+    pool: web::Data<Arc<AppState>>,
     query: web::Query<MailQuery>,
 ) -> impl Responder {
     let user_id = match query.user_id {
@@ -201,7 +202,7 @@ pub async fn show_mail(
         None => return HttpResponse::Ok().json(serde_json::json!([])),
     };
 
-    let mut db = pool.lock().unwrap();
+    let mut db = pool.database.lock().expect("show_mail expect DatabaseInitializer");
     match mails::list_mail_in_db(&mut db, user_id) {
         Ok(mail) => HttpResponse::Ok().json(mail),
         Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
@@ -212,10 +213,10 @@ pub async fn show_mail(
 
 #[get("/show/{id}")]
 pub async fn mail_detail(
-    pool: web::Data<Mutex<DatabaseInitializer>>,
+    pool: web::Data<Arc<AppState>>,
     path: web::Path<(i32,)>,
 ) -> impl Responder {
-    let mut db = pool.lock().unwrap();
+    let mut db = pool.database.lock().expect("mail_detail expect DatabaseInitializer");
     let mail_id = path.into_inner().0;
 
     match mails::get_mail_in_db(&mut db, mail_id) {
@@ -231,7 +232,7 @@ pub async fn mail_detail(
 
 #[post("/create")]
 pub async fn create_mail(
-    pool: web::Data<Mutex<DatabaseInitializer>>,
+    pool: web::Data<Arc<AppState>>,
     body: web::Json<CreateMail>,
 ) -> impl Responder {
     let sender_id = match body.sender {
@@ -249,7 +250,7 @@ pub async fn create_mail(
         }));
     }
 
-    let mut db = pool.lock().unwrap();
+    let mut db = pool.database.lock().expect("create_mail expect DatabaseInitializer");
     let recipient_id = match (body.recipient, body.to.as_deref()) {
         (Some(recipient_id), _) => recipient_id,
         (None, Some(to)) => match users::find_user_id_by_name(&mut db, to) {
@@ -307,8 +308,8 @@ pub fn get_game_in_db(
 }
 
 #[get("/show")]
-pub async fn show_games(pool: web::Data<Mutex<DatabaseInitializer>>) -> impl Responder {
-    let mut db = pool.lock().unwrap();
+pub async fn show_games(pool: web::Data<Arc<AppState>>) -> impl Responder {
+    let mut db = pool.database.lock().expect("show_games expect DatabaseInitializer");
     match list_games_in_db(&mut db) {
         Ok(games) => HttpResponse::Ok().json(games),
         Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
@@ -319,10 +320,10 @@ pub async fn show_games(pool: web::Data<Mutex<DatabaseInitializer>>) -> impl Res
 
 #[get("/show/{id}")]
 pub async fn game_detail(
-    pool: web::Data<Mutex<DatabaseInitializer>>,
+    pool: web::Data<Arc<AppState>>,
     path: web::Path<(i32,)>,
 ) -> impl Responder {
-    let mut db = pool.lock().unwrap();
+    let mut db = pool.database.lock().expect("game_detail expect DatabaseInitializer");
     let game_id = path.into_inner().0;
 
     match get_game_in_db(&mut db, game_id) {

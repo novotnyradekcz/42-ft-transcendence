@@ -126,11 +126,10 @@ pub fn seed_users_in_db(db: &mut DatabaseInitializer) -> Result<(), diesel::resu
     Ok(())
 }
 
-pub fn get_all_users_from_db(pool: &web::Data<Mutex<DatabaseInitializer>>) -> Option<Vec<DbUser>> {
+pub fn get_all_users_from_db(db: &mut DatabaseInitializer) -> Option<Vec<DbUser>> {
     use crate::schema::ftt_users::dsl::*;
 
-    let mut db = pool.lock().expect("create_user expect DatabaseInitializer");
-    let conn = connection(&mut db);
+    let conn = connection(db);
 
 
     // Reject if name or email is already taken

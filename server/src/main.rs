@@ -22,10 +22,12 @@ use actix_session::{storage::CookieSessionStore, SessionMiddleware};
 use actix_web::web::Data;
 use model::database_initializer::inittialize_db;
 use std::sync::{Arc, Mutex};
-
+use crate::games::Lobby;
+use crate::model::DatabaseInitializer;
 
 struct AppState {
-    users: Vec<User>,
+    database: Mutex<DatabaseInitializer>,
+    lobby: Lobby,
     encoder: Argon2PasswordEncoder,
     session_config: SessionConfig,
     jwt_authenticator: Option<JwtAuthenticator>,
@@ -34,20 +36,20 @@ struct AppState {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));
-    let db = Data::new(Mutex::new(inittialize_db()));
-    let lobby = Data::new(Mutex::new(crate::games::Lobby::new()));
+    env_logger::init_from_env(env_logger::Env::default().default_filter_or("debug"));
+    let mut db = inittialize_db();
+    let lobby = Lobby::new();
     let encoder = Argon2PasswordEncoder::new();
-    let encoder_data: Data<Argon2PasswordEncoder> = Data::new(encoder.clone());
-    let dbusers = get_all_users_from_db(&db).expect("Users from DB failed.");
+    let dbusers = get_all_users_from_db(&mut db).expect("Users from DB failed.");
     let users: Vec<User> = dbusers.iter().map(|user| {
         //TODO change later to plain password_hash from database, where passwords will be already encoded
-        User::with_encoded_password(user.name.as_str(), encoder.encode(user.password.as_str())).roles(&["USER".into()])
+        User::with_encoded_password(user.name.as_str(), user.password.clone()).roles(&["USER".into()])
     }).collect();
 
     let session_config = SessionConfig::new().user_key("user").fixation_strategy(SessionFixationStrategy::MigrateSession);
     let state = Arc::new(AppState {
-        users: users.clone(),
+        database: Mutex::new(db),
+        lobby,
         encoder,
         session_config,
         jwt_authenticator: None,
@@ -60,10 +62,7 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
 
         App::new()
-            .app_data(db.clone())
-            .app_data(lobby.clone())
             .app_data(Data::new(state.clone()))
-            .app_data(encoder_data.clone())
             .wrap(
                 SessionMiddleware::builder(CookieSessionStore::default(), secret_key.clone())
                     .cookie_secure(false)

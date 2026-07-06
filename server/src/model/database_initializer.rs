@@ -8,6 +8,8 @@ use crate::model::users::seed_users_in_db;
 
 struct ServerEnvironment {
     database_url: String,
+    pass_hash: String,
+    jwt_hash: String,
 }
 
 impl ServerEnvironment {
@@ -15,29 +17,31 @@ impl ServerEnvironment {
         dotenv().ok();
         Self {
             database_url: env::var("DATABASE_URL").expect("DATABASE_URL must be set"),
+            pass_hash: env::var("SECRET_HASH").expect("SECRET_HASH must be set"),
+            jwt_hash: env::var("JWT_HASH").expect("JWT_HASH must be set"),
         }
     }
 }
 
 pub struct DatabaseInitializer {
-    database_url: String,
-    pub(crate) database_connected: bool,
     pub(crate) connection: Option<PgConnection>,
+    pub(crate) database_connected: bool,
+    server_environment: ServerEnvironment,
 }
 
 impl DatabaseInitializer {
     pub fn new() -> DatabaseInitializer {
         let environment = ServerEnvironment::new();
         DatabaseInitializer {
-            database_url: environment.database_url,
-            database_connected: false,
             connection: None,
+            database_connected: false,
+            server_environment: environment,
         }
     }
 
     pub fn connect(&mut self) {
-        let mut connection = PgConnection::establish(self.database_url.as_str())
-            .unwrap_or_else(|_| panic!("Error: Database does not probably running, Can't connect to {}", self.database_url));
+        let mut connection = PgConnection::establish(self.server_environment.database_url.as_str())
+            .unwrap_or_else(|_| panic!("Error: Database does not probably running, Can't connect to {}", self.server_environment.database_url));
         run_migrations(&mut connection);
         self.database_connected = true;
         self.connection = Some(connection);
