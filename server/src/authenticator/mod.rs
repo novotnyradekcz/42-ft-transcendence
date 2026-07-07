@@ -49,10 +49,10 @@ impl Authenticator for AuthMiddleware {
 
         // Split at first ':' only — passwords may themselves contain ':'
         let (username, raw_password) = creds.split_once(':')?;
-
+        println!("User request: {:#?} {:?}", &username, &raw_password);
         let store = self.store.read().expect("USER_STORE RwLock poisoned");
         let user = store.get(username)?;
-
+        println!("User db: {:#?}", &user);
         if encoder.matches(raw_password, user.get_password()) {
             Some(user.clone())
         } else {

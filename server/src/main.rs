@@ -1,29 +1,29 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved.
 
+mod authenticator;
+mod discussions;
+mod games;
+mod mails;
 mod model;
 mod router;
 mod schema;
 mod users;
-mod games;
-mod authenticator;
-mod discussions;
-mod mails;
 
 
 use crate::authenticator::{create_authenticator, create_authorizer, init_user_store};
+use model::database_initializer::inittialize_db;
+use crate::games::{Lobby, play_game_ws};
+use crate::model::DatabaseInitializer;
 use crate::model::users::get_all_users_from_db;
 use crate::router::{index, show_users, user_detail, create_user, show_games, game_detail, show_discussions, discussion_detail, create_discussion, create_discussion_post, show_mail, mail_detail, create_mail};
 
-use actix_web::{web, App, HttpServer, cookie};
 use actix_security::http::security::{Argon2PasswordEncoder, PasswordEncoder, SessionFixationStrategy};
 use actix_security::http::security::middleware::SecurityTransform;
 use actix_security::prelude::{JwtAuthenticator, JwtTokenService, SessionConfig, User};
 use actix_session::{storage::CookieSessionStore, SessionMiddleware};
+use actix_web::{web, App, HttpServer, cookie};
 use actix_web::web::Data;
-use model::database_initializer::inittialize_db;
 use std::sync::{Arc, Mutex};
-use crate::games::Lobby;
-use crate::model::DatabaseInitializer;
 
 struct AppState {
     database: Mutex<DatabaseInitializer>,
@@ -37,6 +37,7 @@ struct AppState {
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::default().default_filter_or("debug"));
+
     let mut db = inittialize_db();
     let lobby = Lobby::new();
     let encoder = Argon2PasswordEncoder::new();
@@ -45,7 +46,6 @@ async fn main() -> std::io::Result<()> {
         //TODO change later to plain password_hash from database, where passwords will be already encoded
         User::with_encoded_password(user.name.as_str(), user.password.clone()).roles(&["USER".into()])
     }).collect();
-
     let session_config = SessionConfig::new().user_key("user").fixation_strategy(SessionFixationStrategy::MigrateSession);
     let state = Arc::new(AppState {
         database: Mutex::new(db),
@@ -60,7 +60,6 @@ async fn main() -> std::io::Result<()> {
     init_user_store(users);
 
     HttpServer::new(move || {
-
         App::new()
             .app_data(Data::new(state.clone()))
             .wrap(
@@ -85,7 +84,7 @@ async fn main() -> std::io::Result<()> {
                 web::scope("/games")
                     .service(show_games)
                     .service(game_detail)
-                    .service(crate::games::play_game_ws),
+                    .service(play_game_ws),
             )
             .service(
                 web::scope("/discussions")
