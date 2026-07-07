@@ -103,6 +103,18 @@ export const commandDefinitions: CommandDefinition[] = [
     usage: "back",
     description: "Go back one level. Ctrl+C and Escape also do this.",
   },
+  {
+    command: "lang",
+    aliases: ["language"],
+    usage: "lang en",
+    description: "Switch the interface language.",
+  },
+  {
+    command: "log",
+    aliases: ["output"],
+    usage: "log",
+    description: "Show or hide the activity log below the page content.",
+  },
 ];
 
 const pageCommands: Record<Page, string[]> = {
@@ -118,13 +130,15 @@ const pageCommands: Record<Page, string[]> = {
     "discussions",
     "mail",
     "games",
+    "lang <code>",
+    "log",
   ],
   help: ["menu", "back"],
   users: ["list", "enter <number>", "addfriend <number>", "menu", "back"],
   "user-detail": ["addfriend", "removefriend", "users", "menu", "back"],
   friends: ["list", "enter <number>", "removefriend <number>", "menu", "back"],
-  login: ["Ctrl+C", "Esc"],
-  register: ["Ctrl+C", "Esc"],
+  login: ["back"],
+  register: ["back"],
   profile: ["friends", "logout", "menu", "back"],
   discussions: ["list", "enter <number>", "write", "menu", "back"],
   "discussion-detail": ["write", "discussions", "menu", "back"],

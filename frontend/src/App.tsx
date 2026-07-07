@@ -1,5 +1,4 @@
 import {
-  type ChangeEvent,
   type FormEvent,
   type KeyboardEvent,
   type MouseEvent,
@@ -31,9 +30,10 @@ import {
   removeFriend,
   sendMail,
   updateCurrentUserProfile,
-  uploadAvatar,
 } from "./api";
 import { commandDefinitions, getAvailableCommands, isCommand, parseCommand } from "./commands";
+import { useTranslation, isLang } from "./i18n";
+import { censor, initModeration } from "./moderation";
 import GamePlayPage from "./GamePlayPage";
 import type {
   DiscussionThread,
@@ -149,14 +149,19 @@ function pageFromPath(pathname: string): Page {
 }
 
 export default function App() {
+  const { t, setLang, languages } = useTranslation();
   const [page, setPage] = useState<Page>(() => pageFromPath(window.location.pathname));
   const commandInputRef = useRef<HTMLInputElement>(null);
+  const terminalBodyRef = useRef<HTMLElement>(null);
   const [, setPageStack] = useState<Page[]>([]);
   const [commandInput, setCommandInput] = useState("");
-  const [terminalLines, setTerminalLines] = useState<string[]>([
-    "ft_transcendence BBS ready.",
-    "Type `menu` to enter.",
+  const [terminalLines, setTerminalLines] = useState<string[]>(() => [
+    t("ft_transcendence BBS ready."),
+    t("Type `menu` to enter."),
   ]);
+  const [logVisible, setLogVisible] = useState(false);
+  const commandHistoryRef = useRef<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState<number | null>(null);
 
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -186,14 +191,19 @@ export default function App() {
   const [writeError, setWriteError] = useState("");
   const [writeFlow, setWriteFlow] = useState<WriteFlow>(null);
   const [commandHelpOpen, setCommandHelpOpen] = useState(false);
+  const [helpSubmenu, setHelpSubmenu] = useState<string | null>(null);
 
   const availableCommands = useMemo(
-    () => getAvailableCommands(page, Boolean(sessionUser)),
-    [page, sessionUser],
+    () =>
+      authFlow || writeFlow
+        ? ["back"]
+        : getAvailableCommands(page, Boolean(sessionUser)),
+    [page, sessionUser, authFlow, writeFlow],
   );
   const friendIds = useMemo(() => new Set(friends.map((friend) => friend.id)), [friends]);
 
   useEffect(() => {
+    initModeration();
     refreshBoard();
   }, []);
 
@@ -202,9 +212,17 @@ export default function App() {
   }, [page, authFlow, writeFlow]);
 
   useEffect(() => {
+    if (logVisible) {
+      const body = terminalBodyRef.current;
+      body?.scrollTo({ top: body.scrollHeight });
+    }
+  }, [terminalLines, logVisible]);
+
+  useEffect(() => {
     function handlePopState() {
       const nextPage = pageFromPath(window.location.pathname);
       setPage(nextPage);
+      setHelpSubmenu(null);
       if (nextPage === "login") {
         setAuthFlow({ mode: "login", step: "name", name: "" });
       } else if (nextPage === "register") {
@@ -293,10 +311,17 @@ export default function App() {
     }
 
     setCommandInput("");
+    setHistoryIndex(null);
 
     if (authFlow) {
+      // Names and passwords typed during login/register stay out of the history.
       await handleAuthFlowInput(rawInput);
       return;
+    }
+
+    const history = commandHistoryRef.current;
+    if (history[history.length - 1] !== rawInput) {
+      history.push(rawInput);
     }
 
     if (writeFlow) {
@@ -309,6 +334,7 @@ export default function App() {
 
   async function executeCommand(rawInput: string, echo = true) {
     setCommandHelpOpen(false);
+    setHelpSubmenu(null);
 
     if (echo) {
       addLine(`> ${rawInput}`);
@@ -348,6 +374,24 @@ export default function App() {
 
     if (command === "list") {
       await refreshCurrentPage();
+      return;
+    }
+
+    if (command === "lang") {
+      const code = (args[0] ?? "").toLowerCase();
+      if (isLang(code)) {
+        setLang(code);
+        addLine(t("Language set to {lang}.", { lang: code }));
+      } else {
+        addLine(t("Usage: lang <en|cs|sl>"));
+      }
+      return;
+    }
+
+    if (command === "log") {
+      const nextVisible = !logVisible;
+      setLogVisible(nextVisible);
+      addLine(nextVisible ? t("Log shown.") : t("Log hidden."));
       return;
     }
 
@@ -423,14 +467,47 @@ export default function App() {
     }
   }
 
+  function toggleCommandHelp() {
+    setHelpSubmenu(null);
+    setCommandHelpOpen((isOpen) => !isOpen);
+  }
+
+  function currentPageEntries(): string[] {
+    switch (page) {
+      case "users":
+        return users.map((user) => user.name);
+      case "friends":
+        return friends.map((user) => user.name);
+      case "discussions":
+        return discussions.map((discussion) => discussion.name);
+      case "mail":
+        return mail.map((message) => message.title);
+      case "games":
+        return games.map((game) => game.name);
+      default:
+        return [];
+    }
+  }
+
+  function commandSubmenuOptions(commandName: string): { label: string; value: string }[] {
+    if (commandName === "lang") {
+      return languages.map((language) => ({ label: language.label, value: language.code }));
+    }
+
+    return currentPageEntries().map((entry, index) => ({
+      label: `[${String(index + 1).padStart(2, "0")}] ${entry}`,
+      value: String(index + 1),
+    }));
+  }
+
   async function handleCommandHelpClick(commandLabel: string) {
     const commandName = commandLabel.split(/\s+/)[0] ?? "";
     const normalizedCommand = commandName.toLowerCase();
     const needsValue = commandLabel.includes("<");
 
-    setCommandHelpOpen(false);
-
     if (authFlow || writeFlow) {
+      setCommandHelpOpen(false);
+      setHelpSubmenu(null);
       if (["back", "cancel", "ctrl+c", "esc"].includes(normalizedCommand)) {
         addLine(normalizedCommand === "ctrl+c" ? "^C" : commandName);
         cancelInputMode();
@@ -439,12 +516,20 @@ export default function App() {
     }
 
     if (needsValue) {
-      setCommandInput(`${commandName} `);
-      window.setTimeout(() => commandInputRef.current?.focus(), 0);
+      // Open the second menu of concrete choices instead of running yet.
+      setHelpSubmenu(normalizedCommand);
       return;
     }
 
+    setCommandHelpOpen(false);
+    setHelpSubmenu(null);
     await executeCommand(commandName);
+  }
+
+  async function handleCommandSubmenuSelect(commandName: string, value: string) {
+    setCommandHelpOpen(false);
+    setHelpSubmenu(null);
+    await executeCommand(`${commandName} ${value}`);
   }
 
   async function handleAuthFlowInput(rawInput: string) {
@@ -535,7 +620,11 @@ export default function App() {
       }
 
       try {
-        await sendMail(writeFlow.recipient, writeFlow.title, rawInput);
+        await sendMail(
+          writeFlow.recipient,
+          await censor(writeFlow.title),
+          await censor(rawInput),
+        );
         setWriteFlow(null);
         setWriteError("");
         await refreshBoard();
@@ -555,7 +644,10 @@ export default function App() {
       }
 
       try {
-        const discussion = await createDiscussion(writeFlow.title, rawInput);
+        const discussion = await createDiscussion(
+          await censor(writeFlow.title),
+          await censor(rawInput),
+        );
         setSelectedDiscussion(discussion);
         setWriteFlow(null);
         setWriteError("");
@@ -570,7 +662,7 @@ export default function App() {
     }
 
     try {
-      const discussion = await createPost(writeFlow.discussionId, rawInput);
+      const discussion = await createPost(writeFlow.discussionId, await censor(rawInput));
       setSelectedDiscussion(discussion);
       setWriteFlow(null);
       setWriteError("");
@@ -721,7 +813,12 @@ export default function App() {
     }
   }
 
-  async function handleProfileUpdate(update: { name: string; email: string; bio: string }) {
+  async function handleProfileUpdate(update: {
+    name: string;
+    email: string;
+    bio: string;
+    avatarUrl: string;
+  }) {
     try {
       const nextUser = await updateCurrentUserProfile(update);
       setSessionUser(nextUser);
@@ -729,28 +826,6 @@ export default function App() {
       addLine("profile updated.");
     } catch (error) {
       addLine(error instanceof Error ? error.message : "could not update profile.");
-      throw error;
-    }
-  }
-
-  async function handleAvatarUpload(file: File) {
-    if (!sessionUser) {
-      throw new Error("Login first to upload an avatar.");
-    }
-
-    try {
-      const avatarUrl = await uploadAvatar(file);
-      const nextUser = await updateCurrentUserProfile({
-        name: sessionUser.name,
-        email: sessionUser.email,
-        bio: sessionUser.bio,
-        avatarUrl,
-      });
-      setSessionUser(nextUser);
-      await refreshBoard();
-      addLine("avatar uploaded.");
-    } catch (error) {
-      addLine(error instanceof Error ? error.message : "could not upload avatar.");
       throw error;
     }
   }
@@ -804,6 +879,35 @@ export default function App() {
       event.preventDefault();
       addLine("Esc");
       cancelInputMode();
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      const history = commandHistoryRef.current;
+      if (history.length === 0) {
+        return;
+      }
+      event.preventDefault();
+      const nextIndex = historyIndex === null ? history.length - 1 : Math.max(0, historyIndex - 1);
+      setHistoryIndex(nextIndex);
+      setCommandInput(history[nextIndex]);
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      if (historyIndex === null) {
+        return;
+      }
+      event.preventDefault();
+      const history = commandHistoryRef.current;
+      const nextIndex = historyIndex + 1;
+      if (nextIndex >= history.length) {
+        setHistoryIndex(null);
+        setCommandInput("");
+      } else {
+        setHistoryIndex(nextIndex);
+        setCommandInput(history[nextIndex]);
+      }
     }
   }
 
@@ -852,21 +956,9 @@ export default function App() {
 |              FT_TRANSCENDENCE BBS               |
 +--------------------------------------------------+`}
           </pre>
-          <p className="terminal-kicker">bbs://ft_transcendence</p>
-          <p className="terminal-session">
-            {page === "welcome"
-              ? "connection waiting"
-              : `connected as ${sessionUser ? sessionUser.name : "guest"}`}
-          </p>
         </header>
 
-        <section className="terminal-output" aria-live="polite">
-          {terminalLines.map((line, index) => (
-            <p key={`${line}-${index}`}>{line}</p>
-          ))}
-        </section>
-
-        <section className="terminal-body">
+        <section className="terminal-body" ref={terminalBodyRef}>
           {page === "welcome" && <WelcomePage />}
           {page === "home" && <HomePage sessionUser={sessionUser} />}
           {page === "help" && <HelpPage isLoggedIn={Boolean(sessionUser)} />}
@@ -892,7 +984,6 @@ export default function App() {
               }
               sessionUser={sessionUser}
               onUpdateProfile={handleProfileUpdate}
-              onAvatarUpload={handleAvatarUpload}
             />
           )}
           {page === "discussions" && (
@@ -926,14 +1017,27 @@ export default function App() {
               onBack={() => navigate("games")}
             />
           )}
+          {logVisible && (
+            <section className="terminal-output">
+              <pre className="ascii-rule" aria-hidden="true">
+----------------------------------------------------
+              </pre>
+              {terminalLines.map((line, index) => (
+                <p key={`${line}-${index}`}>{line}</p>
+              ))}
+            </section>
+          )}
         </section>
 
         <footer className="terminal-footer">
           <pre className="ascii-rule" aria-hidden="true">
 ----------------------------------------------------
           </pre>
+          <p className="terminal-status" aria-live="polite">
+            {terminalLines[terminalLines.length - 1]}
+          </p>
           <p>
-            available:{" "}
+            {t("available:")}{" "}
             <span>{availableCommands.join(" | ")}</span>
           </p>
           <form
@@ -946,7 +1050,10 @@ export default function App() {
               id="command-input"
               value={commandInput}
               ref={commandInputRef}
-              onChange={(event) => setCommandInput(event.target.value)}
+              onChange={(event) => {
+                setCommandInput(event.target.value);
+                setHistoryIndex(null);
+              }}
               onKeyDown={handleCommandKeyDown}
               autoComplete="off"
               autoFocus
@@ -957,18 +1064,46 @@ export default function App() {
       <div className={`command-help ${commandHelpOpen ? "open" : ""}`}>
         {commandHelpOpen && (
           <div className="command-help-popover" role="menu" aria-label="Available commands">
-            {availableCommands.map((command) => (
-              <button
-                key={command}
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  void handleCommandHelpClick(command);
-                }}
-              >
-                {command}
-              </button>
-            ))}
+            {helpSubmenu === null ? (
+              availableCommands.map((command) => (
+                <button
+                  key={command}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    void handleCommandHelpClick(command);
+                  }}
+                >
+                  {command}
+                </button>
+              ))
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="command-help-back"
+                  onClick={() => setHelpSubmenu(null)}
+                >
+                  {t("‹ commands")}
+                </button>
+                {commandSubmenuOptions(helpSubmenu).length === 0 ? (
+                  <p className="command-help-empty">{t("No items to choose.")}</p>
+                ) : (
+                  commandSubmenuOptions(helpSubmenu).map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        void handleCommandSubmenuSelect(helpSubmenu, option.value);
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  ))
+                )}
+              </>
+            )}
           </div>
         )}
         <button
@@ -976,7 +1111,7 @@ export default function App() {
           className="command-help-toggle"
           aria-label="Show available commands"
           aria-expanded={commandHelpOpen}
-          onClick={() => setCommandHelpOpen((isOpen) => !isOpen)}
+          onClick={toggleCommandHelp}
         >
           ?
         </button>
@@ -1018,8 +1153,9 @@ function getPromptLabel(
 }
 
 function WelcomePage() {
+  const { t } = useTranslation();
   return (
-    <TerminalSection title="Welcome">
+    <TerminalSection title={t("Welcome")}>
       <pre className="welcome-logo" aria-label="42 ft_transcendence">
 {String.raw`   _  _   ____
   | || | |___ \
@@ -1029,30 +1165,38 @@ function WelcomePage() {
 
 FT_TRANSCENDENCE`}
       </pre>
-      <p className="terminal-copy">Type `menu` to enter the board.</p>
+      <p className="terminal-copy">{t("Type `menu` to enter the board.")}</p>
     </TerminalSection>
   );
 }
 
 function HomePage({ sessionUser }: { sessionUser: SessionUser | null }) {
+  const { t } = useTranslation();
   return (
-    <TerminalSection title="Main Menu">
+    <TerminalSection title={t("Main Menu")}>
       <p className="terminal-copy">
-        Welcome {sessionUser?.name ?? "guest"}. Choose a board section with commands.
+        {t("Welcome {name}.", {
+          name: sessionUser?.name ?? t("guest"),
+        })}
       </p>
       <ol className="terminal-list">
-        <li>discussions - public posts and replies</li>
-        <li>users - board member list</li>
-        <li>friends - saved users and online status</li>
-        <li>mail - non-live personal messages</li>
-        <li>games - empty for now</li>
-        <li>{sessionUser ? "logout - end this session" : "login / register - account access"}</li>
+        <li>{t("discussions - public posts and replies")}</li>
+        <li>{t("users - board member list")}</li>
+        <li>{t("friends - saved users and online status")}</li>
+        <li>{t("mail - non-live personal messages")}</li>
+        <li>{t("games - empty for now")}</li>
+        <li>
+          {sessionUser
+            ? t("logout - end this session")
+            : t("login / register - account access")}
+        </li>
       </ol>
     </TerminalSection>
   );
 }
 
 function HelpPage({ isLoggedIn }: { isLoggedIn: boolean }) {
+  const { t } = useTranslation();
   const visibleCommands = commandDefinitions.filter((command) => {
     if (isLoggedIn) {
       return command.command !== "login" && command.command !== "register";
@@ -1062,12 +1206,12 @@ function HelpPage({ isLoggedIn }: { isLoggedIn: boolean }) {
   });
 
   return (
-    <TerminalSection title="Help">
+    <TerminalSection title={t("Help")}>
       <div className="command-grid">
         {visibleCommands.map((command) => (
           <div key={command.command} className="command-row">
             <code>{command.usage}</code>
-            <span>{command.description}</span>
+            <span>{t(command.description)}</span>
             <small>{command.aliases.length ? `aliases: ${command.aliases.join(", ")}` : ""}</small>
           </div>
         ))}
@@ -1099,10 +1243,11 @@ function UsersPage({
   users: UserProfile[];
   friendIds: Set<number>;
 }) {
+  const { t } = useTranslation();
   return (
-    <TerminalSection title="Users">
+    <TerminalSection title={t("Users")}>
       {users.length === 0 ? (
-        <p className="terminal-copy">No users available.</p>
+        <p className="terminal-copy">{t("No users available.")}</p>
       ) : (
         <ol className="terminal-list numbered user-list">
           {users.map((user) => (
@@ -1110,8 +1255,8 @@ function UsersPage({
               <AvatarImage user={user} />
               <span>{user.name}</span>
               <small>
-                {user.email} / {user.status}
-                {friendIds.has(user.id) ? " / friend" : ""}
+                {user.email} / {t(user.status)}
+                {friendIds.has(user.id) ? ` / ${t("friend")}` : ""}
               </small>
             </li>
           ))}
@@ -1134,27 +1279,28 @@ function UserDetailPage({
   onAddFriend: (userId: number) => Promise<void>;
   onRemoveFriend: (userId: number) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   if (!user) {
-    return <TerminalSection title="User">No user selected.</TerminalSection>;
+    return <TerminalSection title={t("User")}>{t("No user selected.")}</TerminalSection>;
   }
 
   const canManageFriendship = Boolean(sessionUser && sessionUser.id !== user.id);
 
   return (
-    <TerminalSection title={`User: ${user.name}`}>
+    <TerminalSection title={t("User: {name}", { name: user.name })}>
       <div className="profile-layout">
         <AvatarImage user={user} size="large" />
         <div>
           <dl className="terminal-facts">
             <dt>ID</dt>
             <dd>{user.id}</dd>
-            <dt>Name</dt>
+            <dt>{t("Name")}</dt>
             <dd>{user.name}</dd>
-            <dt>Email</dt>
+            <dt>{t("Email")}</dt>
             <dd>{user.email}</dd>
-            <dt>Status</dt>
-            <dd>{user.status}</dd>
-            <dt>Bio</dt>
+            <dt>{t("Status")}</dt>
+            <dd>{t(user.status)}</dd>
+            <dt>{t("Bio")}</dt>
             <dd>{user.bio}</dd>
           </dl>
           {canManageFriendship && (
@@ -1166,7 +1312,7 @@ function UserDetailPage({
                   void (isFriend ? onRemoveFriend(user.id) : onAddFriend(user.id));
                 }}
               >
-                {isFriend ? "remove friend" : "add friend"}
+                {isFriend ? t("remove friend") : t("add friend")}
               </button>
             </div>
           )}
@@ -1177,10 +1323,11 @@ function UserDetailPage({
 }
 
 function FriendsPage({ friends }: { friends: UserProfile[] }) {
+  const { t } = useTranslation();
   return (
-    <TerminalSection title="Friends">
+    <TerminalSection title={t("Friends")}>
       {friends.length === 0 ? (
-        <p className="terminal-copy">No friends added yet.</p>
+        <p className="terminal-copy">{t("No friends added yet.")}</p>
       ) : (
         <ol className="terminal-list numbered user-list">
           {friends.map((friend) => (
@@ -1188,7 +1335,7 @@ function FriendsPage({ friends }: { friends: UserProfile[] }) {
               <AvatarImage user={friend} />
               <span>{friend.name}</span>
               <small>
-                {friend.email} / {friend.status}
+                {friend.email} / {t(friend.status)}
               </small>
             </li>
           ))}
@@ -1199,26 +1346,33 @@ function FriendsPage({ friends }: { friends: UserProfile[] }) {
 }
 
 function LoginPage({ flow, error }: { flow: AuthFlow; error: string }) {
+  const { t } = useTranslation();
   return (
-    <TerminalSection title="Login">
+    <TerminalSection title={t("Login")}>
       <p className="terminal-copy">
-        Login happens in the command input. Current prompt: {flow?.mode === "login" ? flow.step : "idle"}.
+        {t("Login happens in the command input. Current prompt: {step}.", {
+          step: flow?.mode === "login" ? flow.step : t("idle"),
+        })}
       </p>
-      <p className="terminal-copy">Press Ctrl+C or Esc to quit login.</p>
+      <p className="terminal-copy">{t("Press Ctrl+C or Esc to quit login.")}</p>
       {error && <p className="terminal-error">{error}</p>}
     </TerminalSection>
   );
 }
 
 function RegisterPage({ flow, error }: { flow: AuthFlow; error: string }) {
+  const { t } = useTranslation();
   return (
-    <TerminalSection title="Register">
+    <TerminalSection title={t("Register")}>
       <p className="terminal-copy">
-        Register happens in the command input. Current prompt:{" "}
-        {flow?.mode === "register" ? flow.step : "idle"}.
+        {t("Register happens in the command input. Current prompt: {step}.", {
+          step: flow?.mode === "register" ? flow.step : t("idle"),
+        })}
       </p>
-      <p className="terminal-copy">Registration sends name, email, and password to `/users/create`.</p>
-      <p className="terminal-copy">Press Ctrl+C or Esc to quit register.</p>
+      <p className="terminal-copy">
+        {t("Registration sends name, email, and password to `/users/create`.")}
+      </p>
+      <p className="terminal-copy">{t("Press Ctrl+C or Esc to quit register.")}</p>
       {error && <p className="terminal-error">{error}</p>}
     </TerminalSection>
   );
@@ -1227,20 +1381,25 @@ function RegisterPage({ flow, error }: { flow: AuthFlow; error: string }) {
 function ProfilePage({
   sessionUser,
   onUpdateProfile,
-  onAvatarUpload,
 }: {
   sessionUser: SessionUser | null;
-  onUpdateProfile: (update: { name: string; email: string; bio: string }) => Promise<void>;
-  onAvatarUpload: (file: File) => Promise<void>;
+  onUpdateProfile: (update: {
+    name: string;
+    email: string;
+    bio: string;
+    avatarUrl: string;
+  }) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [name, setName] = useState(sessionUser?.name ?? "");
   const [email, setEmail] = useState(sessionUser?.email ?? "");
   const [bio, setBio] = useState(sessionUser?.bio ?? "");
+  const [avatarUrl, setAvatarUrl] = useState(sessionUser?.avatarUrl ?? "");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
   if (!sessionUser) {
-    return <TerminalSection title="Profile">Not logged in.</TerminalSection>;
+    return <TerminalSection title={t("Profile")}>{t("Not logged in.")}</TerminalSection>;
   }
 
   async function handleSubmit(event: FormSubmitEvent) {
@@ -1249,66 +1408,52 @@ function ProfilePage({
     setError("");
 
     try {
-      await onUpdateProfile({ name, email, bio });
-      setMessage("saved.");
+      await onUpdateProfile({ name, email, bio, avatarUrl: avatarUrl.trim() });
+      setMessage(t("saved."));
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "could not save profile.");
-    }
-  }
-
-  async function handleAvatarChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) {
-      return;
-    }
-
-    setMessage("");
-    setError("");
-
-    try {
-      await onAvatarUpload(file);
-      setMessage("avatar saved.");
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "could not save avatar.");
-    } finally {
-      event.target.value = "";
+      setError(caughtError instanceof Error ? caughtError.message : t("could not save profile."));
     }
   }
 
   return (
-    <TerminalSection title="Profile">
+    <TerminalSection title={t("Profile")}>
       <div className="profile-layout">
         <AvatarImage user={sessionUser} size="large" />
         <div>
           <dl className="terminal-facts">
-            <dt>Name</dt>
+            <dt>{t("Name")}</dt>
             <dd>{sessionUser.name}</dd>
-            <dt>Email</dt>
+            <dt>{t("Email")}</dt>
             <dd>{sessionUser.email}</dd>
-            <dt>Status</dt>
-            <dd>{sessionUser.status}</dd>
-            <dt>Bio</dt>
+            <dt>{t("Status")}</dt>
+            <dd>{t(sessionUser.status)}</dd>
+            <dt>{t("Bio")}</dt>
             <dd>{sessionUser.bio}</dd>
           </dl>
           <form className="profile-form" onSubmit={handleSubmit}>
             <label>
-              Name
+              {t("Name")}
               <input value={name} onChange={(event) => setName(event.target.value)} />
             </label>
             <label>
-              Email
+              {t("Email")}
               <input value={email} onChange={(event) => setEmail(event.target.value)} />
             </label>
             <label>
-              Bio
+              {t("Bio")}
               <textarea value={bio} onChange={(event) => setBio(event.target.value)} />
             </label>
             <label>
-              Avatar
-              <input type="file" accept="image/*" onChange={handleAvatarChange} />
+              {t("Avatar URL")}
+              <input
+                type="url"
+                value={avatarUrl}
+                placeholder={DEFAULT_AVATAR_URL}
+                onChange={(event) => setAvatarUrl(event.target.value)}
+              />
             </label>
             <button className="terminal-button" type="submit">
-              save profile
+              {t("save profile")}
             </button>
           </form>
           {message && <p className="terminal-copy">{message}</p>}
@@ -1328,22 +1473,29 @@ function DiscussionsPage({
   error: string;
   writeFlow: WriteFlow;
 }) {
+  const { t } = useTranslation();
   return (
-    <TerminalSection title="Discussions">
+    <TerminalSection title={t("Discussions")}>
       <ol className="terminal-list numbered">
-        {discussions.map((discussion) => (
-          <li key={discussion.id}>
-            <span>{discussion.name}</span>
-            <small>
-              {discussion.nPosts} posts / {discussion.info}
-            </small>
-          </li>
-        ))}
+        {discussions.map((discussion) => {
+          const latestPost = discussion.posts[discussion.posts.length - 1];
+          return (
+            <li key={discussion.id}>
+              <span>{discussion.name}</span>
+              <small>
+                {t("{count} posts", { count: discussion.nPosts })} /{" "}
+                {latestPost?.body || discussion.info}
+              </small>
+            </li>
+          );
+        })}
       </ol>
       {writeFlow?.mode === "new-discussion" && (
         <WriteStatus
           error={error}
-          text={`Writing new discussion. Current prompt: ${writeFlow.step}.`}
+          text={t("Writing new discussion. Current prompt: {step}.", {
+            step: writeFlow.step,
+          })}
         />
       )}
     </TerminalSection>
@@ -1359,13 +1511,18 @@ function DiscussionDetailPage({
   error: string;
   writeFlow: WriteFlow;
 }) {
+  const { t } = useTranslation();
   if (!discussion) {
-    return <TerminalSection title="Discussion">No discussion selected.</TerminalSection>;
+    return (
+      <TerminalSection title={t("Discussion")}>{t("No discussion selected.")}</TerminalSection>
+    );
   }
 
   return (
-    <TerminalSection title={discussion.name}>
-      <p className="terminal-copy">{discussion.info}</p>
+    <TerminalSection title={discussion.name}> {}
+      {discussion.posts.length === 0 && (
+        <p className="terminal-copy">{discussion.info}</p>
+      )}
       <div className="post-list">
         {discussion.posts.map((post) => (
           <article key={post.id}>
@@ -1375,7 +1532,10 @@ function DiscussionDetailPage({
         ))}
       </div>
       {writeFlow?.mode === "reply" && (
-        <WriteStatus error={error} text="Writing reply. Enter the reply in the command line." />
+        <WriteStatus
+          error={error}
+          text={t("Writing reply. Enter the reply in the command line.")}
+        />
       )}
     </TerminalSection>
   );
@@ -1392,10 +1552,11 @@ function MailPage({
   sessionUser: SessionUser | null;
   writeFlow: WriteFlow;
 }) {
+  const { t } = useTranslation();
   return (
-    <TerminalSection title="Personal Mail">
+    <TerminalSection title={t("Personal Mail")}>
       {mail.length === 0 ? (
-        <p className="terminal-copy">No mail available. Log in to view your inbox.</p>
+        <p className="terminal-copy">{t("No mail available. Log in to view your inbox.")}</p>
       ) : (
         <ol className="terminal-list numbered">
           {mail.map((message) => (
@@ -1403,8 +1564,8 @@ function MailPage({
               <span>{message.title}</span>
               <small>
                 {message.sender === sessionUser?.id
-                  ? `sent to ${findUserName(message.recipient)}`
-                  : `from ${findUserName(message.sender)}`}
+                  ? t("sent to {name}", { name: findUserName(message.recipient) })
+                  : t("from {name}", { name: findUserName(message.sender) })}
               </small>
             </li>
           ))}
@@ -1413,7 +1574,7 @@ function MailPage({
       {writeFlow?.mode === "mail" && (
         <WriteStatus
           error={error}
-          text={`Writing mail. Current prompt: ${writeFlow.step}.`}
+          text={t("Writing mail. Current prompt: {step}.", { step: writeFlow.step })}
         />
       )}
     </TerminalSection>
@@ -1421,18 +1582,19 @@ function MailPage({
 }
 
 function MailDetailPage({ message }: { message: MailMessage | null }) {
+  const { t } = useTranslation();
   if (!message) {
-    return <TerminalSection title="Mail">No message selected.</TerminalSection>;
+    return <TerminalSection title={t("Mail")}>{t("No message selected.")}</TerminalSection>;
   }
 
   return (
-    <TerminalSection title="Mail">
+    <TerminalSection title={t("Mail")}>
       <dl className="terminal-facts">
-        <dt>From</dt>
+        <dt>{t("From")}</dt>
         <dd>{findUserName(message.sender)}</dd>
-        <dt>To</dt>
+        <dt>{t("To")}</dt>
         <dd>{findUserName(message.recipient)}</dd>
-        <dt>Title</dt>
+        <dt>{t("Title")}</dt>
         <dd>{message.title}</dd>
       </dl>
       <p className="terminal-copy">{message.body}</p>
@@ -1441,10 +1603,11 @@ function MailDetailPage({ message }: { message: MailMessage | null }) {
 }
 
 function GamesPage({ games }: { games: GameSummary[] }) {
+  const { t } = useTranslation();
   return (
-    <TerminalSection title="Games">
+    <TerminalSection title={t("Games")}>
       {games.length === 0 ? (
-        <p className="terminal-copy">No games installed yet.</p>
+        <p className="terminal-copy">{t("No games installed yet.")}</p>
       ) : (
         <ol className="terminal-list numbered">
           {games.map((game) => (
@@ -1468,9 +1631,6 @@ function TerminalSection({
 }) {
   return (
     <section className="terminal-section">
-      <pre className="ascii-rule" aria-hidden="true">
-----------------------------------------------------
-      </pre>
       <h2>{`[ ${title} ]`}</h2>
       {children}
     </section>
@@ -1478,10 +1638,11 @@ function TerminalSection({
 }
 
 function WriteStatus({ error, text }: { error: string; text: string }) {
+  const { t } = useTranslation();
   return (
     <div className="write-status">
       <p className="terminal-copy">{text}</p>
-      <p className="terminal-copy">Press Ctrl+C or Esc to cancel.</p>
+      <p className="terminal-copy">{t("Press Ctrl+C or Esc to cancel.")}</p>
       {error && <p className="terminal-error">{error}</p>}
     </div>
   );

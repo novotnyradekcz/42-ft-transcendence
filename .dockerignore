@@ -1,0 +1,9 @@
+# Build context for the `server` image is this directory (see docker-compose.yml),
+# but the image copies nothing from it — the source is bind-mounted at runtime.
+# Excluding build artifacts keeps the context small and avoids "no permission to
+# read" failures on root-owned files that the server container writes into
+# server/target through the bind mount.
+server/target
+frontend/node_modules
+frontend/dist
+.git

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { LuaFactory } from "wasmoon";
+import { LuaFactory, type LuaEngine } from "wasmoon";
 import type { GameSummary, SessionUser } from "./types";
 
 const GRID_COLS = 40;
@@ -37,11 +37,18 @@ export default function GamePlayPage({
     }
     return flat;
   });
-  const [status, setStatus] = useState<"connecting" | "waiting" | "playing" | "disconnected" | "error">("connecting");
-  const [statusMessage, setStatusMessage] = useState("Connecting to server...");
+  // The page is mounted fresh on each navigation, so the "details missing"
+  // case can be decided at mount instead of inside the effect (lint:
+  // react-hooks/set-state-in-effect).
+  const [status, setStatus] = useState<"connecting" | "waiting" | "playing" | "disconnected" | "error">(
+    () => (game && sessionUser ? "connecting" : "error"),
+  );
+  const [statusMessage, setStatusMessage] = useState(() =>
+    game && sessionUser ? "Connecting to server..." : "Game or session details missing.",
+  );
 
   const wsRef = useRef<WebSocket | null>(null);
-  const luaEngineRef = useRef<any>(null);
+  const luaEngineRef = useRef<LuaEngine | null>(null);
   const gridRef = useRef<Cell[][]>(createEmptyGrid());
   const statusRef = useRef(status);
 
@@ -88,14 +95,12 @@ export default function GamePlayPage({
 
   useEffect(() => {
     if (!game || !sessionUser) {
-      setStatus("error");
-      setStatusMessage("Game or session details missing.");
       return;
     }
 
-    // Reset grid
+    // Reset the draw buffer; the grid state already starts empty, so no
+    // synchronous re-render is needed here (lint: set-state-in-effect).
     gridRef.current = createEmptyGrid();
-    forceUpdate();
 
     // Setup WebSocket
     const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";

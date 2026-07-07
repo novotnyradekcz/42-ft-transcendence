@@ -10,13 +10,15 @@ mod discussions;
 mod mails;
 
 
-use crate::authenticator::{create_authenticator, create_authorizer, init_user_store};
+// create_authenticator / create_authorizer are only referenced by the disabled SecurityTransform wrap.
+use crate::authenticator::init_user_store;
 use crate::model::users::get_all_users_from_db;
-use crate::router::{index, show_users, user_detail, create_user, show_games, game_detail, show_discussions, discussion_detail, create_discussion, create_discussion_post, show_mail, mail_detail, create_mail};
+use crate::router::{index, login_user, update_profile, list_friends, add_friend, remove_friend, show_users, user_detail, create_user, show_games, game_detail, show_discussions, discussion_detail, create_discussion, create_discussion_post, show_mail, mail_detail, create_mail};
 
 use actix_web::{web, App, HttpServer, cookie};
 use actix_security::http::security::{Argon2PasswordEncoder, PasswordEncoder, SessionFixationStrategy};
-use actix_security::http::security::middleware::SecurityTransform;
+// Kept commented out alongside the disabled SecurityTransform wrap below; re-enable together.
+// use actix_security::http::security::middleware::SecurityTransform;
 use actix_security::prelude::{JwtAuthenticator, JwtTokenService, SessionConfig, User};
 use actix_session::{storage::CookieSessionStore, SessionMiddleware};
 use actix_web::web::Data;
@@ -55,7 +57,6 @@ async fn main() -> std::io::Result<()> {
         jwt_authenticator: None,
         jwt_token_service: None,
     });
-    let secret_key = cookie::Key::generate();
 
     init_user_store(users);
 
@@ -63,20 +64,29 @@ async fn main() -> std::io::Result<()> {
 
         App::new()
             .app_data(Data::new(state.clone()))
-            .wrap(
-                SessionMiddleware::builder(CookieSessionStore::default(), secret_key.clone())
-                    .cookie_secure(false)
-                    .build(),
-            )
-            .wrap(
-                SecurityTransform::new()
-                    .config_authenticator(create_authenticator)
-                    .config_authorizer(create_authorizer),
-            )
+            // Register the password encoder separately so create_user / login_user
+            // can extract it as web::Data<Argon2PasswordEncoder>.
+            .app_data(Data::new(state.encoder.clone()))
+            // Session cookies dropped: the SPA uses stateless login (verify creds,
+            // return the user; no cookie/token), so there is no SessionMiddleware.
+            // SecurityTransform is disabled for now: with `http_basic()` its authorizer
+            // returns 401 for every request that carries no HTTP Basic credentials, and
+            // the browser SPA never sends any — so every frontend call (users, discussions,
+            // mail, and the /games/play/ws websocket) would be rejected. Re-enable once the
+            // auth layer understands browser requests.
+            // .wrap(
+            //     SecurityTransform::new()
+            //         .config_authenticator(create_authenticator)
+            //         .config_authorizer(create_authorizer),
+            // )
             .route("/", web::get().to(index))
             .service(
                 web::scope("/users")
-                   // .service(login_user)
+                    .service(login_user)
+                    .service(update_profile)
+                    .service(list_friends)
+                    .service(add_friend)
+                    .service(remove_friend)
                     .service(show_users)
                     .service(user_detail)
                     .service(create_user),
