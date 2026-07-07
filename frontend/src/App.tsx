@@ -12,6 +12,7 @@ import {
   DEFAULT_AVATAR_URL,
   addFriend,
   createDiscussion,
+  createGame,
   createPost,
   findUserName,
   getCurrentUser,
@@ -1009,7 +1010,16 @@ export default function App() {
             />
           )}
           {page === "mail-detail" && <MailDetailPage message={selectedMail} />}
-          {page === "games" && <GamesPage games={games} />}
+          {page === "games" && (
+            <GamesPage
+              games={games}
+              sessionUser={sessionUser}
+              onUploadSuccess={async () => {
+                const nextGames = await listGames();
+                setGames(nextGames);
+              }}
+            />
+          )}
           {page === "game-play" && (
             <GamePlayPage
               game={selectedGame}
@@ -1602,23 +1612,119 @@ function MailDetailPage({ message }: { message: MailMessage | null }) {
   );
 }
 
-function GamesPage({ games }: { games: GameSummary[] }) {
+interface GamesPageProps {
+  games: GameSummary[];
+  sessionUser: SessionUser | null;
+  onUploadSuccess: () => void;
+}
+
+function GamesPage({ games, sessionUser, onUploadSuccess }: GamesPageProps) {
   const { t } = useTranslation();
+  const [gameName, setGameName] = useState("");
+  const [luaCode, setLuaCode] = useState("");
+  const [uploadError, setUploadError] = useState("");
+  const [uploadSuccess, setUploadSuccess] = useState("");
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setLuaCode(event.target?.result as string || "");
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  const handleUploadSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setUploadError("");
+    setUploadSuccess("");
+
+    if (!sessionUser) {
+      setUploadError(t("You must be logged in to upload a game."));
+      return;
+    }
+
+    if (!gameName.trim()) {
+      setUploadError(t("Game name is required."));
+      return;
+    }
+
+    if (!luaCode.trim()) {
+      setUploadError(t("Lua script file is required."));
+      return;
+    }
+
+    try {
+      await createGame(gameName, luaCode, sessionUser.id);
+      setUploadSuccess(t("Game uploaded successfully!"));
+      setGameName("");
+      setLuaCode("");
+      const fileInput = document.getElementById("lua-file-input") as HTMLInputElement;
+      if (fileInput) fileInput.value = "";
+      onUploadSuccess();
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : t("Failed to upload game."));
+    }
+  };
+
   return (
-    <TerminalSection title={t("Games")}>
-      {games.length === 0 ? (
-        <p className="terminal-copy">{t("No games installed yet.")}</p>
+    <div style={{ display: "grid", gap: "2rem" }}>
+      <TerminalSection title={t("Games")}>
+        {games.length === 0 ? (
+          <p className="terminal-copy">{t("No games installed yet.")}</p>
+        ) : (
+          <ol className="terminal-list numbered">
+            {games.map((game) => (
+              <li key={game.id}>
+                <span>{game.name}</span>
+                <small>by {findUserName(game.author)}</small>
+              </li>
+            ))}
+          </ol>
+        )}
+      </TerminalSection>
+
+      {sessionUser ? (
+        <TerminalSection title={t("Upload Custom Lua Game")}>
+          <form onSubmit={handleUploadSubmit} className="profile-form" style={{ marginTop: "0.5rem" }}>
+            <label>
+              {t("Game Name")}
+              <input
+                type="text"
+                value={gameName}
+                onChange={(e) => setGameName(e.target.value)}
+                placeholder={t("e.g. My Cool Pong")}
+                maxLength={50}
+              />
+            </label>
+
+            <label>
+              {t("Lua Script (.lua)")}
+              <input
+                id="lua-file-input"
+                type="file"
+                accept=".lua"
+                onChange={handleFileChange}
+                style={{ padding: "0.35rem 0" }}
+              />
+            </label>
+
+            {uploadError && <p className="terminal-error" style={{ margin: "0.5rem 0" }}>{uploadError}</p>}
+            {uploadSuccess && <p className="terminal-copy" style={{ color: "#00ff00", margin: "0.5rem 0" }}>{uploadSuccess}</p>}
+
+            <button type="submit" className="terminal-button" style={{ marginTop: "0.5rem" }}>
+              {t("Upload Game")}
+            </button>
+          </form>
+        </TerminalSection>
       ) : (
-        <ol className="terminal-list numbered">
-          {games.map((game) => (
-            <li key={game.id}>
-              <span>{game.name}</span>
-              <small>by {findUserName(game.author)}</small>
-            </li>
-          ))}
-        </ol>
+        <p className="terminal-copy" style={{ color: "#c8c8c8" }}>
+          {t("Log in to upload your own custom Lua games.")}
+        </p>
       )}
-    </TerminalSection>
+    </div>
   );
 }
 

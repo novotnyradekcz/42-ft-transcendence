@@ -388,3 +388,18 @@ export async function listGames(): Promise<GameSummary[]> {
     return [];
   }
 }
+
+export async function createGame(
+  name: string,
+  luaCode: string,
+  authorId: number,
+): Promise<GameSummary> {
+  return await requestJson<GameSummary>("/games/create", {
+    method: "POST",
+    body: JSON.stringify({
+      name,
+      author: authorId,
+      lua_code: luaCode,
+    }),
+  });
+}

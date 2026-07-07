@@ -26,13 +26,25 @@ pub fn seed_games_in_db(db: &mut DatabaseInitializer) -> Result<(), diesel::resu
         .optional()?
         .unwrap_or(2); // fallback to ID 2 (which is admin's ID)
 
+    let games_dir = std::env::var("GAMES_DIR").unwrap_or_else(|_| "../frontend/public/games".to_string());
+    if let Err(err) = std::fs::create_dir_all(&games_dir) {
+        eprintln!("Failed to create games directory during seeding: {:?}", err);
+    }
+
+    let tic_tac_toe_filename = "tic_tac_toe.lua";
+    let file_path = std::path::Path::new(&games_dir).join(tic_tac_toe_filename);
     let tic_tac_toe_lua = include_str!("tic_tac_toe.lua");
+    if let Err(err) = std::fs::write(&file_path, tic_tac_toe_lua) {
+        eprintln!("Failed to write seed tic-tac-toe game: {:?}", err);
+    }
+
+    let game_link = "/games/tic_tac_toe.lua";
 
     diesel::insert_into(ftt_games)
         .values((
             author.eq(admin_id),
             name.eq("Tic-Tac-Toe"),
-            body.eq(tic_tac_toe_lua),
+            body.eq(game_link),
         ))
         .execute(conn)?;
 

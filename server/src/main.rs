@@ -13,7 +13,7 @@ mod mails;
 // create_authenticator / create_authorizer are only referenced by the disabled SecurityTransform wrap.
 use crate::authenticator::init_user_store;
 use crate::model::users::get_all_users_from_db;
-use crate::router::{index, login_user, update_profile, list_friends, add_friend, remove_friend, show_users, user_detail, create_user, show_games, game_detail, show_discussions, discussion_detail, create_discussion, create_discussion_post, show_mail, mail_detail, create_mail};
+use crate::router::{index, login_user, update_profile, list_friends, add_friend, remove_friend, show_users, user_detail, create_user, show_games, game_detail, create_game, show_discussions, discussion_detail, create_discussion, create_discussion_post, show_mail, mail_detail, create_mail};
 
 use actix_web::{web, App, HttpServer, cookie};
 use actix_security::http::security::{Argon2PasswordEncoder, PasswordEncoder, SessionFixationStrategy};
@@ -95,6 +95,7 @@ async fn main() -> std::io::Result<()> {
                 web::scope("/games")
                     .service(show_games)
                     .service(game_detail)
+                    .service(create_game)
                     .service(crate::games::play_game_ws),
             )
             .service(

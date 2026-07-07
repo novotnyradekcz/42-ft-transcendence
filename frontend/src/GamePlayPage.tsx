@@ -130,6 +130,17 @@ export default function GamePlayPage({
           // Load Lua via factory pointing to the public WASM glue
           const factory = new LuaFactory("/glue.wasm");
           const lua = await factory.createEngine();
+
+          // Sandbox isolation: remove dangerous Lua globals
+          const unsafeGlobals = ["os", "io", "package", "require", "dofile", "loadfile", "debug"];
+          for (const g of unsafeGlobals) {
+            try {
+              lua.global.set(g, undefined);
+            } catch (err) {
+              console.warn(`Could not undefine global ${g}:`, err);
+            }
+          }
+
           luaEngineRef.current = lua;
 
           // Expose draw_cell (1-indexed for Lua, maps to 0-indexed JS array)
@@ -168,7 +179,23 @@ export default function GamePlayPage({
           lua.global.set("player_index", msg.player_index);
 
           // Execute script
-          await lua.doString(msg.script);
+          let scriptContent = msg.script;
+          if (msg.script.startsWith("/") || msg.script.startsWith("http")) {
+            try {
+              const resp = await fetch(msg.script);
+              if (!resp.ok) {
+                throw new Error(`Failed to fetch Lua script: ${resp.statusText}`);
+              }
+              scriptContent = await resp.text();
+            } catch (fetchErr) {
+              console.error(fetchErr);
+              setStatus("error");
+              setStatusMessage("Failed to load game script.");
+              cleanupLua();
+              return;
+            }
+          }
+          await lua.doString(scriptContent);
           forceUpdate();
         } else if (msg.type === "game_action") {
           if (luaEngineRef.current) {
