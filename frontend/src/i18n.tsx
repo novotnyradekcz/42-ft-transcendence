@@ -72,7 +72,7 @@ const cs: Record<string, string> = {
   From: "Od",
   To: "Komu",
   Title: "Předmět",
-  Avatar: "Avatar",
+  "Avatar URL": "URL avataru",
   // buttons / status values
   "add friend": "přidat přítele",
   "remove friend": "odebrat přítele",
@@ -81,9 +81,7 @@ const cs: Record<string, string> = {
   offline: "offline",
   "save profile": "uložit profil",
   "saved.": "uloženo.",
-  "avatar saved.": "avatar uložen.",
   "could not save profile.": "profil se nepodařilo uložit.",
-  "could not save avatar.": "avatar se nepodařilo uložit.",
   // login / register / profile copy
   "Login happens in the command input. Current prompt: {step}.":
     "Přihlášení probíhá v příkazovém řádku. Aktuální krok: {step}.",
@@ -193,7 +191,7 @@ const sl: Record<string, string> = {
   From: "Od",
   To: "Za",
   Title: "Naslov",
-  Avatar: "Avatar",
+  "Avatar URL": "URL avatarja",
   // buttons / status values
   "add friend": "dodaj prijatelja",
   "remove friend": "odstrani prijatelja",
@@ -202,9 +200,7 @@ const sl: Record<string, string> = {
   offline: "nepovezan",
   "save profile": "shrani profil",
   "saved.": "shranjeno.",
-  "avatar saved.": "avatar shranjen.",
   "could not save profile.": "profila ni bilo mogoče shraniti.",
-  "could not save avatar.": "avatarja ni bilo mogoče shraniti.",
   // login / register / profile copy
   "Login happens in the command input. Current prompt: {step}.":
     "Prijava poteka v ukazni vrstici. Trenutni korak: {step}.",

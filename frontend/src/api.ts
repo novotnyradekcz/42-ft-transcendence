@@ -244,21 +244,6 @@ export async function updateCurrentUserProfile(update: {
   return currentUser;
 }
 
-export async function uploadAvatar(file: File): Promise<string> {
-  if (!file.type.startsWith("image/")) {
-    throw new Error("Avatar must be an image file.");
-  }
-
-  // "Nothing fancy": encode the image as a data URL and store it in the
-  // user's avatar_url column via updateCurrentUserProfile (no file storage).
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error("Could not read the image file."));
-    reader.readAsDataURL(file);
-  });
-}
-
 export async function listFriends(): Promise<UserProfile[]> {
   if (!currentUser) {
     return [];

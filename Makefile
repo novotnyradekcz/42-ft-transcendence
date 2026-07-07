@@ -1,6 +1,6 @@
 COMPOSE := $(shell if docker compose version >/dev/null 2>&1; then printf 'docker compose'; else printf 'docker-compose'; fi)
 
-.PHONY: up down logs ps build full re re-front fclean
+.PHONY: up down logs ps build full re re-front dev fclean
 
 up:
 	$(COMPOSE) up --build -d
@@ -30,13 +30,11 @@ full:
 re:
 	$(COMPOSE) up -d db
 	$(COMPOSE) up --build -d --force-recreate --no-deps server frontend
-	@printf '\nft_transcendence rebuilt and running:\n'
-	@printf '  frontend: http://localhost:3000\n'
-	@printf '  backend:  http://localhost:8080\n'
 
-re-front:
-	$(COMPOSE) up --build -d --force-recreate --no-deps frontend
-	@printf '\nfrontend rebuilt: http://localhost:3000\n'
+dev:
+	$(COMPOSE) up -d db server
+	@test -d frontend/node_modules || npm ci --prefix frontend
+	npm run --prefix frontend dev
 
 fclean:
 	$(COMPOSE) down --volumes --rmi local --remove-orphans

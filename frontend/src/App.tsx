@@ -1,5 +1,4 @@
 import {
-  type ChangeEvent,
   type FormEvent,
   type KeyboardEvent,
   type MouseEvent,
@@ -31,7 +30,6 @@ import {
   removeFriend,
   sendMail,
   updateCurrentUserProfile,
-  uploadAvatar,
 } from "./api";
 import { commandDefinitions, getAvailableCommands, isCommand, parseCommand } from "./commands";
 import { useTranslation, isLang } from "./i18n";
@@ -162,7 +160,6 @@ export default function App() {
     t("Type `menu` to enter."),
   ]);
   const [logVisible, setLogVisible] = useState(false);
-  // Command history for arrow-up/down recall; in memory only, never persisted.
   const commandHistoryRef = useRef<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
 
@@ -194,15 +191,9 @@ export default function App() {
   const [writeError, setWriteError] = useState("");
   const [writeFlow, setWriteFlow] = useState<WriteFlow>(null);
   const [commandHelpOpen, setCommandHelpOpen] = useState(false);
-  // When a `?`-menu command needs a follow-up value (lang, enter, addfriend,
-  // removefriend), this holds that command name and the popover shows a second
-  // menu of concrete choices instead. null = showing the command list.
   const [helpSubmenu, setHelpSubmenu] = useState<string | null>(null);
 
   const availableCommands = useMemo(
-    // While a login/register or write flow is capturing input, the only command
-    // that works is `back` (everything typed is treated as the flow's input), so
-    // the footer and `?` menu should offer just that.
     () =>
       authFlow || writeFlow
         ? ["back"]
@@ -221,8 +212,6 @@ export default function App() {
   }, [page, authFlow, writeFlow]);
 
   useEffect(() => {
-    // Keep the newest log lines in view; the log sits at the bottom of the
-    // scrollable content area.
     if (logVisible) {
       const body = terminalBodyRef.current;
       body?.scrollTo({ top: body.scrollHeight });
@@ -483,9 +472,6 @@ export default function App() {
     setCommandHelpOpen((isOpen) => !isOpen);
   }
 
-  // Entries of the list shown on the current page, used to build the numbered
-  // choices for `enter`/`addfriend`/`removefriend` in the `?` submenu. The
-  // 1-based position matches the number those commands expect.
   function currentPageEntries(): string[] {
     switch (page) {
       case "users":
@@ -827,7 +813,12 @@ export default function App() {
     }
   }
 
-  async function handleProfileUpdate(update: { name: string; email: string; bio: string }) {
+  async function handleProfileUpdate(update: {
+    name: string;
+    email: string;
+    bio: string;
+    avatarUrl: string;
+  }) {
     try {
       const nextUser = await updateCurrentUserProfile(update);
       setSessionUser(nextUser);
@@ -835,28 +826,6 @@ export default function App() {
       addLine("profile updated.");
     } catch (error) {
       addLine(error instanceof Error ? error.message : "could not update profile.");
-      throw error;
-    }
-  }
-
-  async function handleAvatarUpload(file: File) {
-    if (!sessionUser) {
-      throw new Error("Login first to upload an avatar.");
-    }
-
-    try {
-      const avatarUrl = await uploadAvatar(file);
-      const nextUser = await updateCurrentUserProfile({
-        name: sessionUser.name,
-        email: sessionUser.email,
-        bio: sessionUser.bio,
-        avatarUrl,
-      });
-      setSessionUser(nextUser);
-      await refreshBoard();
-      addLine("avatar uploaded.");
-    } catch (error) {
-      addLine(error instanceof Error ? error.message : "could not upload avatar.");
       throw error;
     }
   }
@@ -1015,7 +984,6 @@ export default function App() {
               }
               sessionUser={sessionUser}
               onUpdateProfile={handleProfileUpdate}
-              onAvatarUpload={handleAvatarUpload}
             />
           )}
           {page === "discussions" && (
@@ -1413,16 +1381,20 @@ function RegisterPage({ flow, error }: { flow: AuthFlow; error: string }) {
 function ProfilePage({
   sessionUser,
   onUpdateProfile,
-  onAvatarUpload,
 }: {
   sessionUser: SessionUser | null;
-  onUpdateProfile: (update: { name: string; email: string; bio: string }) => Promise<void>;
-  onAvatarUpload: (file: File) => Promise<void>;
+  onUpdateProfile: (update: {
+    name: string;
+    email: string;
+    bio: string;
+    avatarUrl: string;
+  }) => Promise<void>;
 }) {
   const { t } = useTranslation();
   const [name, setName] = useState(sessionUser?.name ?? "");
   const [email, setEmail] = useState(sessionUser?.email ?? "");
   const [bio, setBio] = useState(sessionUser?.bio ?? "");
+  const [avatarUrl, setAvatarUrl] = useState(sessionUser?.avatarUrl ?? "");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -1436,29 +1408,10 @@ function ProfilePage({
     setError("");
 
     try {
-      await onUpdateProfile({ name, email, bio });
+      await onUpdateProfile({ name, email, bio, avatarUrl: avatarUrl.trim() });
       setMessage(t("saved."));
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : t("could not save profile."));
-    }
-  }
-
-  async function handleAvatarChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) {
-      return;
-    }
-
-    setMessage("");
-    setError("");
-
-    try {
-      await onAvatarUpload(file);
-      setMessage(t("avatar saved."));
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : t("could not save avatar."));
-    } finally {
-      event.target.value = "";
     }
   }
 
@@ -1491,8 +1444,13 @@ function ProfilePage({
               <textarea value={bio} onChange={(event) => setBio(event.target.value)} />
             </label>
             <label>
-              {t("Avatar")}
-              <input type="file" accept="image/*" onChange={handleAvatarChange} />
+              {t("Avatar URL")}
+              <input
+                type="url"
+                value={avatarUrl}
+                placeholder={DEFAULT_AVATAR_URL}
+                onChange={(event) => setAvatarUrl(event.target.value)}
+              />
             </label>
             <button className="terminal-button" type="submit">
               {t("save profile")}
