@@ -101,12 +101,16 @@ fn connection(db: &mut DatabaseInitializer) -> &mut PgConnection {
 
 pub fn seed_users_in_db(db: &mut DatabaseInitializer) -> Result<(), diesel::result::Error> {
     use crate::schema::ftt_users::dsl::*;
+    let encoder = Argon2PasswordEncoder::new();
 
     let conn = connection(db);
+    let test_pwd = encoder.encode("test");
+    let admin_pwd = encoder.encode("admin");
+    let guest_pwd = encoder.encode("guest");
     let seed_users = [
-        ("test", "test@example.local", "test"),
-        ("admin", "admin@example.local", "admin"),
-        ("guest", "guest@example.local", "guest"),
+        ("test", "test@example.local", &test_pwd),
+        ("admin", "admin@example.local", &admin_pwd),
+        ("guest", "guest@example.local", &guest_pwd),
     ];
 
     for (seed_name, seed_email, seed_password) in seed_users {
@@ -121,7 +125,7 @@ pub fn seed_users_in_db(db: &mut DatabaseInitializer) -> Result<(), diesel::resu
                 .values(&NewUser {
                     name: seed_name,
                     email: seed_email,
-                    password: seed_password,
+                    password: &seed_password,
                 })
                 .execute(conn)?;
         }
@@ -130,11 +134,10 @@ pub fn seed_users_in_db(db: &mut DatabaseInitializer) -> Result<(), diesel::resu
     Ok(())
 }
 
-pub fn get_all_users_from_db(pool: &web::Data<Mutex<DatabaseInitializer>>) -> Option<Vec<DbUser>> {
+pub fn get_all_users_from_db(db: &mut DatabaseInitializer) -> Option<Vec<DbUser>> {
     use crate::schema::ftt_users::dsl::*;
 
-    let mut db = pool.lock().expect("create_user expect DatabaseInitializer");
-    let conn = connection(&mut db);
+    let conn = connection(db);
 
 
     // Reject if name or email is already taken
