@@ -12,8 +12,11 @@ export const DEFAULT_AVATAR_URL = "/images/profile.png";
 const LOCAL_USERS_KEY = "ft_transcendence.localUsers";
 const PROFILE_OVERRIDES_KEY = "ft_transcendence.profileOverrides";
 const FRIENDS_KEY = "ft_transcendence.friends";
+const CREDENTIALS_KEY = "ft_transcendence.credentials";
+const SESSION_USER_KEY = "ft_transcendence.sessionUser";
 
 let currentUser: SessionUser | null = null;
+let currentCredentials: string | null = null;
 let knownUsers: UserProfile[] = [];
 
 type StoredUser = UserProfile & {
@@ -36,9 +39,42 @@ type UserPayload = {
   status?: string;
 };
 
-type ProfileUpdate = Partial<Pick<UserProfile, "name" | "email" | "bio" | "avatarUrl">>;
+type ProfileUpdate = Partial<
+  Pick<UserProfile, "name" | "email" | "bio" | "avatarUrl">
+>;
 type ProfileOverrides = Record<string, ProfileUpdate>;
 type FriendStore = Record<string, number[]>;
+
+/**
+ * Encodes a username and password as an HTTP Basic Auth header value.
+ * The result is suitable for use as the value of the `Authorization` header.
+ */
+export function buildBasicAuthHeader(name: string, password: string): string {
+  return "Basic " + btoa(`${name}:${password}`);
+}
+
+function saveSession(credentials: string, user: SessionUser): void {
+  sessionStorage.setItem(CREDENTIALS_KEY, credentials);
+  sessionStorage.setItem(SESSION_USER_KEY, JSON.stringify(user));
+}
+
+function clearSession(): void {
+  sessionStorage.removeItem(CREDENTIALS_KEY);
+  sessionStorage.removeItem(SESSION_USER_KEY);
+}
+
+function restoreSession(): SessionUser | null {
+  try {
+    const credentials = sessionStorage.getItem(CREDENTIALS_KEY);
+    const userJson = sessionStorage.getItem(SESSION_USER_KEY);
+    if (!credentials || !userJson) return null;
+    const user = JSON.parse(userJson) as SessionUser;
+    currentCredentials = credentials;
+    return { ...applyStoredProfile(user), status: "online" };
+  } catch {
+    return null;
+  }
+}
 
 class ApiRequestError extends Error {
   status: number;
@@ -50,13 +86,21 @@ class ApiRequestError extends Error {
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    ...(init?.headers as Record<string, string>),
+  };
+
+  // Attach stored Basic Auth credentials to every request unless the caller
+  // already supplied an explicit Authorization header (e.g. during login).
+  if (currentCredentials && !headers["Authorization"]) {
+    headers["Authorization"] = currentCredentials;
+  }
+
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
+    headers,
   });
 
   if (!response.ok) {
@@ -88,7 +132,10 @@ function numberValue(value: unknown): number | null {
   return Number.isFinite(number) ? number : null;
 }
 
-function normalizedStatus(userId: number, status: unknown): UserProfile["status"] {
+function normalizedStatus(
+  userId: number,
+  status: unknown,
+): UserProfile["status"] {
   if (currentUser?.id === userId) {
     return "online";
   }
@@ -99,7 +146,10 @@ function normalizedStatus(userId: number, status: unknown): UserProfile["status"
 function normalizeUser(payload: unknown): UserProfile {
   const user = payload as UserPayload;
   const id = numberValue(user.id ?? user.user_id);
-  const name = textValue(user.name) || textValue(user.username) || textValue(user.user_name);
+  const name =
+    textValue(user.name) ||
+    textValue(user.username) ||
+    textValue(user.user_name);
   const email = textValue(user.email) || textValue(user.user_email);
 
   if (id === null || !name || !email) {
@@ -213,12 +263,18 @@ function rememberUser(user: UserProfile) {
 }
 
 function nextLocalUserId() {
-  const existingIds = [...knownUsers, ...localPublicUsers()].map((user) => user.id);
+  const existingIds = [...knownUsers, ...localPublicUsers()].map(
+    (user) => user.id,
+  );
   return Math.max(0, ...existingIds) + 1;
 }
 
 function shouldUseLocalFallback(error: unknown) {
-  return !(error instanceof ApiRequestError) || error.status === 404 || error.status >= 500;
+  return (
+    !(error instanceof ApiRequestError) ||
+    error.status === 404 ||
+    error.status >= 500
+  );
 }
 
 function updateLocalUser(userId: number, update: ProfileUpdate) {
@@ -260,6 +316,9 @@ export function findUserName(id: number): string {
 }
 
 export async function getCurrentUser(): Promise<SessionUser | null> {
+  if (!currentUser) {
+    currentUser = restoreSession();
+  }
   currentUser = currentUser
     ? {
         ...applyStoredProfile(currentUser),
@@ -269,27 +328,34 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
   return currentUser;
 }
 
-export async function login(name: string, password: string): Promise<SessionUser> {
+export async function login(
+  name: string,
+  password: string,
+): Promise<SessionUser> {
   const cleanName = name.trim();
 
   if (!cleanName || !password) {
     throw new Error("Name and password are required.");
   }
 
+  const credentials = buildBasicAuthHeader(cleanName, password);
+
   try {
+    // Send credentials in the Authorization header only — no plaintext body.
+    // The backend's BasicAuth middleware reads the header and verifies the
+    // password against the stored Argon2 hash.
     const user = normalizeUser(
       await requestJson<unknown>("/users/login", {
         method: "POST",
-        body: JSON.stringify({
-          name: cleanName,
-          password,
-        }),
+        headers: { Authorization: credentials },
       }),
     );
+    currentCredentials = credentials;
     currentUser = {
       ...user,
       status: "online",
     };
+    saveSession(currentCredentials, currentUser);
     rememberUser(currentUser);
     return currentUser;
   } catch (error) {
@@ -305,10 +371,14 @@ export async function login(name: string, password: string): Promise<SessionUser
       throw new Error("Name or password is incorrect.", { cause: error });
     }
 
+    // Store credentials even in the offline fallback so that requests will
+    // include the header once the backend becomes reachable again.
+    currentCredentials = credentials;
     currentUser = {
       ...applyStoredProfile(user),
       status: "online",
     };
+    saveSession(currentCredentials, currentUser);
     rememberUser(currentUser);
     return currentUser;
   }
@@ -327,6 +397,9 @@ export async function register(
   }
 
   try {
+    // Registration sends the plaintext password in the body so the backend
+    // can hash and store it. No Authorization header is sent here because the
+    // user does not have credentials yet.
     const user = normalizeUser(
       await requestJson<unknown>("/users/create", {
         method: "POST",
@@ -337,10 +410,13 @@ export async function register(
         }),
       }),
     );
+    // Store credentials so all subsequent requests are authenticated.
+    currentCredentials = buildBasicAuthHeader(cleanName, password);
     currentUser = {
       ...user,
       status: "online",
     };
+    saveSession(currentCredentials, currentUser);
     rememberUser(currentUser);
     return currentUser;
   } catch (error) {
@@ -363,10 +439,12 @@ export async function register(
       status: "offline",
     };
     saveLocalUsers([...users, newUser]);
+    currentCredentials = buildBasicAuthHeader(cleanName, password);
     currentUser = {
       ...publicUser(newUser),
       status: "online",
     };
+    saveSession(currentCredentials, currentUser);
     rememberUser(currentUser);
     return currentUser;
   }
@@ -374,11 +452,15 @@ export async function register(
 
 export async function logout(): Promise<void> {
   currentUser = null;
+  currentCredentials = null;
+  clearSession();
 }
 
 export async function listUsers(): Promise<UserProfile[]> {
   try {
-    const backendUsers = normalizeUsers(await requestJson<unknown>("/users/show"));
+    const backendUsers = normalizeUsers(
+      await requestJson<unknown>("/users/show"),
+    );
     knownUsers = mergeUsers(backendUsers, localPublicUsers());
     return knownUsers;
   } catch {
@@ -471,11 +553,17 @@ export async function uploadAvatar(file: File): Promise<string> {
   const params = new URLSearchParams({
     filename: file.name || "avatar",
   });
+  const uploadHeaders: Record<string, string> = {
+    "Content-Type": file.type,
+  };
+
+  if (currentCredentials) {
+    uploadHeaders["Authorization"] = currentCredentials;
+  }
+
   const response = await fetch(`/avatar-upload?${params.toString()}`, {
     method: "POST",
-    headers: {
-      "Content-Type": file.type,
-    },
+    headers: uploadHeaders,
     body: file,
   });
 
@@ -500,7 +588,11 @@ export async function listFriends(): Promise<UserProfile[]> {
 
   const users = await listUsers();
   return friendIds
-    .map((id) => users.find((user) => user.id === id) ?? knownUsers.find((user) => user.id === id))
+    .map(
+      (id) =>
+        users.find((user) => user.id === id) ??
+        knownUsers.find((user) => user.id === id),
+    )
     .filter((user): user is UserProfile => Boolean(user))
     .map(applyStoredProfile);
 }
@@ -546,7 +638,9 @@ export async function listDiscussions(): Promise<DiscussionThread[]> {
   }
 }
 
-export async function getDiscussion(id: number): Promise<DiscussionThread | null> {
+export async function getDiscussion(
+  id: number,
+): Promise<DiscussionThread | null> {
   try {
     return await requestJson<DiscussionThread>(`/discussions/show/${id}`);
   } catch {

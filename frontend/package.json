@@ -7,7 +7,10 @@
     "dev": "cp -f node_modules/wasmoon/dist/glue.wasm public/glue.wasm && vite",
     "build": "cp -f node_modules/wasmoon/dist/glue.wasm public/glue.wasm && tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "node:version": "node --version && echo 'npm:' && npm --version",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "react": "^19.2.6",
@@ -15,6 +18,8 @@
     "wasmoon": "^1.16.0"
   },
   "devDependencies": {
+    "vitest": "^3.0.0",
+    "jsdom": "^26.0.0",
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.12.3",
     "@types/react": "^19.2.14",
