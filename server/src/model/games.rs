@@ -1,7 +1,42 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
-use crate::model::database_initializer::DatabaseInitializer;
+use crate::model::database_initializer::{DatabaseInitializer, connection};
+use crate::games::GameInfo;
 use diesel::prelude::*;
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+pub struct CreateGame {
+    pub name: String,
+    pub author: i32,
+    pub lua_code: String,
+}
+
+pub fn list_games_in_db(
+    db: &mut DatabaseInitializer,
+) -> Result<Vec<GameInfo>, diesel::result::Error> {
+    use crate::schema::ftt_games::dsl as games;
+
+    let conn = connection(db);
+    games::ftt_games
+        .order(games::id.asc())
+        .select(GameInfo::as_select())
+        .load::<GameInfo>(conn)
+}
+
+pub fn get_game_in_db(
+    db: &mut DatabaseInitializer,
+    game_id: i32,
+) -> Result<Option<GameInfo>, diesel::result::Error> {
+    use crate::schema::ftt_games::dsl as games;
+
+    let conn = connection(db);
+    games::ftt_games
+        .filter(games::id.eq(game_id))
+        .select(GameInfo::as_select())
+        .first::<GameInfo>(conn)
+        .optional()
+}
 
 pub fn seed_games_in_db(db: &mut DatabaseInitializer) -> Result<(), diesel::result::Error> {
     use crate::schema::ftt_games::dsl::*;

@@ -3,7 +3,7 @@
 use crate::authenticator::register_user;
 use crate::discussions::{CreateDiscussion, CreatePost, DiscussionInfo};
 use crate::mails::{CreateMail, MailInfo, MailQuery};
-use crate::model::database_initializer::{DatabaseInitializer, connection};
+
 use crate::model::discussions::{Discussion, Post};
 use crate::model::users::CreateUserError;
 use crate::model::users::{create_user_in_db, get_user_in_db, list_users_in_db};
@@ -12,6 +12,7 @@ use crate::games::GameInfo;
 use actix_security::http::security::{Argon2PasswordEncoder, PasswordEncoder, User};
 use actix_web::{delete, get, HttpResponse, post, Responder, web};
 use serde::Deserialize;
+use crate::model::games::{get_game_in_db, list_games_in_db, CreateGame};
 use std::sync::{Arc, Mutex};
 
 use crate::model::mails::Mail;
@@ -499,31 +500,6 @@ pub async fn create_mail(
     }
 }
 
-pub fn list_games_in_db(
-    db: &mut DatabaseInitializer,
-) -> Result<Vec<GameInfo>, diesel::result::Error> {
-    use crate::schema::ftt_games::dsl as games;
-
-    let conn = connection(db);
-    games::ftt_games
-        .order(games::id.asc())
-        .select(GameInfo::as_select())
-        .load::<GameInfo>(conn)
-}
-
-pub fn get_game_in_db(
-    db: &mut DatabaseInitializer,
-    game_id: i32,
-) -> Result<Option<GameInfo>, diesel::result::Error> {
-    use crate::schema::ftt_games::dsl as games;
-
-    let conn = connection(db);
-    games::ftt_games
-        .filter(games::id.eq(game_id))
-        .select(GameInfo::as_select())
-        .first::<GameInfo>(conn)
-        .optional()
-}
 
 #[get("/show")]
 pub async fn show_games(pool: web::Data<Arc<AppState>>) -> impl Responder {
@@ -555,12 +531,6 @@ pub async fn game_detail(
     }
 }
 
-#[derive(Deserialize)]
-pub struct CreateGame {
-    pub name: String,
-    pub author: i32,
-    pub lua_code: String,
-}
 
 #[post("/create")]
 pub async fn create_game(
