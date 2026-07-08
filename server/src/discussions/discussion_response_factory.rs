@@ -6,7 +6,7 @@ use crate::discussions::DiscussionInfo;
 use crate::model::database_initializer;
 use crate::model::database_initializer::DatabaseInitializer;
 use crate::model::discussions::Discussion;
-use crate::{model, router};
+use crate::model;
 
 pub fn create_discussion_response_factory(conn: &mut PgConnection, discussion: Discussion) -> Result<DiscussionInfo, Error> {
     use crate::schema::ftt_posts::dsl as posts;

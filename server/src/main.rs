@@ -15,9 +15,9 @@ use model::database_initializer::inittialize_db;
 use crate::games::{Lobby, play_game_ws};
 use crate::model::DatabaseInitializer;
 use crate::model::users::get_all_users_from_db;
-use crate::router::{index, show_users, user_detail, create_user, show_games, game_detail, show_discussions, discussion_detail, create_discussion, create_discussion_post, show_mail, mail_detail, create_mail};
+use crate::router::{index, show_users, login_user, user_detail, create_user, show_games, game_detail, show_discussions, discussion_detail, create_discussion, create_discussion_post, show_mail, mail_detail, create_mail};
 
-use actix_security::http::security::{Argon2PasswordEncoder, PasswordEncoder, SessionFixationStrategy};
+use actix_security::http::security::{Argon2PasswordEncoder, SessionFixationStrategy};
 use actix_security::http::security::middleware::SecurityTransform;
 use actix_security::prelude::{JwtAuthenticator, JwtTokenService, SessionConfig, User};
 use actix_session::{storage::CookieSessionStore, SessionMiddleware};
@@ -25,6 +25,7 @@ use actix_web::{web, App, HttpServer, cookie};
 use actix_web::web::Data;
 use std::sync::{Arc, Mutex};
 
+#[allow(dead_code)]
 struct AppState {
     database: Mutex<DatabaseInitializer>,
     lobby: Lobby,
@@ -75,7 +76,7 @@ async fn main() -> std::io::Result<()> {
             .route("/", web::get().to(index))
             .service(
                 web::scope("/users")
-                   // .service(login_user)
+                    .service(login_user)
                     .service(show_users)
                     .service(user_detail)
                     .service(create_user),
