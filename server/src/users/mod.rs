@@ -1,7 +1,6 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
 use serde::{Deserialize, Serialize};
-use diesel::{Queryable, Selectable};
 
 #[derive(Serialize, Deserialize)]
 pub struct CreateUser {
@@ -19,4 +18,5 @@ pub struct UserInfo {
     #[serde(rename = "avatarUrl")]
     pub avatar_url: String,
     pub status: String,
+    pub friends: Vec<i32>,
 }

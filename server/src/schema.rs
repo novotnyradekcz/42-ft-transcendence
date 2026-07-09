@@ -34,6 +34,7 @@ diesel::table! {
     ftt_posts (id) {
         id -> Int4,
         author -> Int4,
+        discussion_id -> Nullable<Int4>,
         name -> Text,
         perex -> Text,
         body -> Text,
@@ -47,11 +48,15 @@ diesel::table! {
         name -> Text,
         email -> Text,
         password -> Text,
+        bio -> Text,
+        avatar_url -> Text,
+        friends -> Text,
     }
 }
 
 diesel::joinable!(ftt_games -> ftt_users (author));
 diesel::joinable!(ftt_posts -> ftt_users (author));
+diesel::joinable!(ftt_posts -> ftt_discussions (discussion_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     ftt_discussions,

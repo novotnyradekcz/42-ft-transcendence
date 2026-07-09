@@ -5,23 +5,17 @@ import type {
   SessionUser,
   UserProfile,
 } from "./types";
+import { CREDENTIALS_KEY, PH_USER_IMAGE, SESSION_USER_KEY } from "./constants";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
-export const DEFAULT_AVATAR_URL = "/images/profile.png";
 
-const LOCAL_USERS_KEY = "ft_transcendence.localUsers";
-const PROFILE_OVERRIDES_KEY = "ft_transcendence.profileOverrides";
-const FRIENDS_KEY = "ft_transcendence.friends";
-const CREDENTIALS_KEY = "ft_transcendence.credentials";
-const SESSION_USER_KEY = "ft_transcendence.sessionUser";
-
-let currentUser: SessionUser | null = null;
 let currentCredentials: string | null = null;
-let knownUsers: UserProfile[] = [];
 
-type StoredUser = UserProfile & {
-  password: string;
-};
+/**
+ * In-memory cache of all known users, populated by listUsers().
+ * Used by findUserName() and getUserByName() for fast lookups.
+ */
+let knownUsers: UserProfile[] = [];
 
 type UserPayload = {
   id?: number | string;
@@ -31,52 +25,15 @@ type UserPayload = {
   username?: string;
   email?: string;
   user_email?: string;
-  password?: string;
   bio?: string;
   avatarUrl?: string;
   avatar_url?: string;
   avatar?: string;
   status?: string;
+  friends?: unknown;
 };
 
-type ProfileUpdate = Partial<
-  Pick<UserProfile, "name" | "email" | "bio" | "avatarUrl">
->;
-type ProfileOverrides = Record<string, ProfileUpdate>;
-type FriendStore = Record<string, number[]>;
-
-/**
- * Encodes a username and password as an HTTP Basic Auth header value.
- * The result is suitable for use as the value of the `Authorization` header.
- */
-export function buildBasicAuthHeader(name: string, password: string): string {
-  return "Basic " + btoa(`${name}:${password}`);
-}
-
-function saveSession(credentials: string, user: SessionUser): void {
-  sessionStorage.setItem(CREDENTIALS_KEY, credentials);
-  sessionStorage.setItem(SESSION_USER_KEY, JSON.stringify(user));
-}
-
-function clearSession(): void {
-  sessionStorage.removeItem(CREDENTIALS_KEY);
-  sessionStorage.removeItem(SESSION_USER_KEY);
-}
-
-function restoreSession(): SessionUser | null {
-  try {
-    const credentials = sessionStorage.getItem(CREDENTIALS_KEY);
-    const userJson = sessionStorage.getItem(SESSION_USER_KEY);
-    if (!credentials || !userJson) return null;
-    const user = JSON.parse(userJson) as SessionUser;
-    currentCredentials = credentials;
-    return { ...applyStoredProfile(user), status: "online" };
-  } catch {
-    return null;
-  }
-}
-
-class ApiRequestError extends Error {
+export class ApiRequestError extends Error {
   status: number;
 
   constructor(status: number, statusText: string) {
@@ -85,6 +42,47 @@ class ApiRequestError extends Error {
   }
 }
 
+// ─── Credential helpers ───────────────────────────────────────────────────────
+
+/**
+ * Encodes a username and password as an HTTP Basic Auth header value.
+ */
+export function buildBasicAuthHeader(name: string, password: string): string {
+  return "Basic " + btoa(`${name}:${password}`);
+}
+
+/** Called by SessionContext after login / session restore to arm requests. */
+export function setCredentials(creds: string | null): void {
+  currentCredentials = creds;
+}
+
+/** Called by SessionContext to persist credentials after login. */
+export function getCredentials(): string | null {
+  return currentCredentials;
+}
+
+// ─── Session restore (reads sessionStorage, arms credentials) ─────────────────
+
+/**
+ * Reads credentials and user data from sessionStorage.
+ * Sets currentCredentials so subsequent requests are authenticated.
+ * Returns the stored SessionUser or null if no valid session exists.
+ */
+export function restoreSession(): SessionUser | null {
+  try {
+    const credentials = sessionStorage.getItem(CREDENTIALS_KEY);
+    const userJson = sessionStorage.getItem(SESSION_USER_KEY);
+    if (!credentials || !userJson) return null;
+    const user = JSON.parse(userJson) as SessionUser;
+    currentCredentials = credentials;
+    return user;
+  } catch {
+    return null;
+  }
+}
+
+// ─── Core request helper ──────────────────────────────────────────────────────
+
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
     Accept: "application/json",
@@ -92,16 +90,12 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     ...(init?.headers as Record<string, string>),
   };
 
-  // Attach stored Basic Auth credentials to every request unless the caller
-  // already supplied an explicit Authorization header (e.g. during login).
   if (currentCredentials && !headers["Authorization"]) {
     headers["Authorization"] = currentCredentials;
   }
 
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    headers,
-  });
+  console.log("apiBaseUrl: ", apiBaseUrl);
+  const response = await fetch(`${apiBaseUrl}${path}`, { ...init, headers });
 
   if (!response.ok) {
     throw new ApiRequestError(response.status, response.statusText);
@@ -110,18 +104,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-function readJson<T>(key: string, fallback: T): T {
-  try {
-    const storedValue = localStorage.getItem(key);
-    return storedValue ? (JSON.parse(storedValue) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeJson<T>(key: string, value: T) {
-  localStorage.setItem(key, JSON.stringify(value));
-}
+// ─── Normalisation helpers ────────────────────────────────────────────────────
 
 function textValue(value: unknown): string {
   return typeof value === "string" ? value : "";
@@ -132,18 +115,16 @@ function numberValue(value: unknown): number | null {
   return Number.isFinite(number) ? number : null;
 }
 
-function normalizedStatus(
-  userId: number,
-  status: unknown,
-): UserProfile["status"] {
-  if (currentUser?.id === userId) {
-    return "online";
-  }
+function friendsValue(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is number => typeof v === "number");
+}
 
+function normalizedStatus(status: unknown): UserProfile["status"] {
   return status === "online" ? "online" : "offline";
 }
 
-function normalizeUser(payload: unknown): UserProfile {
+export function normalizeUser(payload: unknown): UserProfile {
   const user = payload as UserPayload;
   const id = numberValue(user.id ?? user.user_id);
   const name =
@@ -151,12 +132,12 @@ function normalizeUser(payload: unknown): UserProfile {
     textValue(user.username) ||
     textValue(user.user_name);
   const email = textValue(user.email) || textValue(user.user_email);
-
+  console.log("user: ", user);
   if (id === null || !name || !email) {
     throw new Error("Invalid user payload.");
   }
 
-  return applyStoredProfile({
+  return {
     id,
     name,
     email,
@@ -165,168 +146,26 @@ function normalizeUser(payload: unknown): UserProfile {
       textValue(user.avatarUrl) ||
       textValue(user.avatar_url) ||
       textValue(user.avatar) ||
-      DEFAULT_AVATAR_URL,
-    status: normalizedStatus(id, user.status),
-  });
+      PH_USER_IMAGE,
+    status: normalizedStatus(user.status),
+    friends: friendsValue(user.friends),
+  };
 }
 
-function normalizeUsers(payload: unknown): UserProfile[] {
+export function normalizeUsers(payload: unknown): UserProfile[] {
   if (!Array.isArray(payload)) {
     throw new Error("Invalid user list payload.");
   }
-
   return payload.map(normalizeUser);
 }
 
-function normalizeStoredUser(payload: unknown): StoredUser | null {
-  try {
-    const user = payload as UserPayload;
-    return {
-      ...normalizeUser(user),
-      password: textValue(user.password),
-    };
-  } catch {
-    return null;
-  }
-}
-
-function getProfileOverrides(): ProfileOverrides {
-  return readJson<ProfileOverrides>(PROFILE_OVERRIDES_KEY, {});
-}
-
-function saveProfileOverride(userId: number, update: ProfileUpdate) {
-  const overrides = getProfileOverrides();
-  overrides[String(userId)] = {
-    ...overrides[String(userId)],
-    ...update,
-  };
-  writeJson(PROFILE_OVERRIDES_KEY, overrides);
-}
-
-function applyStoredProfile(user: UserProfile): UserProfile {
-  const override = getProfileOverrides()[String(user.id)] ?? {};
-  const merged = {
-    ...user,
-    ...override,
-  };
-
-  return {
-    ...merged,
-    bio: merged.bio || "No profile info yet.",
-    avatarUrl: merged.avatarUrl || DEFAULT_AVATAR_URL,
-    status: normalizedStatus(user.id, merged.status),
-  };
-}
-
-function getLocalUsers(): StoredUser[] {
-  return readJson<unknown[]>(LOCAL_USERS_KEY, [])
-    .map(normalizeStoredUser)
-    .filter((user): user is StoredUser => Boolean(user));
-}
-
-function saveLocalUsers(users: StoredUser[]) {
-  writeJson(LOCAL_USERS_KEY, users);
-}
-
-function publicUser(user: StoredUser): UserProfile {
-  return applyStoredProfile({
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    bio: user.bio,
-    avatarUrl: user.avatarUrl,
-    status: user.status,
-  });
-}
-
-function localPublicUsers(): UserProfile[] {
-  return getLocalUsers().map(publicUser);
-}
-
-function mergeUsers(...groups: UserProfile[][]): UserProfile[] {
-  const users = new Map<number, UserProfile>();
-
-  for (const group of groups) {
-    for (const user of group) {
-      users.set(user.id, applyStoredProfile(user));
-    }
-  }
-
-  return [...users.values()].sort((first, second) => first.id - second.id);
-}
-
-function rememberUser(user: UserProfile) {
-  const storedUser = applyStoredProfile(user);
-  knownUsers = knownUsers.some((item) => item.id === storedUser.id)
-    ? knownUsers.map((item) => (item.id === storedUser.id ? storedUser : item))
-    : [...knownUsers, storedUser];
-}
-
-function nextLocalUserId() {
-  const existingIds = [...knownUsers, ...localPublicUsers()].map(
-    (user) => user.id,
-  );
-  return Math.max(0, ...existingIds) + 1;
-}
-
-function shouldUseLocalFallback(error: unknown) {
-  return (
-    !(error instanceof ApiRequestError) ||
-    error.status === 404 ||
-    error.status >= 500
-  );
-}
-
-function updateLocalUser(userId: number, update: ProfileUpdate) {
-  const users = getLocalUsers();
-  const nextUsers = users.map((user) =>
-    user.id === userId
-      ? {
-          ...user,
-          ...update,
-          status: "offline" as const,
-        }
-      : user,
-  );
-  saveLocalUsers(nextUsers);
-}
-
-function getFriendStore(): FriendStore {
-  return readJson<FriendStore>(FRIENDS_KEY, {});
-}
-
-function saveFriendStore(store: FriendStore) {
-  writeJson(FRIENDS_KEY, store);
-}
-
-function friendIdsForCurrentUser(): number[] {
-  if (!currentUser) {
-    return [];
-  }
-
-  return getFriendStore()[String(currentUser.id)] ?? [];
-}
+// ─── User name lookup (uses in-memory cache) ──────────────────────────────────
 
 export function findUserName(id: number): string {
-  if (currentUser?.id === id) {
-    return currentUser.name;
-  }
-
-  return knownUsers.find((user) => user.id === id)?.name ?? `user#${id}`;
+  return knownUsers.find((u) => u.id === id)?.name ?? `user#${id}`;
 }
 
-export async function getCurrentUser(): Promise<SessionUser | null> {
-  if (!currentUser) {
-    currentUser = restoreSession();
-  }
-  currentUser = currentUser
-    ? {
-        ...applyStoredProfile(currentUser),
-        status: "online",
-      }
-    : null;
-  return currentUser;
-}
+// ─── Auth ─────────────────────────────────────────────────────────────────────
 
 export async function login(
   name: string,
@@ -339,49 +178,15 @@ export async function login(
   }
 
   const credentials = buildBasicAuthHeader(cleanName, password);
+  const user = normalizeUser(
+    await requestJson<unknown>("/users/login", {
+      method: "GET",
+      headers: { Authorization: credentials },
+    }),
+  );
 
-  try {
-    // Send credentials in the Authorization header only — no plaintext body.
-    // The backend's BasicAuth middleware reads the header and verifies the
-    // password against the stored Argon2 hash.
-    const user = normalizeUser(
-      await requestJson<unknown>("/users/login", {
-        method: "POST",
-        headers: { Authorization: credentials },
-      }),
-    );
-    currentCredentials = credentials;
-    currentUser = {
-      ...user,
-      status: "online",
-    };
-    saveSession(currentCredentials, currentUser);
-    rememberUser(currentUser);
-    return currentUser;
-  } catch (error) {
-    if (!shouldUseLocalFallback(error)) {
-      throw error;
-    }
-
-    const user = getLocalUsers().find(
-      (item) => item.name === cleanName && item.password === password,
-    );
-
-    if (!user) {
-      throw new Error("Name or password is incorrect.", { cause: error });
-    }
-
-    // Store credentials even in the offline fallback so that requests will
-    // include the header once the backend becomes reachable again.
-    currentCredentials = credentials;
-    currentUser = {
-      ...applyStoredProfile(user),
-      status: "online",
-    };
-    saveSession(currentCredentials, currentUser);
-    rememberUser(currentUser);
-    return currentUser;
-  }
+  currentCredentials = credentials;
+  return { ...user, status: "online" };
 }
 
 export async function register(
@@ -396,116 +201,59 @@ export async function register(
     throw new Error("Name, email, and password are required.");
   }
 
-  try {
-    // Registration sends the plaintext password in the body so the backend
-    // can hash and store it. No Authorization header is sent here because the
-    // user does not have credentials yet.
-    const user = normalizeUser(
-      await requestJson<unknown>("/users/create", {
-        method: "POST",
-        body: JSON.stringify({
-          name: cleanName,
-          email: cleanEmail,
-          password,
-        }),
-      }),
-    );
-    // Store credentials so all subsequent requests are authenticated.
-    currentCredentials = buildBasicAuthHeader(cleanName, password);
-    currentUser = {
-      ...user,
-      status: "online",
-    };
-    saveSession(currentCredentials, currentUser);
-    rememberUser(currentUser);
-    return currentUser;
-  } catch (error) {
-    if (!shouldUseLocalFallback(error)) {
-      throw error;
-    }
+  const user = normalizeUser(
+    await requestJson<unknown>("/users/create", {
+      method: "POST",
+      body: JSON.stringify({ name: cleanName, email: cleanEmail, password }),
+    }),
+  );
 
-    const users = getLocalUsers();
-    if (users.some((user) => user.name === cleanName)) {
-      throw new Error("Name is already registered.", { cause: error });
-    }
-
-    const newUser: StoredUser = {
-      id: nextLocalUserId(),
-      name: cleanName,
-      email: cleanEmail,
-      password,
-      bio: "No profile info yet.",
-      avatarUrl: DEFAULT_AVATAR_URL,
-      status: "offline",
-    };
-    saveLocalUsers([...users, newUser]);
-    currentCredentials = buildBasicAuthHeader(cleanName, password);
-    currentUser = {
-      ...publicUser(newUser),
-      status: "online",
-    };
-    saveSession(currentCredentials, currentUser);
-    rememberUser(currentUser);
-    return currentUser;
-  }
+  currentCredentials = buildBasicAuthHeader(cleanName, password);
+  return { ...user, status: "online" };
 }
 
-export async function logout(): Promise<void> {
-  currentUser = null;
+/** Clears the in-memory credentials. SessionContext handles sessionStorage. */
+export function logout(): void {
   currentCredentials = null;
-  clearSession();
+  knownUsers = [];
 }
+
+// ─── Users ───────────────────────────────────────────────────────────────────
 
 export async function listUsers(): Promise<UserProfile[]> {
-  try {
-    const backendUsers = normalizeUsers(
-      await requestJson<unknown>("/users/show"),
-    );
-    knownUsers = mergeUsers(backendUsers, localPublicUsers());
-    return knownUsers;
-  } catch {
-    knownUsers = mergeUsers(localPublicUsers());
-    return knownUsers;
-  }
+  const users = normalizeUsers(await requestJson<unknown>("/users/show"));
+  knownUsers = users;
+  return users;
 }
 
 export async function getUser(id: number): Promise<UserProfile | null> {
   try {
     const user = normalizeUser(await requestJson<unknown>(`/users/show/${id}`));
-    rememberUser(user);
+    const idx = knownUsers.findIndex((u) => u.id === id);
+    if (idx >= 0) {
+      knownUsers[idx] = user;
+    } else {
+      knownUsers = [...knownUsers, user];
+    }
     return user;
-  } catch {
-    const user =
-      knownUsers.find((item) => item.id === id) ??
-      localPublicUsers().find((item) => item.id === id) ??
-      null;
-
-    return user ? applyStoredProfile(user) : null;
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 404) return null;
+    throw error;
   }
 }
 
 export async function getUserByName(name: string): Promise<UserProfile | null> {
   const cleanName = name.trim();
-  const cachedUser = knownUsers.find((user) => user.name === cleanName);
-
-  if (cachedUser) {
-    return applyStoredProfile(cachedUser);
-  }
-
+  const cached = knownUsers.find((u) => u.name === cleanName);
+  if (cached) return cached;
   const users = await listUsers();
-  return users.find((user) => user.name === cleanName) ?? null;
+  return users.find((u) => u.name === cleanName) ?? null;
 }
 
-export async function updateCurrentUserProfile(update: {
-  name: string;
-  email: string;
-  bio: string;
-  avatarUrl?: string;
-}): Promise<SessionUser> {
-  if (!currentUser) {
-    throw new Error("Login first to update your profile.");
-  }
-
+export async function updateCurrentUserProfile(
+  userId: number,
+  update: { name: string; email: string; bio: string; avatarUrl?: string },
+): Promise<SessionUser> {
   const cleanName = update.name.trim();
   const cleanEmail = update.email.trim();
   const cleanBio = update.bio.trim();
@@ -514,35 +262,19 @@ export async function updateCurrentUserProfile(update: {
     throw new Error("Name and email are required.");
   }
 
-  const duplicate = (await listUsers()).find(
-    (user) => user.id !== currentUser?.id && user.name === cleanName,
+  const user = normalizeUser(
+    await requestJson<unknown>(`/users/update/${userId}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        name: cleanName,
+        email: cleanEmail,
+        bio: cleanBio || "No profile info yet.",
+        ...(update.avatarUrl ? { avatarUrl: update.avatarUrl } : {}),
+      }),
+    }),
   );
 
-  if (duplicate) {
-    throw new Error("Another user already has that name.");
-  }
-
-  const nextProfile: ProfileUpdate = {
-    name: cleanName,
-    email: cleanEmail,
-    bio: cleanBio || "No profile info yet.",
-  };
-
-  if (update.avatarUrl) {
-    nextProfile.avatarUrl = update.avatarUrl;
-  }
-
-  saveProfileOverride(currentUser.id, nextProfile);
-  updateLocalUser(currentUser.id, nextProfile);
-  currentUser = {
-    ...applyStoredProfile({
-      ...currentUser,
-      ...nextProfile,
-    }),
-    status: "online",
-  };
-  rememberUser(currentUser);
-  return currentUser;
+  return { ...user, status: "online" };
 }
 
 export async function uploadAvatar(file: File): Promise<string> {
@@ -550,9 +282,7 @@ export async function uploadAvatar(file: File): Promise<string> {
     throw new Error("Avatar must be an image file.");
   }
 
-  const params = new URLSearchParams({
-    filename: file.name || "avatar",
-  });
+  const params = new URLSearchParams({ filename: file.name || "avatar" });
   const uploadHeaders: Record<string, string> = {
     "Content-Type": file.type,
   };
@@ -579,154 +309,107 @@ export async function uploadAvatar(file: File): Promise<string> {
   return payload.avatarUrl;
 }
 
-export async function listFriends(): Promise<UserProfile[]> {
-  const friendIds = friendIdsForCurrentUser();
+// ─── Friends ─────────────────────────────────────────────────────────────────
 
-  if (friendIds.length === 0) {
-    return [];
-  }
-
-  const users = await listUsers();
+/**
+ * Pure helper — resolves a list of friend IDs to full UserProfile objects
+ * using the provided user pool. No network request.
+ */
+export function listFriends(
+  friendIds: number[],
+  allUsers: UserProfile[],
+): UserProfile[] {
   return friendIds
-    .map(
-      (id) =>
-        users.find((user) => user.id === id) ??
-        knownUsers.find((user) => user.id === id),
-    )
-    .filter((user): user is UserProfile => Boolean(user))
-    .map(applyStoredProfile);
+    .map((id) => allUsers.find((u) => u.id === id))
+    .filter((u): u is UserProfile => Boolean(u));
 }
 
-export async function addFriend(userId: number): Promise<UserProfile[]> {
-  if (!currentUser) {
-    throw new Error("Login first to add friends.");
-  }
-
-  if (currentUser.id === userId) {
-    throw new Error("You cannot add yourself as a friend.");
-  }
-
-  const user = await getUser(userId);
-  if (!user) {
-    throw new Error("User not found.");
-  }
-
-  const store = getFriendStore();
-  const currentIds = store[String(currentUser.id)] ?? [];
-  store[String(currentUser.id)] = [...new Set([...currentIds, userId])];
-  saveFriendStore(store);
-  return listFriends();
+export async function addFriend(
+  currentUserId: number,
+  targetUserId: number,
+): Promise<void> {
+  await requestJson<unknown>(`/users/${currentUserId}/friends`, {
+    method: "POST",
+    body: JSON.stringify({ friendId: targetUserId }),
+  });
 }
 
-export async function removeFriend(userId: number): Promise<UserProfile[]> {
-  if (!currentUser) {
-    throw new Error("Login first to remove friends.");
-  }
-
-  const store = getFriendStore();
-  const currentIds = store[String(currentUser.id)] ?? [];
-  store[String(currentUser.id)] = currentIds.filter((id) => id !== userId);
-  saveFriendStore(store);
-  return listFriends();
+export async function removeFriend(
+  currentUserId: number,
+  targetUserId: number,
+): Promise<void> {
+  await requestJson<unknown>(
+    `/users/${currentUserId}/friends/${targetUserId}`,
+    { method: "DELETE" },
+  );
 }
+
+// ─── Discussions ──────────────────────────────────────────────────────────────
 
 export async function listDiscussions(): Promise<DiscussionThread[]> {
-  try {
-    return await requestJson<DiscussionThread[]>("/discussions/show");
-  } catch {
-    return [];
-  }
+  return requestJson<DiscussionThread[]>("/discussions/show");
 }
 
-export async function getDiscussion(
-  id: number,
-): Promise<DiscussionThread | null> {
-  try {
-    return await requestJson<DiscussionThread>(`/discussions/show/${id}`);
-  } catch {
-    return null;
-  }
+export async function getDiscussion(id: number): Promise<DiscussionThread> {
+  return requestJson<DiscussionThread>(`/discussions/show/${id}`);
 }
 
 export async function createDiscussion(
   title: string,
   body: string,
+  authorId: number,
 ): Promise<DiscussionThread> {
-  if (!currentUser) {
-    throw new Error("Login first to write discussions.");
-  }
-
   return requestJson<DiscussionThread>("/discussions/create", {
     method: "POST",
-    body: JSON.stringify({ name: title, info: body, author: currentUser.id }),
+    body: JSON.stringify({ name: title, info: body, author: authorId }),
   });
 }
 
 export async function createPost(
   discussionId: number,
   body: string,
+  authorId: number,
 ): Promise<DiscussionThread> {
-  if (!currentUser) {
-    throw new Error("Login first to write replies.");
-  }
-
   return requestJson<DiscussionThread>(`/discussions/${discussionId}/posts`, {
     method: "POST",
-    body: JSON.stringify({ body, author: currentUser.id }),
+    body: JSON.stringify({ body, author: authorId }),
   });
 }
 
-export async function listMail(): Promise<MailMessage[]> {
-  if (!currentUser) {
-    return [];
-  }
+// ─── Mail ─────────────────────────────────────────────────────────────────────
 
-  const params = new URLSearchParams({
-    userId: String(currentUser.id),
-  });
-
-  try {
-    return await requestJson<MailMessage[]>(`/mail/show?${params.toString()}`);
-  } catch {
-    return [];
-  }
+export async function listMail(userId: number): Promise<MailMessage[]> {
+  const params = new URLSearchParams({ userId: String(userId) });
+  return requestJson<MailMessage[]>(`/mail/show?${params.toString()}`);
 }
 
-export async function getMail(id: number): Promise<MailMessage | null> {
-  try {
-    return await requestJson<MailMessage>(`/mail/show/${id}`);
-  } catch {
-    return null;
-  }
+export async function getMail(id: number): Promise<MailMessage> {
+  return requestJson<MailMessage>(`/mail/show/${id}`);
 }
 
 export async function sendMail(
-  to: string,
+  senderId: number,
+  recipientName: string,
   title: string,
   body: string,
 ): Promise<MailMessage> {
-  if (!currentUser) {
-    throw new Error("Login first to send mail.");
+  const recipient = await getUserByName(recipientName);
+  if (!recipient) {
+    throw new Error(`User "${recipientName}" not found.`);
   }
-
-  const recipient = await getUserByName(to);
-
   return requestJson<MailMessage>("/mail/create", {
     method: "POST",
     body: JSON.stringify({
-      sender: currentUser.id,
-      recipient: recipient?.id,
-      to,
+      sender: senderId,
+      recipient: recipient.id,
       title,
       body,
     }),
   });
 }
 
+// ─── Games ───────────────────────────────────────────────────────────────────
+
 export async function listGames(): Promise<GameSummary[]> {
-  try {
-    return await requestJson<GameSummary[]>("/games/show");
-  } catch {
-    return [];
-  }
+  return requestJson<GameSummary[]>("/games/show");
 }

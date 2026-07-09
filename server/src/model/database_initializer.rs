@@ -6,6 +6,7 @@ use dotenvy::dotenv;
 use std::env;
 use crate::model::users::seed_users_in_db;
 
+#[allow(dead_code)]
 struct ServerEnvironment {
     database_url: String,
     pass_hash: String,
@@ -41,7 +42,7 @@ impl DatabaseInitializer {
 
     pub fn connect(&mut self) {
         let mut connection = PgConnection::establish(self.server_environment.database_url.as_str())
-            .unwrap_or_else(|_| panic!("Error: Database does not probably running, Can't connect to {}", self.server_environment.database_url));
+            .unwrap_or_else(|e| panic!("Error: Database does not probably running, Can't connect to {} due error: {}", self.server_environment.database_url, e));
         run_migrations(&mut connection);
         self.database_connected = true;
         self.connection = Some(connection);

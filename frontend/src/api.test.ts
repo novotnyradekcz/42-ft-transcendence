@@ -1,20 +1,25 @@
 /**
- * Tests for the BasicAuth credential management in api.ts.
+ * Tests for api.ts — Basic Auth management, session restore,
+ * user normalisation, and pure helpers.
  *
  * Run with:  npm test
- * Requires:  vitest, jsdom  (npm install --save-dev vitest jsdom)
+ * Requires:  vitest, jsdom
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildBasicAuthHeader,
-  getCurrentUser,
+  listFriends,
   listUsers,
   login,
   logout,
+  normalizeUser,
   register,
+  restoreSession,
+  setCredentials,
   uploadAvatar,
 } from "./api";
+import { CREDENTIALS_KEY, PH_USER_IMAGE, SESSION_USER_KEY } from "./constants";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -25,6 +30,7 @@ const BASE_USER = {
   bio: "test bio",
   avatar_url: "",
   status: "online",
+  friends: [2, 3],
 };
 
 function stubFetch(status: number, body: unknown) {
@@ -57,7 +63,6 @@ describe("buildBasicAuthHeader", () => {
   it("edge case: password containing a colon is not split", () => {
     const header = buildBasicAuthHeader("bob", "pa:ss:word");
     const decoded = atob(header.slice("Basic ".length));
-    // Only the first colon separates username from password
     expect(decoded).toBe("bob:pa:ss:word");
   });
 
@@ -68,13 +73,154 @@ describe("buildBasicAuthHeader", () => {
   });
 });
 
+// ─── normalizeUser ────────────────────────────────────────────────────────────
+
+describe("normalizeUser", () => {
+  it("happy path: maps all fields correctly", () => {
+    const user = normalizeUser(BASE_USER);
+    expect(user.id).toBe(1);
+    expect(user.name).toBe("alice");
+    expect(user.email).toBe("alice@example.com");
+    expect(user.bio).toBe("test bio");
+    expect(user.friends).toEqual([2, 3]);
+  });
+
+  it("happy path: uses PH_USER_IMAGE when avatar fields are all empty", () => {
+    const user = normalizeUser({
+      ...BASE_USER,
+      avatar_url: "",
+      avatarUrl: "",
+      avatar: "",
+    });
+    expect(user.avatarUrl).toBe(PH_USER_IMAGE);
+  });
+
+  it("happy path: uses PH_USER_IMAGE when avatar fields are missing", () => {
+    const noAvatar = {
+      id: 1,
+      name: "alice",
+      email: "alice@example.com",
+      bio: "test bio",
+      status: "online",
+      friends: [2, 3],
+    };
+    const user = normalizeUser(noAvatar);
+    expect(user.avatarUrl).toBe(PH_USER_IMAGE);
+  });
+
+  it("happy path: prefers avatarUrl over avatar_url", () => {
+    const user = normalizeUser({
+      ...BASE_USER,
+      avatarUrl: "/images/direct.png",
+      avatar_url: "/images/snake.png",
+    });
+    expect(user.avatarUrl).toBe("/images/direct.png");
+  });
+
+  it("happy path: friends defaults to [] when field is missing", () => {
+    const noFriends = {
+      id: 1,
+      name: "alice",
+      email: "alice@example.com",
+      bio: "test bio",
+      avatar_url: "",
+      status: "online",
+    };
+    const user = normalizeUser(noFriends);
+    expect(user.friends).toEqual([]);
+  });
+
+  it("happy path: filters non-number values out of friends array", () => {
+    const user = normalizeUser({ ...BASE_USER, friends: [1, "two", null, 3] });
+    expect(user.friends).toEqual([1, 3]);
+  });
+
+  it("edge case: throws when id is missing", () => {
+    expect(() => normalizeUser({ name: "alice", email: "a@b.com" })).toThrow(
+      "Invalid user payload.",
+    );
+  });
+
+  it("edge case: throws when name is missing", () => {
+    expect(() => normalizeUser({ id: 1, email: "a@b.com" })).toThrow(
+      "Invalid user payload.",
+    );
+  });
+
+  it("edge case: uses fallback bio when bio is missing", () => {
+    const noBio = {
+      id: 1,
+      name: "alice",
+      email: "alice@example.com",
+      avatar_url: "",
+      status: "online",
+      friends: [],
+    };
+    const user = normalizeUser(noBio);
+    expect(user.bio).toBe("No profile info yet.");
+  });
+});
+
+// ─── listFriends (pure helper) ────────────────────────────────────────────────
+
+describe("listFriends", () => {
+  const allUsers = [
+    {
+      id: 1,
+      name: "alice",
+      email: "a@a.com",
+      bio: "",
+      avatarUrl: "",
+      status: "online" as const,
+      friends: [],
+    },
+    {
+      id: 2,
+      name: "bob",
+      email: "b@b.com",
+      bio: "",
+      avatarUrl: "",
+      status: "offline" as const,
+      friends: [],
+    },
+    {
+      id: 3,
+      name: "carol",
+      email: "c@c.com",
+      bio: "",
+      avatarUrl: "",
+      status: "offline" as const,
+      friends: [],
+    },
+  ];
+
+  it("happy path: returns matching UserProfile objects for given IDs", () => {
+    const result = listFriends([2, 3], allUsers);
+    expect(result.map((u) => u.name)).toEqual(["bob", "carol"]);
+  });
+
+  it("happy path: returns empty array for empty friend list", () => {
+    expect(listFriends([], allUsers)).toEqual([]);
+  });
+
+  it("edge case: silently skips IDs not found in allUsers", () => {
+    const result = listFriends([2, 99], allUsers);
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("bob");
+  });
+
+  it("edge case: returns empty array when allUsers is empty", () => {
+    expect(listFriends([1, 2], [])).toEqual([]);
+  });
+});
+
 // ─── login ────────────────────────────────────────────────────────────────────
 
 describe("login", () => {
-  afterEach(async () => {
-    await logout();
+  afterEach(() => {
+    logout();
     vi.unstubAllGlobals();
-    localStorage.clear();
+    sessionStorage.clear();
   });
 
   it("happy path: sends Authorization header (no JSON body) and returns the user", async () => {
@@ -84,14 +230,13 @@ describe("login", () => {
 
     expect(user.name).toBe("alice");
     expect(user.email).toBe("alice@example.com");
+    expect(user.friends).toEqual([2, 3]);
 
     const [url, init] = fetch.mock.calls[0] as [string, RequestInit];
     expect(url).toContain("/users/login");
 
     const headers = init.headers as Record<string, string>;
     expect(headers["Authorization"]).toBe("Basic " + btoa("alice:s3cr3t"));
-
-    // No plaintext password in the request body
     expect(init.body).toBeUndefined();
   });
 
@@ -102,8 +247,13 @@ describe("login", () => {
 
     const [, init] = fetch.mock.calls[0] as [string, RequestInit];
     const headers = init.headers as Record<string, string>;
-    // "alice" (trimmed), not "  alice  "
     expect(headers["Authorization"]).toBe("Basic " + btoa("alice:s3cr3t"));
+  });
+
+  it("happy path: returned user has status online", async () => {
+    stubFetch(200, { ...BASE_USER, status: "offline" });
+    const user = await login("alice", "s3cr3t");
+    expect(user.status).toBe("online");
   });
 
   it("edge case: throws when name is empty", async () => {
@@ -124,38 +274,14 @@ describe("login", () => {
     );
   });
 
-  it("edge case: 401 propagates as an error without falling back to localStorage", async () => {
+  it("edge case: 401 propagates as an error (no fallback)", async () => {
     stubFetch(401, null);
-    // Seed localStorage so a fallback would succeed if incorrectly attempted
-    localStorage.setItem(
-      "ft_transcendence.localUsers",
-      JSON.stringify([{ ...BASE_USER, password: "s3cr3t" }]),
-    );
-
     await expect(login("alice", "s3cr3t")).rejects.toThrow("401");
   });
 
-  it("edge case: 500 falls back to localStorage when the user exists there", async () => {
+  it("edge case: 500 propagates as an error (no fallback)", async () => {
     stubFetch(500, null);
-    localStorage.setItem(
-      "ft_transcendence.localUsers",
-      JSON.stringify([{ ...BASE_USER, password: "s3cr3t" }]),
-    );
-
-    const user = await login("alice", "s3cr3t");
-    expect(user.name).toBe("alice");
-  });
-
-  it("edge case: 500 + wrong local password throws", async () => {
-    stubFetch(500, null);
-    localStorage.setItem(
-      "ft_transcendence.localUsers",
-      JSON.stringify([{ ...BASE_USER, password: "s3cr3t" }]),
-    );
-
-    await expect(login("alice", "wrong")).rejects.toThrow(
-      "Name or password is incorrect.",
-    );
+    await expect(login("alice", "s3cr3t")).rejects.toThrow("500");
   });
 });
 
@@ -164,22 +290,13 @@ describe("login", () => {
 describe("logout", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
-    localStorage.clear();
-  });
-
-  it("happy path: clears session so getCurrentUser returns null", async () => {
-    stubFetch(200, BASE_USER);
-    await login("alice", "s3cr3t");
-
-    await logout();
-
-    expect(await getCurrentUser()).toBeNull();
+    sessionStorage.clear();
   });
 
   it("happy path: clears credentials — subsequent requests carry no Authorization header", async () => {
     stubFetch(200, BASE_USER);
     await login("alice", "s3cr3t");
-    await logout();
+    logout();
 
     const listFetch = stubFetch(200, [BASE_USER]);
     await listUsers();
@@ -190,13 +307,13 @@ describe("logout", () => {
   });
 });
 
-// ─── requestJson credential injection ────────────────────────────────────────
+// ─── authenticated requests after login ──────────────────────────────────────
 
 describe("authenticated requests after login", () => {
-  afterEach(async () => {
-    await logout();
+  afterEach(() => {
+    logout();
     vi.unstubAllGlobals();
-    localStorage.clear();
+    sessionStorage.clear();
   });
 
   it("attaches stored credentials to every subsequent request", async () => {
@@ -221,13 +338,100 @@ describe("authenticated requests after login", () => {
   });
 });
 
-// ─── uploadAvatar ────────────────────────────────────────────────────────────
+// ─── restoreSession ───────────────────────────────────────────────────────────
+
+describe("restoreSession", () => {
+  afterEach(() => {
+    logout();
+    vi.unstubAllGlobals();
+    sessionStorage.clear();
+  });
+
+  it("happy path: restores user from sessionStorage (simulated page refresh)", async () => {
+    sessionStorage.setItem(CREDENTIALS_KEY, "Basic " + btoa("alice:s3cr3t"));
+    sessionStorage.setItem(
+      SESSION_USER_KEY,
+      JSON.stringify({ ...BASE_USER, avatarUrl: "/img.png" }),
+    );
+
+    const user = restoreSession();
+    expect(user?.name).toBe("alice");
+    expect(user?.friends).toEqual([2, 3]);
+  });
+
+  it("happy path: restored credentials are sent on subsequent requests", async () => {
+    sessionStorage.setItem(CREDENTIALS_KEY, "Basic " + btoa("alice:s3cr3t"));
+    sessionStorage.setItem(
+      SESSION_USER_KEY,
+      JSON.stringify({ ...BASE_USER, avatarUrl: "/img.png" }),
+    );
+    restoreSession(); // arms currentCredentials
+
+    const listFetch = stubFetch(200, [BASE_USER]);
+    await listUsers();
+
+    const [, init] = listFetch.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers["Authorization"]).toBe("Basic " + btoa("alice:s3cr3t"));
+  });
+
+  it("edge case: returns null when sessionStorage is empty (no prior session)", () => {
+    expect(restoreSession()).toBeNull();
+  });
+
+  it("edge case: returns null when sessionStorage has malformed JSON", () => {
+    sessionStorage.setItem(CREDENTIALS_KEY, "Basic abc");
+    sessionStorage.setItem(SESSION_USER_KEY, "{broken json");
+    expect(restoreSession()).toBeNull();
+  });
+
+  it("edge case: returns null when credentials key is missing", () => {
+    sessionStorage.setItem(
+      SESSION_USER_KEY,
+      JSON.stringify({ ...BASE_USER, avatarUrl: "" }),
+    );
+    expect(restoreSession()).toBeNull();
+  });
+});
+
+// ─── setCredentials ───────────────────────────────────────────────────────────
+
+describe("setCredentials", () => {
+  afterEach(() => {
+    logout();
+    vi.unstubAllGlobals();
+  });
+
+  it("happy path: credentials set externally are used on the next request", async () => {
+    setCredentials("Basic " + btoa("bob:pass"));
+
+    const listFetch = stubFetch(200, [BASE_USER]);
+    await listUsers();
+
+    const [, init] = listFetch.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers["Authorization"]).toBe("Basic " + btoa("bob:pass"));
+  });
+
+  it("edge case: passing null removes credentials from subsequent requests", async () => {
+    setCredentials("Basic " + btoa("bob:pass"));
+    setCredentials(null);
+
+    const listFetch = stubFetch(200, [BASE_USER]);
+    await listUsers();
+
+    const [, init] = listFetch.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers["Authorization"]).toBeUndefined();
+  });
+});
+
+// ─── uploadAvatar ─────────────────────────────────────────────────────────────
 
 describe("uploadAvatar", () => {
-  afterEach(async () => {
-    await logout();
+  afterEach(() => {
+    logout();
     vi.unstubAllGlobals();
-    localStorage.clear();
     sessionStorage.clear();
   });
 
@@ -247,7 +451,6 @@ describe("uploadAvatar", () => {
   }
 
   it("happy path: sends Authorization header when authenticated", async () => {
-    // login first so credentials are stored
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -308,113 +511,13 @@ describe("uploadAvatar", () => {
   });
 });
 
-// ─── session persistence ──────────────────────────────────────────────────────
-
-describe("session persistence", () => {
-  afterEach(async () => {
-    await logout();
-    vi.unstubAllGlobals();
-    localStorage.clear();
-    sessionStorage.clear();
-  });
-
-  it("happy path: saves credentials to sessionStorage on login", async () => {
-    stubFetch(200, BASE_USER);
-    await login("alice", "s3cr3t");
-
-    expect(sessionStorage.getItem("ft_transcendence.credentials")).toBe(
-      "Basic " + btoa("alice:s3cr3t"),
-    );
-    expect(sessionStorage.getItem("ft_transcendence.sessionUser")).toBeTruthy();
-  });
-
-  it("happy path: saves credentials to sessionStorage on register", async () => {
-    stubFetch(200, BASE_USER);
-    await register("alice", "alice@example.com", "s3cr3t");
-
-    expect(sessionStorage.getItem("ft_transcendence.credentials")).toBe(
-      "Basic " + btoa("alice:s3cr3t"),
-    );
-    expect(sessionStorage.getItem("ft_transcendence.sessionUser")).toBeTruthy();
-  });
-
-  it("happy path: clears sessionStorage on logout", async () => {
-    stubFetch(200, BASE_USER);
-    await login("alice", "s3cr3t");
-    await logout();
-
-    expect(sessionStorage.getItem("ft_transcendence.credentials")).toBeNull();
-    expect(sessionStorage.getItem("ft_transcendence.sessionUser")).toBeNull();
-  });
-
-  it("happy path: restores user from sessionStorage (simulated page refresh)", async () => {
-    // Seed sessionStorage as a prior login would have done — in-memory is null
-    sessionStorage.setItem(
-      "ft_transcendence.credentials",
-      "Basic " + btoa("alice:s3cr3t"),
-    );
-    sessionStorage.setItem(
-      "ft_transcendence.sessionUser",
-      JSON.stringify({
-        id: 1,
-        name: "alice",
-        email: "alice@example.com",
-        bio: "test bio",
-        avatarUrl: "",
-        status: "online",
-      }),
-    );
-
-    const user = await getCurrentUser();
-    expect(user?.name).toBe("alice");
-  });
-
-  it("happy path: restored credentials are sent on subsequent requests", async () => {
-    sessionStorage.setItem(
-      "ft_transcendence.credentials",
-      "Basic " + btoa("alice:s3cr3t"),
-    );
-    sessionStorage.setItem(
-      "ft_transcendence.sessionUser",
-      JSON.stringify({
-        id: 1,
-        name: "alice",
-        email: "alice@example.com",
-        bio: "test bio",
-        avatarUrl: "",
-        status: "online",
-      }),
-    );
-    await getCurrentUser(); // triggers restore
-
-    const listFetch = stubFetch(200, [BASE_USER]);
-    await listUsers();
-
-    const [, init] = listFetch.mock.calls[0] as [string, RequestInit];
-    const headers = init.headers as Record<string, string>;
-    expect(headers["Authorization"]).toBe("Basic " + btoa("alice:s3cr3t"));
-  });
-
-  it("edge case: returns null when sessionStorage is empty (no prior session)", async () => {
-    // nothing in sessionStorage, currentUser is null
-    expect(await getCurrentUser()).toBeNull();
-  });
-
-  it("edge case: returns null when sessionStorage has malformed data", async () => {
-    sessionStorage.setItem("ft_transcendence.credentials", "Basic abc");
-    sessionStorage.setItem("ft_transcendence.sessionUser", "{broken json");
-
-    expect(await getCurrentUser()).toBeNull();
-  });
-});
-
-// ─── register ────────────────────────────────────────────────────────────────
+// ─── register ─────────────────────────────────────────────────────────────────
 
 describe("register", () => {
-  afterEach(async () => {
-    await logout();
+  afterEach(() => {
+    logout();
     vi.unstubAllGlobals();
-    localStorage.clear();
+    sessionStorage.clear();
   });
 
   it("happy path: registers without an Authorization header (new user has no credentials yet)", async () => {
@@ -457,5 +560,12 @@ describe("register", () => {
     await expect(register("alice", "alice@example.com", "")).rejects.toThrow(
       "Name, email, and password are required.",
     );
+  });
+
+  it("edge case: 400 propagates as an error (no fallback)", async () => {
+    stubFetch(400, null);
+    await expect(
+      register("alice", "alice@example.com", "s3cr3t"),
+    ).rejects.toThrow("400");
   });
 });

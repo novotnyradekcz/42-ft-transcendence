@@ -22,6 +22,7 @@ export type UserProfile = {
   bio: string;
   avatarUrl: string;
   status: "online" | "offline";
+  friends: number[];
 };
 
 export type SessionUser = UserProfile;
