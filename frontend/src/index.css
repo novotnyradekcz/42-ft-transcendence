@@ -23,27 +23,19 @@ textarea {
   font: inherit;
 }
 
-/* The page is a fixed viewport-high column: header and command prompt stay
-   visible, only .terminal-body scrolls. dvh tracks the mobile keyboard /
-   browser chrome; vh is the fallback for older browsers. */
 .terminal-page {
-  height: 100vh;
-  height: 100dvh;
+  min-height: 100vh;
   padding: clamp(0.75rem, 2vw, 1.5rem);
   background: #000;
-  overflow: hidden;
 }
 
 .terminal-window {
-  display: flex;
-  flex-direction: column;
   width: min(100%, 78ch);
-  height: 100%;
+  min-height: calc(100vh - clamp(1.5rem, 4vw, 3rem));
   background: #000;
 }
 
 .terminal-header {
-  flex-shrink: 0;
   margin-bottom: 1rem;
 }
 
@@ -71,14 +63,21 @@ textarea {
   overflow: hidden;
 }
 
+.terminal-kicker,
+.terminal-session,
 .terminal-output,
 .terminal-footer,
 small {
   color: #c8c8c8;
 }
 
+.terminal-kicker,
+.terminal-session {
+  margin: 0;
+}
+
 .terminal-output {
-  margin-top: 1rem;
+  margin-bottom: 1rem;
 }
 
 .terminal-output p {
@@ -87,9 +86,7 @@ small {
 }
 
 .terminal-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
+  min-height: 20rem;
 }
 
 .terminal-section {
@@ -328,19 +325,12 @@ code {
 }
 
 .terminal-footer {
-  flex-shrink: 0;
   margin-top: 1rem;
 }
 
 .terminal-footer p {
   margin: 0 0 0.35rem;
   overflow-wrap: anywhere;
-}
-
-.terminal-status {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .terminal-footer span {
@@ -423,17 +413,6 @@ code {
   background: #fff;
   color: #000;
   outline: none;
-}
-
-.command-help-popover .command-help-back {
-  border-color: #555;
-  color: #c8c8c8;
-}
-
-.command-help-empty {
-  margin: 0;
-  padding: 0.35rem 0.5rem;
-  color: #c8c8c8;
 }
 
 @media (max-width: 720px) {

@@ -16,8 +16,6 @@ pub struct DbUser {
     pub name: String,
     pub email: String,
     pub password: String,
-    pub bio: String,
-    pub avatar_url: String,
 }
 
 impl DbUser {
@@ -26,9 +24,7 @@ impl DbUser {
             id,
             name,
             email,
-            password,
-            bio: "No profile info yet.".to_string(),
-            avatar_url: "/images/profile.png".to_string(),
+            password
         }
     }
 }
@@ -65,8 +61,8 @@ impl From<DbUser> for UserInfo {
             id: item.id,
             name: item.name,
             email: item.email,
-            bio: item.bio,
-            avatar_url: item.avatar_url,
+            bio: "No profile info yet.".to_string(),
+            avatar_url: "/images/profile.png".to_string(),
             status: "offline".to_string(),
         }
     }
@@ -243,100 +239,4 @@ pub fn find_user_id_by_name(
         .select(users::id)
         .first::<i32>(database_initializer::connection(db))
         .optional()
-}
-
-/// Fetch a full user row (incl. password hash) by name — used by login.
-pub fn get_user_by_name_in_db(
-    db: &mut DatabaseInitializer,
-    user_name: &str,
-) -> Result<Option<DbUser>, diesel::result::Error> {
-    use crate::schema::ftt_users::dsl::*;
-
-    ftt_users
-        .filter(name.eq(user_name))
-        .select(DbUser::as_select())
-        .first::<DbUser>(connection(db))
-        .optional()
-}
-
-/// Update the editable profile fields and return the fresh public view.
-pub fn update_user_profile_in_db(
-    db: &mut DatabaseInitializer,
-    user_id_value: i32,
-    new_name: &str,
-    new_email: &str,
-    new_bio: &str,
-    new_avatar_url: &str,
-) -> Result<UserInfo, diesel::result::Error> {
-    use crate::schema::ftt_users::dsl::*;
-
-    let updated = diesel::update(ftt_users.filter(id.eq(user_id_value)))
-        .set((
-            name.eq(new_name),
-            email.eq(new_email),
-            bio.eq(new_bio),
-            avatar_url.eq(new_avatar_url),
-        ))
-        .returning(DbUser::as_returning())
-        .get_result::<DbUser>(connection(db))?;
-
-    Ok(UserInfo::from(updated))
-}
-
-pub fn list_friends_in_db(
-    db: &mut DatabaseInitializer,
-    owner_id: i32,
-) -> Result<Vec<UserInfo>, diesel::result::Error> {
-    use crate::schema::ftt_friends::dsl as friends;
-    use crate::schema::ftt_users::dsl as users;
-
-    let conn = connection(db);
-    let friend_ids: Vec<i32> = friends::ftt_friends
-        .filter(friends::user_id.eq(owner_id))
-        .select(friends::friend_id)
-        .load::<i32>(conn)?;
-
-    let rows = users::ftt_users
-        .filter(users::id.eq_any(friend_ids))
-        .order(users::id.asc())
-        .select(DbUser::as_select())
-        .load::<DbUser>(conn)?;
-
-    Ok(rows.into_iter().map(UserInfo::from).collect())
-}
-
-pub fn add_friend_in_db(
-    db: &mut DatabaseInitializer,
-    owner_id: i32,
-    target_id: i32,
-) -> Result<(), diesel::result::Error> {
-    use crate::schema::ftt_friends::dsl::*;
-
-    let conn = connection(db);
-    let existing: Option<i32> = ftt_friends
-        .filter(user_id.eq(owner_id).and(friend_id.eq(target_id)))
-        .select(user_id)
-        .first::<i32>(conn)
-        .optional()?;
-
-    if existing.is_none() {
-        diesel::insert_into(ftt_friends)
-            .values((user_id.eq(owner_id), friend_id.eq(target_id)))
-            .execute(conn)?;
-    }
-
-    Ok(())
-}
-
-pub fn remove_friend_in_db(
-    db: &mut DatabaseInitializer,
-    owner_id: i32,
-    target_id: i32,
-) -> Result<(), diesel::result::Error> {
-    use crate::schema::ftt_friends::dsl::*;
-
-    diesel::delete(ftt_friends.filter(user_id.eq(owner_id).and(friend_id.eq(target_id))))
-        .execute(connection(db))?;
-
-    Ok(())
 }

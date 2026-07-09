@@ -47,15 +47,6 @@ diesel::table! {
         name -> Text,
         email -> Text,
         password -> Text,
-        bio -> Text,
-        avatar_url -> Text,
-    }
-}
-
-diesel::table! {
-    ftt_friends (user_id, friend_id) {
-        user_id -> Int4,
-        friend_id -> Int4,
     }
 }
 
@@ -64,7 +55,6 @@ diesel::joinable!(ftt_posts -> ftt_users (author));
 
 diesel::allow_tables_to_appear_in_same_query!(
     ftt_discussions,
-    ftt_friends,
     ftt_games,
     ftt_mail,
     ftt_posts,
