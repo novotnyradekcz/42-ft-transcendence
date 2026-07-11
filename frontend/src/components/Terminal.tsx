@@ -3,6 +3,7 @@ import { Route, Routes, useLocation } from "react-router-dom";
 import { useData } from "../context/DataContext";
 import { useSession } from "../context/SessionContext";
 import { useTerminal } from "../context/TerminalContext";
+import { useTranslation } from "../i18n";
 import { pageFromPath } from "../router";
 import GamePlayPage from "../GamePlayPage";
 import DiscussionDetailPage from "../pages/DiscussionDetailPage";
@@ -29,6 +30,7 @@ export default function Terminal() {
   const { sessionUser } = useSession();
   // selectedGame needed by GamePlayPage route
   const { selectedGame } = useData();
+  const { t } = useTranslation();
 
   const {
     commandInput,
@@ -88,8 +90,10 @@ export default function Terminal() {
           <p className="terminal-kicker">bbs://ft_transcendence</p>
           <p className="terminal-session">
             {page === "welcome"
-              ? "connection waiting"
-              : `connected as ${sessionUser ? sessionUser.name : "guest"}`}
+              ? t("connection waiting")
+              : t("connected as {name}", {
+                  name: sessionUser ? sessionUser.name : t("guest"),
+                })}
           </p>
         </header>
 
@@ -136,7 +140,7 @@ export default function Terminal() {
             ----------------------------------------------------
           </pre>
           <p>
-            available: <span>{availableCommands.join(" | ")}</span>
+            {t("available:")} <span>{availableCommands.join(" | ")}</span>
           </p>
           <form
             onSubmit={handleCommandSubmit}

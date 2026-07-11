@@ -4,12 +4,14 @@ import AvatarImage from "../components/AvatarImage";
 import TerminalSection from "../components/TerminalSection";
 import { useSession } from "../context/SessionContext";
 import { useTerminal } from "../context/TerminalContext";
+import { useTranslation } from "../i18n";
 
 type FormSubmitEvent = FormEvent<HTMLFormElement>;
 
 export default function ProfilePage() {
   const { sessionUser, updateSessionUser, refreshUsers } = useSession();
   const { addLine } = useTerminal();
+  const { t } = useTranslation();
 
   const [name, setName] = useState(sessionUser?.name ?? "");
   const [email, setEmail] = useState(sessionUser?.email ?? "");
@@ -18,7 +20,7 @@ export default function ProfilePage() {
   const [error, setError] = useState("");
 
   if (!sessionUser) {
-    return <TerminalSection title="Profile">Not logged in.</TerminalSection>;
+    return <TerminalSection title={t("Profile")}>{t("Not logged in.")}</TerminalSection>;
   }
 
   async function handleSubmit(event: FormSubmitEvent) {
@@ -33,13 +35,13 @@ export default function ProfilePage() {
       });
       updateSessionUser(nextUser);
       await refreshUsers().catch(() => {});
-      addLine("profile updated.");
-      setMessage("saved.");
+      addLine(t("profile updated."));
+      setMessage(t("saved."));
     } catch (caughtError) {
       const msg =
         caughtError instanceof Error
           ? caughtError.message
-          : "could not save profile.";
+          : t("could not save profile.");
       setError(msg);
       addLine(msg);
     }
@@ -60,13 +62,13 @@ export default function ProfilePage() {
       });
       updateSessionUser(nextUser);
       await refreshUsers().catch(() => {});
-      addLine("avatar uploaded.");
-      setMessage("avatar saved.");
+      addLine(t("avatar uploaded."));
+      setMessage(t("avatar saved."));
     } catch (caughtError) {
       const msg =
         caughtError instanceof Error
           ? caughtError.message
-          : "could not save avatar.";
+          : t("could not save avatar.");
       setError(msg);
       addLine(msg);
     } finally {
@@ -75,35 +77,35 @@ export default function ProfilePage() {
   }
 
   return (
-    <TerminalSection title="Profile">
+    <TerminalSection title={t("Profile")}>
       <div className="profile-layout">
         <AvatarImage user={sessionUser} size="large" />
         <div>
           <dl className="terminal-facts">
-            <dt>Name</dt>
+            <dt>{t("Name")}</dt>
             <dd>{sessionUser.name}</dd>
-            <dt>Email</dt>
+            <dt>{t("Email")}</dt>
             <dd>{sessionUser.email}</dd>
-            <dt>Status</dt>
-            <dd>{sessionUser.status}</dd>
-            <dt>Bio</dt>
+            <dt>{t("Status")}</dt>
+            <dd>{t(sessionUser.status)}</dd>
+            <dt>{t("Bio")}</dt>
             <dd>{sessionUser.bio}</dd>
           </dl>
           <form className="profile-form" onSubmit={handleSubmit}>
             <label>
-              Name
+              {t("Name")}
               <input value={name} onChange={(e) => setName(e.target.value)} />
             </label>
             <label>
-              Email
+              {t("Email")}
               <input value={email} onChange={(e) => setEmail(e.target.value)} />
             </label>
             <label>
-              Bio
+              {t("Bio")}
               <textarea value={bio} onChange={(e) => setBio(e.target.value)} />
             </label>
             <label>
-              Avatar
+              {t("Avatar")}
               <input
                 type="file"
                 accept="image/*"
@@ -111,7 +113,7 @@ export default function ProfilePage() {
               />
             </label>
             <button className="terminal-button" type="submit">
-              save profile
+              {t("save profile")}
             </button>
           </form>
           {message && <p className="terminal-copy">{message}</p>}

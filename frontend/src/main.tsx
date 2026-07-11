@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App.tsx";
+import { LanguageProvider } from "./LanguageProvider.tsx";
 import { DataProvider } from "./context/DataContext.tsx";
 import { SessionProvider } from "./context/SessionContext.tsx";
 import { TerminalProvider } from "./context/TerminalContext.tsx";
@@ -18,14 +19,16 @@ import "./index.css";
  */
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <BrowserRouter>
-      <SessionProvider>
-        <DataProvider>
-          <TerminalProvider>
-            <App />
-          </TerminalProvider>
-        </DataProvider>
-      </SessionProvider>
-    </BrowserRouter>
+    <LanguageProvider>
+      <BrowserRouter>
+        <SessionProvider>
+          <DataProvider>
+            <TerminalProvider>
+              <App />
+            </TerminalProvider>
+          </DataProvider>
+        </SessionProvider>
+      </BrowserRouter>
+    </LanguageProvider>
   </StrictMode>,
 );

@@ -1,0 +1,1 @@
+# Content moderation word list (one word per line; lines starting with # are ignored).

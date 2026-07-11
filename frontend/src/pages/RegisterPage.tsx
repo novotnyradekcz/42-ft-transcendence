@@ -1,19 +1,22 @@
 import TerminalSection from "../components/TerminalSection";
 import { useTerminal } from "../context/TerminalContext";
+import { useTranslation } from "../i18n";
 
 export default function RegisterPage() {
   const { authFlow, authError } = useTerminal();
+  const { t } = useTranslation();
 
   return (
-    <TerminalSection title="Register">
+    <TerminalSection title={t("Register")}>
       <p className="terminal-copy">
-        Register happens in the command input. Current prompt:{" "}
-        {authFlow?.mode === "register" ? authFlow.step : "idle"}.
+        {t("Register happens in the command input. Current prompt: {step}.", {
+          step: authFlow?.mode === "register" ? authFlow.step : t("idle"),
+        })}
       </p>
       <p className="terminal-copy">
-        Registration sends name, email, and password to `/users/create`.
+        {t("Registration sends name, email, and password to `/users/create`.")}
       </p>
-      <p className="terminal-copy">Press Ctrl+C or Esc to quit register.</p>
+      <p className="terminal-copy">{t("Press Ctrl+C or Esc to quit register.")}</p>
       {authError && <p className="terminal-error">{authError}</p>}
     </TerminalSection>
   );

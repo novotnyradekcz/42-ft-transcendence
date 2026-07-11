@@ -1,24 +1,26 @@
 import TerminalSection from "../components/TerminalSection";
 import { useData } from "../context/DataContext";
 import { useSession } from "../context/SessionContext";
+import { useTranslation } from "../i18n";
 
 export default function GamesPage() {
   const { games } = useData();
   const { knownUsers } = useSession();
+  const { t } = useTranslation();
 
   const userName = (id: number) =>
     knownUsers.find((u) => u.id === id)?.name ?? `user#${id}`;
 
   return (
-    <TerminalSection title="Games">
+    <TerminalSection title={t("Games")}>
       {games.length === 0 ? (
-        <p className="terminal-copy">No games installed yet.</p>
+        <p className="terminal-copy">{t("No games installed yet.")}</p>
       ) : (
         <ol className="terminal-list numbered">
           {games.map((game) => (
             <li key={game.id}>
               <span>{game.name}</span>
-              <small>by {userName(game.author)}</small>
+              <small>{t("by {name}", { name: userName(game.author) })}</small>
             </li>
           ))}
         </ol>

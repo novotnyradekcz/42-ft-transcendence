@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LuaFactory } from "wasmoon";
 import { useSession } from "./context/SessionContext";
+import { useTranslation } from "./i18n";
 import { PAGE_PATHS } from "./router";
 import type { GameSummary } from "./types";
 
@@ -23,6 +24,7 @@ type Cell = {
 
 export default function GamePlayPage({ game }: { game: GameSummary | null }) {
   const { sessionUser } = useSession();
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
   const [grid, setGrid] = useState<Cell[]>(() => {
@@ -38,16 +40,21 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
   const [status, setStatus] = useState<
     "connecting" | "waiting" | "playing" | "disconnected" | "error"
   >("connecting");
-  const [statusMessage, setStatusMessage] = useState("Connecting to server...");
+  const [statusMessage, setStatusMessage] = useState(t("Connecting to server..."));
 
   const wsRef = useRef<WebSocket | null>(null);
   const luaEngineRef = useRef<any>(null);
   const gridRef = useRef<Cell[][]>(createEmptyGrid());
   const statusRef = useRef(status);
+  const tRef = useRef(t);
 
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
+
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
 
   const forceUpdate = () => {
     const flat: Cell[] = [];
@@ -89,7 +96,7 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
   useEffect(() => {
     if (!game || !sessionUser) {
       setStatus("error");
-      setStatusMessage("Game or session details missing.");
+      setStatusMessage(tRef.current("Game or session details missing."));
       return;
     }
 
@@ -104,7 +111,7 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
 
     ws.onopen = () => {
       setStatus("connecting");
-      setStatusMessage("Connected, searching for an opponent...");
+      setStatusMessage(tRef.current("Connected, searching for an opponent..."));
     };
 
     ws.onmessage = async (event) => {
@@ -113,10 +120,12 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
 
         if (msg.type === "match_waiting") {
           setStatus("waiting");
-          setStatusMessage("Waiting for an opponent to join...");
+          setStatusMessage(tRef.current("Waiting for an opponent to join..."));
         } else if (msg.type === "match_start") {
           setStatus("playing");
-          setStatusMessage(`Playing vs ${msg.opponent_name}`);
+          setStatusMessage(
+            tRef.current("Playing vs {name}", { name: msg.opponent_name }),
+          );
 
           cleanupLua();
 
@@ -171,7 +180,7 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
           }
         } else if (msg.type === "opponent_disconnected") {
           setStatus("disconnected");
-          setStatusMessage("Opponent disconnected. Game ended.");
+          setStatusMessage(tRef.current("Opponent disconnected. Game ended."));
           cleanupLua();
         }
       } catch (err) {
@@ -182,14 +191,14 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
     ws.onclose = () => {
       if (statusRef.current !== "disconnected") {
         setStatus("disconnected");
-        setStatusMessage("Connection to server closed.");
+        setStatusMessage(tRef.current("Connection to server closed."));
       }
       cleanupLua();
     };
 
     ws.onerror = () => {
       setStatus("error");
-      setStatusMessage("WebSocket connection error.");
+      setStatusMessage(tRef.current("WebSocket connection error."));
       cleanupLua();
     };
 
@@ -211,7 +220,7 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
           className="terminal-button back-btn"
           onClick={() => navigate(PAGE_PATHS.games)}
         >
-          Exit Game
+          {t("Exit Game")}
         </button>
       </div>
 

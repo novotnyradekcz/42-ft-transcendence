@@ -3,20 +3,22 @@ import WriteStatus from "../components/WriteStatus";
 import { useData } from "../context/DataContext";
 import { useSession } from "../context/SessionContext";
 import { useTerminal } from "../context/TerminalContext";
+import { useTranslation } from "../i18n";
 
 export default function MailPage() {
   const { mail } = useData();
   const { sessionUser, knownUsers } = useSession();
   const { writeFlow, writeError } = useTerminal();
+  const { t } = useTranslation();
 
   const userName = (id: number) =>
     knownUsers.find((u) => u.id === id)?.name ?? `user#${id}`;
 
   return (
-    <TerminalSection title="Personal Mail">
+    <TerminalSection title={t("Personal Mail")}>
       {mail.length === 0 ? (
         <p className="terminal-copy">
-          No mail available. Log in to view your inbox.
+          {t("No mail available. Log in to view your inbox.")}
         </p>
       ) : (
         <ol className="terminal-list numbered">
@@ -25,8 +27,8 @@ export default function MailPage() {
               <span>{message.title}</span>
               <small>
                 {message.sender === sessionUser?.id
-                  ? `sent to ${userName(message.recipient)}`
-                  : `from ${userName(message.sender)}`}
+                  ? t("sent to {name}", { name: userName(message.recipient) })
+                  : t("from {name}", { name: userName(message.sender) })}
               </small>
             </li>
           ))}
@@ -35,7 +37,9 @@ export default function MailPage() {
       {writeFlow?.mode === "mail" && (
         <WriteStatus
           error={writeError}
-          text={`Writing mail. Current prompt: ${writeFlow.step}.`}
+          text={t("Writing mail. Current prompt: {step}.", {
+            step: writeFlow.step,
+          })}
         />
       )}
     </TerminalSection>

@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type Dispatch,
@@ -30,6 +31,8 @@ import {
 } from "../commands";
 import { PAGE_PATHS, pageFromPath } from "../router";
 import type { AuthFlow, WriteFlow } from "../terminalTypes";
+import { isLang, useTranslation } from "../i18n";
+import { censor, initModeration } from "../moderation";
 import { useData } from "./DataContext";
 import { useSession } from "./SessionContext";
 import type { Page } from "../types";
@@ -77,12 +80,17 @@ const TerminalContext = createContext<TerminalContextValue | null>(null);
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function TerminalProvider({ children }: { children: ReactNode }) {
+  const { t, setLang } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const page = useMemo(
     () => pageFromPath(location.pathname),
     [location.pathname],
   );
+
+  useEffect(() => {
+    initModeration();
+  }, []);
 
   const {
     sessionUser,
@@ -112,9 +120,9 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   // ─── Terminal state ───────────────────────────────────────────────────────
 
   const [commandInput, setCommandInput] = useState("");
-  const [terminalLines, setTerminalLines] = useState<string[]>([
-    "ft_transcendence BBS ready.",
-    "Type `menu` to enter.",
+  const [terminalLines, setTerminalLines] = useState<string[]>(() => [
+    t("ft_transcendence BBS ready."),
+    t("Type `menu` to enter."),
   ]);
   const [focusInputSignal, setFocusInputSignal] = useState(0);
 
@@ -186,12 +194,23 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     const command = definition?.command;
 
     if (!command) {
-      addLine(`unknown command: ${name}`);
+      addLine(t("unknown command: {name}", { name }));
       return;
     }
 
     if (page === "welcome" && command !== "menu") {
-      addLine("type `menu` to enter.");
+      addLine(t("type `menu` to enter."));
+      return;
+    }
+
+    if (command === "lang") {
+      const code = (args[0] ?? "").toLowerCase();
+      if (isLang(code)) {
+        setLang(code);
+        addLine(t("Language set to {lang}.", { lang: code }));
+      } else {
+        addLine(t("Usage: lang <en|cs|sl>"));
+      }
       return;
     }
 
@@ -214,7 +233,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     if (command === "list") {
       const errors = await refreshBoard();
       errors.forEach(addLine);
-      if (errors.length === 0) addLine(`refreshed ${page}.`);
+      if (errors.length === 0) addLine(t("refreshed {page}.", { page }));
       return;
     }
 
@@ -223,7 +242,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       setSelectedMail(null);
       setSelectedUser(null);
       navigate(PAGE_PATHS.home);
-      addLine("logged out.");
+      addLine(t("logged out."));
       return;
     }
 
@@ -243,25 +262,25 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
 
     if (command === "login") {
       if (sessionUser) {
-        addLine("already logged in. use logout first.");
+        addLine(t("already logged in. use logout first."));
         return;
       }
       setAuthFlow({ mode: "login", step: "name", name: "" });
       setAuthError("");
       goTo(PAGE_PATHS.login);
-      addLine("login started. enter name.");
+      addLine(t("login started. enter name."));
       return;
     }
 
     if (command === "register") {
       if (sessionUser) {
-        addLine("already logged in. use logout first.");
+        addLine(t("already logged in. use logout first."));
         return;
       }
       setAuthFlow({ mode: "register", step: "name", name: "", email: "" });
       setAuthError("");
       goTo(PAGE_PATHS.register);
-      addLine("register started. enter name.");
+      addLine(t("register started. enter name."));
       return;
     }
 
@@ -277,8 +296,11 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     const nextPath = directPaths[command];
 
     if ((command === "profile" || command === "friends") && !sessionUser) {
-      const target = command === "profile" ? "your profile" : "friends";
-      addLine(`login first to view ${target}.`);
+      addLine(
+        command === "profile"
+          ? t("login first to view your profile.")
+          : t("login first to view friends."),
+      );
       setAuthFlow({ mode: "login", step: "name", name: "" });
       setAuthError("");
       goTo(PAGE_PATHS.login);
@@ -300,7 +322,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     if (authFlow.mode === "login") {
       if (authFlow.step === "name") {
         setAuthFlow({ ...authFlow, step: "password", name: rawInput });
-        addLine("name accepted. enter password.");
+        addLine(t("name accepted. enter password."));
         return;
       }
       try {
@@ -309,11 +331,11 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
         setAuthError("");
         (await refreshBoardForUser(nextUser)).forEach(addLine);
         navigate(PAGE_PATHS.home);
-        addLine(`logged in as ${nextUser.name}.`);
+        addLine(t("logged in as {name}.", { name: nextUser.name }));
       } catch (error) {
-        setAuthError(errMsg(error, "Login failed."));
+        setAuthError(errMsg(error, t("Login failed.")));
         addLine(
-          "login failed. press Ctrl+C or Esc to quit, or enter name again.",
+          t("login failed. press Ctrl+C or Esc to quit, or enter name again."),
         );
         setAuthFlow({ mode: "login", step: "name", name: "" });
       }
@@ -323,12 +345,12 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     // register
     if (authFlow.step === "name") {
       setAuthFlow({ ...authFlow, step: "email", name: rawInput });
-      addLine("name accepted. enter email.");
+      addLine(t("name accepted. enter email."));
       return;
     }
     if (authFlow.step === "email") {
       setAuthFlow({ ...authFlow, step: "password", email: rawInput });
-      addLine("email accepted. enter password.");
+      addLine(t("email accepted. enter password."));
       return;
     }
     try {
@@ -337,11 +359,11 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       setAuthError("");
       (await refreshBoardForUser(nextUser)).forEach(addLine);
       navigate(PAGE_PATHS.home);
-      addLine(`registered and logged in as ${nextUser.name}.`);
+      addLine(t("registered and logged in as {name}.", { name: nextUser.name }));
     } catch (error) {
-      setAuthError(errMsg(error, "Registration failed."));
+      setAuthError(errMsg(error, t("Registration failed.")));
       addLine(
-        "registration failed. press Ctrl+C or Esc to quit, or enter name again.",
+        t("registration failed. press Ctrl+C or Esc to quit, or enter name again."),
       );
       setAuthFlow({ mode: "register", step: "name", name: "", email: "" });
     }
@@ -356,9 +378,9 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       if (writeFlow.step === "recipient") {
         const recipient = await getUserByName(rawInput).catch(() => null);
         if (!recipient) {
-          setWriteError("Recipient name does not exist.");
+          setWriteError(t("Recipient name does not exist."));
           addLine(
-            "recipient not found. enter another name, or press Ctrl+C/Esc.",
+            t("recipient not found. enter another name, or press Ctrl+C/Esc."),
           );
           return;
         }
@@ -369,30 +391,34 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
           recipient: recipient.name,
           title: "",
         });
-        addLine(`recipient accepted: ${recipient.name}. enter title.`);
+        addLine(
+          t("recipient accepted: {name}. enter title.", {
+            name: recipient.name,
+          }),
+        );
         return;
       }
       if (writeFlow.step === "title") {
         setWriteError("");
         setWriteFlow({ ...writeFlow, step: "body", title: rawInput });
-        addLine("title accepted. enter message.");
+        addLine(t("title accepted. enter message."));
         return;
       }
       try {
         await sendMail(
           sessionUser.id,
           writeFlow.recipient,
-          writeFlow.title,
-          rawInput,
+          await censor(writeFlow.title),
+          await censor(rawInput),
         );
         const recipientName = writeFlow.recipient;
         clearWriteModes();
         (await refreshBoard()).forEach(addLine);
-        addLine(`mail sent to ${recipientName}.`);
+        addLine(t("mail sent to {name}.", { name: recipientName }));
       } catch (error) {
-        setWriteError(errMsg(error, "Could not send mail."));
+        setWriteError(errMsg(error, t("Could not send mail.")));
         addLine(
-          "mail failed. press Ctrl+C/Esc to quit, or enter message again.",
+          t("mail failed. press Ctrl+C/Esc to quit, or enter message again."),
         );
       }
       return;
@@ -401,24 +427,24 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     if (writeFlow.mode === "new-discussion") {
       if (writeFlow.step === "title") {
         setWriteFlow({ mode: "new-discussion", step: "body", title: rawInput });
-        addLine("title accepted. enter first post.");
+        addLine(t("title accepted. enter first post."));
         return;
       }
       try {
         const discussion = await createDiscussion(
-          writeFlow.title,
-          rawInput,
+          await censor(writeFlow.title),
+          await censor(rawInput),
           sessionUser.id,
         );
         setSelectedDiscussion(discussion);
         clearWriteModes();
         (await refreshBoard()).forEach(addLine);
         navigate(`/discussions/show/${discussion.id}`);
-        addLine("discussion posted.");
+        addLine(t("discussion posted."));
       } catch (error) {
-        setWriteError(errMsg(error, "Could not write discussion."));
+        setWriteError(errMsg(error, t("Could not write discussion.")));
         addLine(
-          "discussion failed. press Ctrl+C/Esc to quit, or enter post again.",
+          t("discussion failed. press Ctrl+C/Esc to quit, or enter post again."),
         );
       }
       return;
@@ -428,16 +454,18 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     try {
       const discussion = await createPost(
         writeFlow.discussionId,
-        rawInput,
+        await censor(rawInput),
         sessionUser.id,
       );
       setSelectedDiscussion(discussion);
       clearWriteModes();
       (await refreshBoard()).forEach(addLine);
-      addLine("reply posted.");
+      addLine(t("reply posted."));
     } catch (error) {
-      setWriteError(errMsg(error, "Could not post reply."));
-      addLine("reply failed. press Ctrl+C/Esc to quit, or enter reply again.");
+      setWriteError(errMsg(error, t("Could not post reply.")));
+      addLine(
+        t("reply failed. press Ctrl+C/Esc to quit, or enter reply again."),
+      );
     }
   }
 
@@ -446,21 +474,21 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   async function handleEnterCommand(indexValue?: string) {
     const index = Number(indexValue) - 1;
     if (!indexValue || Number.isNaN(index) || index < 0) {
-      addLine("usage: enter <number>");
+      addLine(t("usage: enter <number>"));
       return;
     }
 
     if (page === "users") {
       const user = knownUsers[index];
       if (!user) {
-        addLine("no user exists at that number.");
+        addLine(t("no user exists at that number."));
         return;
       }
       try {
         setSelectedUser(await getUser(user.id));
         navigate(`/users/show/${user.id}`);
       } catch (e) {
-        addLine(errMsg(e, "could not load user."));
+        addLine(errMsg(e, t("could not load user.")));
       }
       return;
     }
@@ -468,14 +496,14 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     if (page === "discussions") {
       const discussion = discussions[index];
       if (!discussion) {
-        addLine("no discussion exists at that number.");
+        addLine(t("no discussion exists at that number."));
         return;
       }
       try {
         setSelectedDiscussion(await getDiscussion(discussion.id));
         navigate(`/discussions/show/${discussion.id}`);
       } catch (e) {
-        addLine(errMsg(e, "could not load discussion."));
+        addLine(errMsg(e, t("could not load discussion.")));
       }
       return;
     }
@@ -483,14 +511,14 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     if (page === "mail") {
       const message = mail[index];
       if (!message) {
-        addLine("no mail exists at that number.");
+        addLine(t("no mail exists at that number."));
         return;
       }
       try {
         setSelectedMail(await getMail(message.id));
         navigate(`/mail/show/${message.id}`);
       } catch (e) {
-        addLine(errMsg(e, "could not load mail."));
+        addLine(errMsg(e, t("could not load mail.")));
       }
       return;
     }
@@ -498,14 +526,14 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     if (page === "friends") {
       const user = friends[index];
       if (!user) {
-        addLine("no friend exists at that number.");
+        addLine(t("no friend exists at that number."));
         return;
       }
       try {
         setSelectedUser(await getUser(user.id));
         navigate(`/users/show/${user.id}`);
       } catch (e) {
-        addLine(errMsg(e, "could not load user."));
+        addLine(errMsg(e, t("could not load user.")));
       }
       return;
     }
@@ -513,11 +541,11 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     if (page === "games") {
       const selected = games[index];
       if (!selected) {
-        addLine("no game exists at that number.");
+        addLine(t("no game exists at that number."));
         return;
       }
       if (!sessionUser) {
-        addLine("login first to play games.");
+        addLine(t("login first to play games."));
         setAuthFlow({ mode: "login", step: "name", name: "" });
         setAuthError("");
         goTo(PAGE_PATHS.login);
@@ -528,7 +556,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    addLine("enter is not available on this page.");
+    addLine(t("enter is not available on this page."));
   }
 
   // ─── Friend commands ──────────────────────────────────────────────────────
@@ -538,7 +566,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     targetValue?: string,
   ) {
     if (!sessionUser) {
-      addLine("login first to manage friends.");
+      addLine(t("login first to manage friends."));
       setAuthFlow({ mode: "login", step: "name", name: "" });
       setAuthError("");
       goTo(PAGE_PATHS.login);
@@ -547,7 +575,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
 
     const target = await resolveFriendTarget(targetValue);
     if (!target) {
-      addLine(`usage: ${action} <number|name>`);
+      addLine(t("usage: {action} <number|name>", { action }));
       return;
     }
 
@@ -578,10 +606,14 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
         friends: [...new Set([...sessionUser.friends, userId])],
       });
       const target = knownUsers.find((u) => u.id === userId);
-      addLine(`added ${target?.name ?? `user#${userId}`} as friend.`);
+      addLine(
+        t("added {name} as friend.", {
+          name: target?.name ?? `user#${userId}`,
+        }),
+      );
       await refreshUsers().catch(() => {});
     } catch (e) {
-      addLine(errMsg(e, "could not add friend."));
+      addLine(errMsg(e, t("could not add friend.")));
     }
   }
 
@@ -594,10 +626,14 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
         friends: sessionUser.friends.filter((id) => id !== userId),
       });
       const target = knownUsers.find((u) => u.id === userId);
-      addLine(`removed ${target?.name ?? `user#${userId}`} from friends.`);
+      addLine(
+        t("removed {name} from friends.", {
+          name: target?.name ?? `user#${userId}`,
+        }),
+      );
       await refreshUsers().catch(() => {});
     } catch (e) {
-      addLine(errMsg(e, "could not remove friend."));
+      addLine(errMsg(e, t("could not remove friend.")));
     }
   }
 
@@ -610,7 +646,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
 
   function handleWriteCommand() {
     if (!sessionUser) {
-      addLine("login first to write.");
+      addLine(t("login first to write."));
       setAuthFlow({ mode: "login", step: "name", name: "" });
       setAuthError("");
       goTo(PAGE_PATHS.login);
@@ -620,18 +656,18 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     if (page === "discussions") {
       setWriteFlow({ mode: "new-discussion", step: "title", title: "" });
       setWriteError("");
-      addLine("new discussion. enter title.");
+      addLine(t("new discussion. enter title."));
       return;
     }
 
     if (page === "discussion-detail") {
       if (!selectedDiscussion) {
-        addLine("no discussion selected.");
+        addLine(t("no discussion selected."));
         return;
       }
       setWriteFlow({ mode: "reply", discussionId: selectedDiscussion.id });
       setWriteError("");
-      addLine("enter reply.");
+      addLine(t("enter reply."));
       return;
     }
 
@@ -643,11 +679,11 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
         title: "",
       });
       setWriteError("");
-      addLine("enter recipient name.");
+      addLine(t("enter recipient name."));
       return;
     }
 
-    addLine("write is not available on this page.");
+    addLine(t("write is not available on this page."));
   }
 
   // ─── Keyboard ─────────────────────────────────────────────────────────────
@@ -672,13 +708,13 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       setAuthError("");
       setCommandInput("");
       navigate(PAGE_PATHS.home);
-      addLine("login/register cancelled.");
+      addLine(t("login/register cancelled."));
       return;
     }
     if (writeFlow) {
       clearWriteModes();
       setCommandInput("");
-      addLine("write cancelled.");
+      addLine(t("write cancelled."));
       return;
     }
     goBack();
