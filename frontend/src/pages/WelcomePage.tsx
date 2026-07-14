@@ -1,5 +1,5 @@
 import TerminalSection from "../components/TerminalSection";
-import { useTranslation } from "../i18n";
+import { useTranslation } from "../context/language/i18n";
 
 export default function WelcomePage() {
   const { t } = useTranslation();

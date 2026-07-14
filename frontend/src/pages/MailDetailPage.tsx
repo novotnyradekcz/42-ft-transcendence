@@ -1,7 +1,7 @@
 import TerminalSection from "../components/TerminalSection";
-import { useData } from "../context/DataContext";
-import { useSession } from "../context/SessionContext";
-import { useTranslation } from "../i18n";
+import { useData } from "../context/data/useData";
+import { useSession } from "../context/session/useSession";
+import { useTranslation } from "../context/language/i18n";
 
 export default function MailDetailPage() {
   const { selectedMail: message } = useData();

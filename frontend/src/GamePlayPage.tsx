@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LuaFactory } from "wasmoon";
-import { useSession } from "./context/SessionContext";
-import { useTranslation } from "./i18n";
+import { useSession } from "./context/session/useSession";
+import { useTranslation } from "./context/language/i18n";
 import { PAGE_PATHS } from "./router";
 import type { GameSummary } from "./types";
 

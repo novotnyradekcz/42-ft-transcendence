@@ -1,7 +1,7 @@
 import { commandDefinitions } from "../commands";
 import TerminalSection from "../components/TerminalSection";
-import { useSession } from "../context/SessionContext";
-import { useTranslation } from "../i18n";
+import { useSession } from "../context/session/useSession";
+import { useTranslation } from "../context/language/i18n";
 
 export default function HelpPage() {
   const { sessionUser } = useSession();

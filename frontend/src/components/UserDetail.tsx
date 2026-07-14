@@ -2,10 +2,10 @@ import { useState } from "react";
 import { addFriend, removeFriend } from "../api";
 import AvatarImage from "./AvatarImage";
 import TerminalSection from "./TerminalSection";
-import { useData } from "../context/DataContext";
-import { useSession } from "../context/SessionContext";
-import { useTerminal } from "../context/TerminalContext";
-import { useTranslation } from "../i18n";
+import { useData } from "../context/data/useData";
+import { useSession } from "../context/session/useSession";
+import { useTerminal } from "../context/terminal/useTerminal";
+import { useTranslation } from "../context/language/i18n";
 
 export default function UserDetail() {
   const { selectedUser: user } = useData();

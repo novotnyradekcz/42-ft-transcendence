@@ -1,4 +1,4 @@
-import { useTranslation } from "../i18n";
+import { useTranslation } from "../context/language/i18n";
 
 export default function WriteStatus({
   error,

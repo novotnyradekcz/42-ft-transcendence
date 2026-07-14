@@ -1,9 +1,9 @@
 import { useEffect, useRef, type MouseEvent } from "react";
 import { Route, Routes, useLocation } from "react-router-dom";
-import { useData } from "../context/DataContext";
-import { useSession } from "../context/SessionContext";
-import { useTerminal } from "../context/TerminalContext";
-import { useTranslation } from "../i18n";
+import { useData } from "../context/data/useData";
+import { useSession } from "../context/session/useSession";
+import { useTerminal } from "../context/terminal/useTerminal";
+import { useTranslation } from "../context/language/i18n";
 import { pageFromPath } from "../router";
 import GamePlayPage from "../GamePlayPage";
 import DiscussionDetailPage from "../pages/DiscussionDetailPage";

@@ -1,6 +1,6 @@
 import TerminalSection from "../components/TerminalSection";
-import { useTerminal } from "../context/TerminalContext";
-import { useTranslation } from "../i18n";
+import { useTerminal } from "../context/terminal/useTerminal";
+import { useTranslation } from "../context/language/i18n";
 
 export default function LoginPage() {
   const { authFlow, authError } = useTerminal();

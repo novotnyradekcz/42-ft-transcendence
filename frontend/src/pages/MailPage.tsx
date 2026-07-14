@@ -1,9 +1,9 @@
 import TerminalSection from "../components/TerminalSection";
 import WriteStatus from "../components/WriteStatus";
-import { useData } from "../context/DataContext";
-import { useSession } from "../context/SessionContext";
-import { useTerminal } from "../context/TerminalContext";
-import { useTranslation } from "../i18n";
+import { useData } from "../context/data/useData";
+import { useSession } from "../context/session/useSession";
+import { useTerminal } from "../context/terminal/useTerminal";
+import { useTranslation } from "../context/language/i18n";
 
 export default function MailPage() {
   const { mail } = useData();

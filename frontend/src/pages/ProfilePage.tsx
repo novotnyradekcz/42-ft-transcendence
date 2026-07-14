@@ -2,9 +2,9 @@ import { type ChangeEvent, type FormEvent, useState } from "react";
 import { updateCurrentUserProfile, uploadAvatar } from "../api";
 import AvatarImage from "../components/AvatarImage";
 import TerminalSection from "../components/TerminalSection";
-import { useSession } from "../context/SessionContext";
-import { useTerminal } from "../context/TerminalContext";
-import { useTranslation } from "../i18n";
+import { useSession } from "../context/session/useSession";
+import { useTerminal } from "../context/terminal/useTerminal";
+import { useTranslation } from "../context/language/i18n";
 
 type FormSubmitEvent = FormEvent<HTMLFormElement>;
 

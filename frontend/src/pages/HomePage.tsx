@@ -1,6 +1,6 @@
 import TerminalSection from "../components/TerminalSection";
-import { useSession } from "../context/SessionContext";
-import { useTranslation } from "../i18n";
+import { useSession } from "../context/session/useSession";
+import { useTranslation } from "../context/language/i18n";
 
 export default function HomePage() {
   const { sessionUser } = useSession();
