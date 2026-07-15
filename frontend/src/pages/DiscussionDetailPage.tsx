@@ -1,21 +1,23 @@
 import TerminalSection from "../components/TerminalSection";
 import WriteStatus from "../components/WriteStatus";
-import { useData } from "../context/DataContext";
-import { useSession } from "../context/SessionContext";
-import { useTerminal } from "../context/TerminalContext";
+import { useData } from "../context/data/useData";
+import { useSession } from "../context/session/useSession";
+import { useTerminal } from "../context/terminal/useTerminal";
+import { useTranslation } from "../context/language/i18n";
 
 export default function DiscussionDetailPage() {
   const { selectedDiscussion: discussion } = useData();
   const { knownUsers } = useSession();
   const { writeFlow, writeError } = useTerminal();
+  const { t } = useTranslation();
 
   const userName = (id: number) =>
     knownUsers.find((u) => u.id === id)?.name ?? `user#${id}`;
 
   if (!discussion) {
     return (
-      <TerminalSection title="Discussion">
-        No discussion selected.
+      <TerminalSection title={t("Discussion")}>
+        {t("No discussion selected.")}
       </TerminalSection>
     );
   }
@@ -36,7 +38,7 @@ export default function DiscussionDetailPage() {
       {writeFlow?.mode === "reply" && (
         <WriteStatus
           error={writeError}
-          text="Writing reply. Enter the reply in the command line."
+          text={t("Writing reply. Enter the reply in the command line.")}
         />
       )}
     </TerminalSection>

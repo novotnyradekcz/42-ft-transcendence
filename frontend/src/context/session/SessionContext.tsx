@@ -1,12 +1,6 @@
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useState,
-  type ReactNode,
-} from "react";
-import type { SessionUser, UserProfile } from "../types";
-import { CREDENTIALS_KEY, SESSION_USER_KEY } from "../constants";
+import { useEffect, useState, type ReactNode } from "react";
+import type { SessionUser, UserProfile } from "../../types";
+import { CREDENTIALS_KEY, SESSION_USER_KEY } from "../../constants";
 import {
   getCredentials,
   listUsers,
@@ -14,28 +8,8 @@ import {
   logout as apiLogout,
   register as apiRegister,
   restoreSession,
-} from "../api";
-
-interface SessionContextValue {
-  /** The currently authenticated user, or null for guests. */
-  sessionUser: SessionUser | null;
-  /** All users fetched from the server at login time, held until logout. */
-  knownUsers: UserProfile[];
-  /** True while the initial sessionStorage restore is in progress. */
-  isRestoring: boolean;
-  login(name: string, password: string): Promise<SessionUser>;
-  register(name: string, email: string, password: string): Promise<SessionUser>;
-  logout(): void;
-  /**
-   * Persist an updated version of the session user (e.g. after profile edit
-   * or friend list mutation) to both React state and sessionStorage.
-   */
-  updateSessionUser(user: SessionUser): void;
-  /** Re-fetches /users/show and refreshes knownUsers. */
-  refreshUsers(): Promise<void>;
-}
-
-const SessionContext = createContext<SessionContextValue | null>(null);
+} from "../../api";
+import { SessionContext } from "./useSession";
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   // Restore synchronously so the first render already has the user — avoids a
@@ -138,12 +112,4 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       {children}
     </SessionContext.Provider>
   );
-}
-
-export function useSession(): SessionContextValue {
-  const ctx = useContext(SessionContext);
-  if (!ctx) {
-    throw new Error("useSession must be used within a <SessionProvider>");
-  }
-  return ctx;
 }

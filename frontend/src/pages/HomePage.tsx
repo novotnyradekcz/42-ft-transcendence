@@ -1,24 +1,28 @@
 import TerminalSection from "../components/TerminalSection";
-import { useSession } from "../context/SessionContext";
+import { useSession } from "../context/session/useSession";
+import { useTranslation } from "../context/language/i18n";
 
 export default function HomePage() {
   const { sessionUser } = useSession();
+  const { t } = useTranslation();
 
   return (
-    <TerminalSection title="Main Menu">
+    <TerminalSection title={t("Main Menu")}>
       <p className="terminal-copy">
-        Welcome {sessionUser?.name ?? "guest"}. Choose a board section with commands.
+        {t("Welcome {name}. Choose a board section with commands.", {
+          name: sessionUser?.name ?? t("guest"),
+        })}
       </p>
       <ol className="terminal-list">
-        <li>discussions - public posts and replies</li>
-        <li>users - board member list</li>
-        <li>friends - saved users and online status</li>
-        <li>mail - non-live personal messages</li>
-        <li>games - empty for now</li>
+        <li>{t("discussions - public posts and replies")}</li>
+        <li>{t("users - board member list")}</li>
+        <li>{t("friends - saved users and online status")}</li>
+        <li>{t("mail - non-live personal messages")}</li>
+        <li>{t("games - empty for now")}</li>
         <li>
           {sessionUser
-            ? "logout - end this session"
-            : "login / register - account access"}
+            ? t("logout - end this session")
+            : t("login / register - account access")}
         </li>
       </ol>
     </TerminalSection>

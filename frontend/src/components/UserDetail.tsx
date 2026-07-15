@@ -2,18 +2,20 @@ import { useState } from "react";
 import { addFriend, removeFriend } from "../api";
 import AvatarImage from "./AvatarImage";
 import TerminalSection from "./TerminalSection";
-import { useData } from "../context/DataContext";
-import { useSession } from "../context/SessionContext";
-import { useTerminal } from "../context/TerminalContext";
+import { useData } from "../context/data/useData";
+import { useSession } from "../context/session/useSession";
+import { useTerminal } from "../context/terminal/useTerminal";
+import { useTranslation } from "../context/language/i18n";
 
 export default function UserDetail() {
   const { selectedUser: user } = useData();
   const { sessionUser, updateSessionUser, refreshUsers } = useSession();
   const { addLine } = useTerminal();
+  const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
 
   if (!user) {
-    return <TerminalSection title="User">No user selected.</TerminalSection>;
+    return <TerminalSection title={t("User")}>{t("No user selected.")}</TerminalSection>;
   }
 
   const isFriend = sessionUser?.friends.includes(user.id) ?? false;
@@ -31,38 +33,38 @@ export default function UserDetail() {
           ...sessionUser,
           friends: sessionUser.friends.filter((id) => id !== user!.id),
         });
-        addLine(`removed ${user!.name} from friends.`);
+        addLine(t("removed {name} from friends.", { name: user!.name }));
       } else {
         await addFriend(sessionUser.id, user!.id);
         updateSessionUser({
           ...sessionUser,
           friends: [...new Set([...sessionUser.friends, user!.id])],
         });
-        addLine(`added ${user!.name} as friend.`);
+        addLine(t("added {name} as friend.", { name: user!.name }));
       }
       await refreshUsers().catch(() => {});
     } catch (e) {
-      addLine(e instanceof Error ? e.message : "could not update friends.");
+      addLine(e instanceof Error ? e.message : t("could not update friends."));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <TerminalSection title={`User: ${user.name}`}>
+    <TerminalSection title={t("User: {name}", { name: user.name })}>
       <div className="profile-layout">
         <AvatarImage user={user} size="large" />
         <div>
           <dl className="terminal-facts">
-            <dt>ID</dt>
+            <dt>{t("ID")}</dt>
             <dd>{user.id}</dd>
-            <dt>Name</dt>
+            <dt>{t("Name")}</dt>
             <dd>{user.name}</dd>
-            <dt>Email</dt>
+            <dt>{t("Email")}</dt>
             <dd>{user.email}</dd>
-            <dt>Status</dt>
-            <dd>{user.status}</dd>
-            <dt>Bio</dt>
+            <dt>{t("Status")}</dt>
+            <dd>{t(user.status)}</dd>
+            <dt>{t("Bio")}</dt>
             <dd>{user.bio}</dd>
           </dl>
           {canManageFriendship && (
@@ -75,7 +77,7 @@ export default function UserDetail() {
                   void handleToggleFriend();
                 }}
               >
-                {isFriend ? "remove friend" : "add friend"}
+                {isFriend ? t("remove friend") : t("add friend")}
               </button>
             </div>
           )}

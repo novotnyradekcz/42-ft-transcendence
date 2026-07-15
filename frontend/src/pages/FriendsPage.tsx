@@ -1,16 +1,18 @@
 import AvatarImage from "../components/AvatarImage";
 import TerminalSection from "../components/TerminalSection";
-import { useSession } from "../context/SessionContext";
+import { useSession } from "../context/session/useSession";
+import { useTranslation } from "../context/language/i18n";
 
 export default function FriendsPage() {
   const { sessionUser, knownUsers } = useSession();
+  const { t } = useTranslation();
   const friendIds = sessionUser?.friends ?? [];
   const friends = knownUsers.filter((u) => friendIds.includes(u.id));
 
   return (
-    <TerminalSection title="Friends">
+    <TerminalSection title={t("Friends")}>
       {friends.length === 0 ? (
-        <p className="terminal-copy">No friends added yet.</p>
+        <p className="terminal-copy">{t("No friends added yet.")}</p>
       ) : (
         <ol className="terminal-list numbered user-list">
           {friends.map((friend) => (
@@ -18,7 +20,7 @@ export default function FriendsPage() {
               <AvatarImage user={friend} />
               <span>{friend.name}</span>
               <small>
-                {friend.email} / {friend.status}
+                {friend.email} / {t(friend.status)}
               </small>
             </li>
           ))}

@@ -103,6 +103,12 @@ export const commandDefinitions: CommandDefinition[] = [
     usage: "back",
     description: "Go back one level. Ctrl+C and Escape also do this.",
   },
+  {
+    command: "lang",
+    aliases: ["language"],
+    usage: "lang en",
+    description: "Switch the interface language.",
+  },
 ];
 
 const pageCommands: Record<Page, string[]> = {
@@ -118,6 +124,7 @@ const pageCommands: Record<Page, string[]> = {
     "discussions",
     "mail",
     "games",
+    "lang <code>",
   ],
   help: ["menu", "back"],
   users: ["list", "enter <number>", "addfriend <number>", "menu", "back"],

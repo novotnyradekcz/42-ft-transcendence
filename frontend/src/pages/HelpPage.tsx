@@ -1,9 +1,11 @@
 import { commandDefinitions } from "../commands";
 import TerminalSection from "../components/TerminalSection";
-import { useSession } from "../context/SessionContext";
+import { useSession } from "../context/session/useSession";
+import { useTranslation } from "../context/language/i18n";
 
 export default function HelpPage() {
   const { sessionUser } = useSession();
+  const { t } = useTranslation();
   const isLoggedIn = Boolean(sessionUser);
 
   const visibleCommands = commandDefinitions.filter((command) => {
@@ -14,14 +16,16 @@ export default function HelpPage() {
   });
 
   return (
-    <TerminalSection title="Help">
+    <TerminalSection title={t("Help")}>
       <div className="command-grid">
         {visibleCommands.map((command) => (
           <div key={command.command} className="command-row">
             <code>{command.usage}</code>
-            <span>{command.description}</span>
+            <span>{t(command.description)}</span>
             <small>
-              {command.aliases.length ? `aliases: ${command.aliases.join(", ")}` : ""}
+              {command.aliases.length
+                ? t("aliases: {aliases}", { aliases: command.aliases.join(", ") })
+                : ""}
             </small>
           </div>
         ))}
