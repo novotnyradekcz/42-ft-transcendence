@@ -3,7 +3,6 @@
 use crate::authenticator::register_user;
 use crate::discussions::{CreateDiscussion, CreatePost};
 use crate::mails::{CreateMail, MailQuery};
-use crate::model::database_initializer::{DatabaseInitializer, connection};
 use crate::model::users::{CreateUserError, DbUser, login_user_in_db};
 use crate::model::users::{create_user_in_db, get_user_in_db, list_users_in_db};
 use crate::users::CreateUser;
@@ -11,8 +10,9 @@ use crate::games::GameInfo;
 use actix_security::http::security::{Argon2PasswordEncoder, PasswordEncoder, User};
 use actix_security::prelude::AuthenticatedUser;
 use actix_web::{get, HttpResponse, post, Responder, web};
+use crate::model::games::{get_game_in_db, list_games_in_db, CreateGame};
 use std::sync::Arc;
-use actix_web::dev::ServiceRequest;
+
 use diesel::prelude::*;
 use serde_json;
 use crate::AppState;
@@ -302,31 +302,6 @@ pub async fn create_mail(
     }
 }
 
-pub fn list_games_in_db(
-    db: &mut DatabaseInitializer,
-) -> Result<Vec<GameInfo>, diesel::result::Error> {
-    use crate::schema::ftt_games::dsl as games;
-
-    let conn = connection(db);
-    games::ftt_games
-        .order(games::id.asc())
-        .select(GameInfo::as_select())
-        .load::<GameInfo>(conn)
-}
-
-pub fn get_game_in_db(
-    db: &mut DatabaseInitializer,
-    game_id: i32,
-) -> Result<Option<GameInfo>, diesel::result::Error> {
-    use crate::schema::ftt_games::dsl as games;
-
-    let conn = connection(db);
-    games::ftt_games
-        .filter(games::id.eq(game_id))
-        .select(GameInfo::as_select())
-        .first::<GameInfo>(conn)
-        .optional()
-}
 
 #[get("/show")]
 pub async fn show_games(pool: web::Data<Arc<AppState>>) -> impl Responder {
@@ -357,3 +332,75 @@ pub async fn game_detail(
         })),
     }
 }
+
+
+#[post("/create")]
+pub async fn create_game(
+    pool: web::Data<Arc<AppState>>,
+    body: web::Json<CreateGame>,
+) -> impl Responder {
+    if body.name.trim().is_empty() {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "message": "Game name is required.",
+        }));
+    }
+
+    if body.lua_code.trim().is_empty() {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "message": "Lua code is required.",
+        }));
+    }
+
+    let games_dir = std::env::var("GAMES_DIR").unwrap_or_else(|_| "../frontend/public/games".to_string());
+    if let Err(err) = std::fs::create_dir_all(&games_dir) {
+        return HttpResponse::InternalServerError().json(serde_json::json!({
+            "message": format!("Could not create games directory: {}", err),
+        }));
+    }
+
+    let sanitized_name = body.name.to_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect::<String>();
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let filename = format!("{}_{}.lua", timestamp, sanitized_name);
+    let file_path = std::path::Path::new(&games_dir).join(&filename);
+
+    if let Err(err) = std::fs::write(&file_path, &body.lua_code) {
+        return HttpResponse::InternalServerError().json(serde_json::json!({
+            "message": format!("Could not write Lua script to file: {}", err),
+        }));
+    }
+
+    let game_link = format!("/games/{}", filename);
+
+    let mut db = pool.database.lock().expect("create_game expect DatabaseInitializer");
+    let conn = match db.connection.as_mut() {
+        Some(c) => c,
+        None => {
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Database connection not available",
+            }));
+        }
+    };
+
+    use crate::schema::ftt_games::dsl as games_dsl;
+    match diesel::insert_into(games_dsl::ftt_games)
+        .values((
+            games_dsl::author.eq(body.author),
+            games_dsl::name.eq(&body.name),
+            games_dsl::body.eq(&game_link),
+        ))
+        .returning(GameInfo::as_returning())
+        .get_result::<GameInfo>(conn)
+    {
+        Ok(game) => HttpResponse::Created().json(game),
+        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "message": format!("Could not save game to database: {}", err),
+        })),
+    }
+}
+

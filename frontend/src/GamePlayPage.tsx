@@ -100,9 +100,12 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
       return;
     }
 
+    // Reset the draw buffer; the grid state already starts empty, so no
+    // synchronous re-render is needed here (lint: set-state-in-effect).
     gridRef.current = createEmptyGrid();
     forceUpdate();
 
+    // Setup WebSocket
     const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${wsProtocol}//${window.location.host}${apiBaseUrl}/games/play/ws?game_id=${game.id}&user_id=${sessionUser.id}`;
@@ -131,6 +134,17 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
 
           const factory = new LuaFactory("/glue.wasm");
           const lua = await factory.createEngine();
+
+          // Sandbox isolation: remove dangerous Lua globals
+          const unsafeGlobals = ["os", "io", "package", "require", "dofile", "loadfile", "debug"];
+          for (const g of unsafeGlobals) {
+            try {
+              lua.global.set(g, undefined);
+            } catch (err) {
+              console.warn(`Could not undefine global ${g}:`, err);
+            }
+          }
+
           luaEngineRef.current = lua;
 
           lua.global.set(
@@ -167,7 +181,24 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
 
           lua.global.set("player_index", msg.player_index);
 
-          await lua.doString(msg.script);
+          // Execute script
+          let scriptContent = msg.script;
+          if (msg.script.startsWith("/") || msg.script.startsWith("http")) {
+            try {
+              const resp = await fetch(msg.script);
+              if (!resp.ok) {
+                throw new Error(`Failed to fetch Lua script: ${resp.statusText}`);
+              }
+              scriptContent = await resp.text();
+            } catch (fetchErr) {
+              console.error(fetchErr);
+              setStatus("error");
+              setStatusMessage("Failed to load game script.");
+              cleanupLua();
+              return;
+            }
+          }
+          await lua.doString(scriptContent);
           forceUpdate();
         } else if (msg.type === "game_action") {
           if (luaEngineRef.current) {

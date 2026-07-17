@@ -7,7 +7,7 @@ use serde::{Serialize, Deserialize};
 use actix_web::{get, web, Error, HttpRequest, HttpResponse};
 use diesel::{Queryable, Selectable};
 use crate::model::DatabaseInitializer;
-use crate::router::get_game_in_db;
+use crate::model::games::get_game_in_db;
 
 #[derive(Serialize, Deserialize, Queryable, Selectable, Debug, Clone)]
 #[diesel(table_name = crate::schema::ftt_games)]

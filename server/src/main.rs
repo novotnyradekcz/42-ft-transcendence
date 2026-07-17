@@ -15,7 +15,7 @@ use model::database_initializer::inittialize_db;
 use crate::games::{Lobby, play_game_ws};
 use crate::model::DatabaseInitializer;
 use crate::model::users::get_all_users_from_db;
-use crate::router::{index, show_users, login_user, user_detail, create_user, show_games, game_detail, show_discussions, discussion_detail, create_discussion, create_discussion_post, show_mail, mail_detail, create_mail};
+use crate::router::{index, show_users, login_user, user_detail, create_user, show_games, game_detail, create_game, show_discussions, discussion_detail, create_discussion, create_discussion_post, show_mail, mail_detail, create_mail};
 
 use actix_security::http::security::{Argon2PasswordEncoder, SessionFixationStrategy};
 use actix_security::http::security::middleware::SecurityTransform;
@@ -85,6 +85,7 @@ async fn main() -> std::io::Result<()> {
                 web::scope("/games")
                     .service(show_games)
                     .service(game_detail)
+                    .service(create_game)
                     .service(play_game_ws),
             )
             .service(
