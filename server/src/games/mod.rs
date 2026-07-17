@@ -26,6 +26,7 @@ pub struct Player {
     pub session: Session,
 }
 
+#[allow(dead_code)]
 #[derive(Clone)]
 pub struct Room {
     pub id: String,

@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { LuaFactory, type LuaEngine } from "wasmoon";
-import type { GameSummary, SessionUser } from "./types";
+import { useNavigate } from "react-router-dom";
+import { LuaFactory } from "wasmoon";
+import { useSession } from "./context/SessionContext";
+import { PAGE_PATHS } from "./router";
+import type { GameSummary } from "./types";
 
 const GRID_COLS = 40;
 const GRID_ROWS = 20;
@@ -10,7 +13,7 @@ const createEmptyGrid = () =>
     Array.from({ length: GRID_COLS }, () => ({
       char: " ",
       color: "green",
-    }))
+    })),
   );
 
 type Cell = {
@@ -18,15 +21,10 @@ type Cell = {
   color: string;
 };
 
-export default function GamePlayPage({
-  game,
-  sessionUser,
-  onBack,
-}: {
-  game: GameSummary | null;
-  sessionUser: SessionUser | null;
-  onBack: () => void;
-}) {
+export default function GamePlayPage({ game }: { game: GameSummary | null }) {
+  const { sessionUser } = useSession();
+  const navigate = useNavigate();
+
   const [grid, setGrid] = useState<Cell[]>(() => {
     const flat: Cell[] = [];
     const empty = createEmptyGrid();
@@ -37,18 +35,13 @@ export default function GamePlayPage({
     }
     return flat;
   });
-  // The page is mounted fresh on each navigation, so the "details missing"
-  // case can be decided at mount instead of inside the effect (lint:
-  // react-hooks/set-state-in-effect).
-  const [status, setStatus] = useState<"connecting" | "waiting" | "playing" | "disconnected" | "error">(
-    () => (game && sessionUser ? "connecting" : "error"),
-  );
-  const [statusMessage, setStatusMessage] = useState(() =>
-    game && sessionUser ? "Connecting to server..." : "Game or session details missing.",
-  );
+  const [status, setStatus] = useState<
+    "connecting" | "waiting" | "playing" | "disconnected" | "error"
+  >("connecting");
+  const [statusMessage, setStatusMessage] = useState("Connecting to server...");
 
   const wsRef = useRef<WebSocket | null>(null);
-  const luaEngineRef = useRef<LuaEngine | null>(null);
+  const luaEngineRef = useRef<any>(null);
   const gridRef = useRef<Cell[][]>(createEmptyGrid());
   const statusRef = useRef(status);
 
@@ -95,12 +88,15 @@ export default function GamePlayPage({
 
   useEffect(() => {
     if (!game || !sessionUser) {
+      setStatus("error");
+      setStatusMessage("Game or session details missing.");
       return;
     }
 
     // Reset the draw buffer; the grid state already starts empty, so no
     // synchronous re-render is needed here (lint: set-state-in-effect).
     gridRef.current = createEmptyGrid();
+    forceUpdate();
 
     // Setup WebSocket
     const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
@@ -127,7 +123,6 @@ export default function GamePlayPage({
 
           cleanupLua();
 
-          // Load Lua via factory pointing to the public WASM glue
           const factory = new LuaFactory("/glue.wasm");
           const lua = await factory.createEngine();
 
@@ -143,39 +138,38 @@ export default function GamePlayPage({
 
           luaEngineRef.current = lua;
 
-          // Expose draw_cell (1-indexed for Lua, maps to 0-indexed JS array)
-          lua.global.set("draw_cell", (x: number, y: number, text: string, color: string) => {
-            const r = y - 1;
-            const cStart = x - 1;
-            if (r >= 0 && r < GRID_ROWS) {
-              const str = String(text ?? " ");
-              for (let i = 0; i < str.length; i++) {
-                const c = cStart + i;
-                if (c >= 0 && c < GRID_COLS) {
-                  gridRef.current[r][c] = {
-                    char: str[i],
-                    color: color || "green",
-                  };
+          lua.global.set(
+            "draw_cell",
+            (x: number, y: number, text: string, color: string) => {
+              const r = y - 1;
+              const cStart = x - 1;
+              if (r >= 0 && r < GRID_ROWS) {
+                const str = String(text ?? " ");
+                for (let i = 0; i < str.length; i++) {
+                  const c = cStart + i;
+                  if (c >= 0 && c < GRID_COLS) {
+                    gridRef.current[r][c] = {
+                      char: str[i],
+                      color: color || "green",
+                    };
+                  }
                 }
               }
-            }
-          });
+            },
+          );
 
-          // Expose clear_screen
           lua.global.set("clear_screen", () => {
             gridRef.current = createEmptyGrid();
           });
 
-          // Expose send_message
           lua.global.set("send_message", (payload: string) => {
             if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
               wsRef.current.send(
-                JSON.stringify({ type: "game_action", data: payload })
+                JSON.stringify({ type: "game_action", data: payload }),
               );
             }
           });
 
-          // Expose player_index (1 or 2)
           lua.global.set("player_index", msg.player_index);
 
           // Execute script
@@ -199,7 +193,8 @@ export default function GamePlayPage({
           forceUpdate();
         } else if (msg.type === "game_action") {
           if (luaEngineRef.current) {
-            const onNetworkMessage = luaEngineRef.current.global.get("on_network_message");
+            const onNetworkMessage =
+              luaEngineRef.current.global.get("on_network_message");
             if (onNetworkMessage) {
               await onNetworkMessage(msg.data);
               forceUpdate();
@@ -242,7 +237,11 @@ export default function GamePlayPage({
       <div className="game-status-bar">
         <span className="game-title">{game?.name}</span>
         <span className="game-msg">{statusMessage}</span>
-        <button type="button" className="terminal-button back-btn" onClick={onBack}>
+        <button
+          type="button"
+          className="terminal-button back-btn"
+          onClick={() => navigate(PAGE_PATHS.games)}
+        >
           Exit Game
         </button>
       </div>

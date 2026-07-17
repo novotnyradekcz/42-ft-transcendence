@@ -1,23 +1,19 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
 use crate::authenticator::register_user;
-use crate::discussions::{CreateDiscussion, CreatePost, DiscussionInfo};
-use crate::mails::{CreateMail, MailInfo, MailQuery};
-
-use crate::model::discussions::{Discussion, Post};
-use crate::model::users::CreateUserError;
+use crate::discussions::{CreateDiscussion, CreatePost};
+use crate::mails::{CreateMail, MailQuery};
+use crate::model::users::{CreateUserError, DbUser, login_user_in_db};
 use crate::model::users::{create_user_in_db, get_user_in_db, list_users_in_db};
 use crate::users::CreateUser;
 use crate::games::GameInfo;
 use actix_security::http::security::{Argon2PasswordEncoder, PasswordEncoder, User};
-use actix_web::{delete, get, HttpResponse, post, Responder, web};
-use serde::Deserialize;
+use actix_security::prelude::AuthenticatedUser;
+use actix_web::{get, HttpResponse, post, Responder, web};
 use crate::model::games::{get_game_in_db, list_games_in_db, CreateGame};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use crate::model::mails::Mail;
 use diesel::prelude::*;
-use diesel::result::Error;
 use serde_json;
 use crate::AppState;
 use crate::model::{discussions, mails, users};
@@ -47,6 +43,29 @@ pub async fn show_users(pool: web::Data<Arc<AppState>>) -> impl Responder {
             "message": format!("Could not load users: {}", err),
         })),
     }
+}
+
+#[get("/login")]
+pub async fn login_user(pool: web::Data<Arc<AppState>>, user: AuthenticatedUser) -> impl Responder {
+    let name = user.clone().into_inner().get_username().to_string();
+    let pwd = user.into_inner().get_password().to_string();
+    let mut db = pool.database.lock().expect("create_user expect DatabaseInitializer");
+    let logged_from_db = login_user_in_db(
+        &mut db,
+        &DbUser::new(
+            0,
+            name,
+            "".to_string(),
+            pwd,
+            "".to_string(),
+            "".to_string(),
+            vec![]));
+    match logged_from_db {
+        Ok(Some(dbUser)) => HttpResponse::Ok().json(serde_json::json!(dbUser)),
+        Ok(None) => HttpResponse::Ok().json(serde_json::json!([])),
+        Err(_) => todo!("Error is not handled")
+    }
+
 }
 
 #[post("/create")]
@@ -80,223 +99,6 @@ pub async fn create_user(
                 "email": body.email,
             }))
         }
-    }
-}
-
-#[derive(Deserialize)]
-struct LoginRequest {
-    name: String,
-    password: String,
-}
-
-#[derive(Deserialize)]
-struct UpdateProfileRequest {
-    id: i32,
-    name: String,
-    email: String,
-    #[serde(default)]
-    bio: String,
-    #[serde(rename = "avatarUrl", default)]
-    avatar_url: String,
-}
-
-// The stateless endpoints below take the acting user's id explicitly (body or
-// query) instead of reading it from a session; they carry no authentication
-// until the real auth layer lands.
-#[derive(Deserialize)]
-struct FriendQuery {
-    #[serde(rename = "userId")]
-    user_id: Option<i32>,
-}
-
-/// Seed users (test/admin/guest) are stored as plaintext; users created via
-/// `/users/create` are stored as Argon2 hashes. Verify against whichever form
-/// the row actually holds.
-fn password_matches(encoder: &Argon2PasswordEncoder, raw: &str, stored: &str) -> bool {
-    if stored.starts_with("$argon2") {
-        encoder.matches(raw, stored)
-    } else {
-        stored == raw
-    }
-}
-
-/// Stateless credential check: verifies name/password and returns the user's
-/// public info. No session or token is created.
-#[post("/login")]
-pub async fn login_user(
-    pool: web::Data<Arc<AppState>>,
-    encoder: web::Data<Argon2PasswordEncoder>,
-    body: web::Json<LoginRequest>,
-) -> impl Responder {
-    let mut db = pool.database.lock().unwrap();
-
-    let user = match users::get_user_by_name_in_db(&mut db, &body.name) {
-        Ok(Some(user)) => user,
-        Ok(None) => {
-            return HttpResponse::Unauthorized().json(serde_json::json!({
-                "message": "Name or password is incorrect.",
-            }))
-        }
-        Err(err) => {
-            return HttpResponse::InternalServerError().json(serde_json::json!({
-                "message": format!("Could not load user: {}", err),
-            }))
-        }
-    };
-
-    if !password_matches(encoder.get_ref(), &body.password, user.password.as_str()) {
-        return HttpResponse::Unauthorized().json(serde_json::json!({
-            "message": "Name or password is incorrect.",
-        }));
-    }
-
-    match get_user_in_db(&mut db, user.id) {
-        Ok(Some(info)) => HttpResponse::Ok().json(info),
-        Ok(None) => HttpResponse::Unauthorized().json(serde_json::json!({
-            "message": "Name or password is incorrect.",
-        })),
-        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "message": format!("Could not load user: {}", err),
-        })),
-    }
-}
-
-#[post("/update")]
-pub async fn update_profile(
-    pool: web::Data<Arc<AppState>>,
-    body: web::Json<UpdateProfileRequest>,
-) -> impl Responder {
-    if body.name.trim().is_empty() || body.email.trim().is_empty() {
-        return HttpResponse::BadRequest().json(serde_json::json!({
-            "message": "Name and email are required.",
-        }));
-    }
-
-    let mut db = pool.database.lock().unwrap();
-
-    // An empty avatarUrl means "leave the avatar unchanged".
-    let avatar_url = if body.avatar_url.trim().is_empty() {
-        match get_user_in_db(&mut db, body.id) {
-            Ok(Some(existing)) => existing.avatar_url,
-            _ => "/images/profile.png".to_string(),
-        }
-    } else {
-        body.avatar_url.clone()
-    };
-
-    match users::update_user_profile_in_db(
-        &mut db,
-        body.id,
-        body.name.trim(),
-        body.email.trim(),
-        body.bio.trim(),
-        &avatar_url,
-    ) {
-        Ok(info) => HttpResponse::Ok().json(info),
-        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "message": format!("Could not update profile: {}", err),
-        })),
-    }
-}
-
-#[get("/friends")]
-pub async fn list_friends(
-    pool: web::Data<Arc<AppState>>,
-    query: web::Query<FriendQuery>,
-) -> impl Responder {
-    // Like /mail/show, no userId simply means no list to show.
-    let uid = match query.user_id {
-        Some(uid) => uid,
-        None => return HttpResponse::Ok().json(serde_json::json!([])),
-    };
-
-    let mut db = pool.database.lock().unwrap();
-    match users::list_friends_in_db(&mut db, uid) {
-        Ok(friends) => HttpResponse::Ok().json(friends),
-        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "message": format!("Could not load friends: {}", err),
-        })),
-    }
-}
-
-#[post("/friends/{id}")]
-pub async fn add_friend(
-    pool: web::Data<Arc<AppState>>,
-    query: web::Query<FriendQuery>,
-    path: web::Path<(i32,)>,
-) -> impl Responder {
-    let uid = match query.user_id {
-        Some(uid) => uid,
-        None => {
-            return HttpResponse::BadRequest().json(serde_json::json!({
-                "message": "userId is required.",
-            }))
-        }
-    };
-
-    let target = path.into_inner().0;
-    if target == uid {
-        return HttpResponse::BadRequest().json(serde_json::json!({
-            "message": "You cannot add yourself as a friend.",
-        }));
-    }
-
-    let mut db = pool.database.lock().unwrap();
-
-    match get_user_in_db(&mut db, target) {
-        Ok(Some(_)) => {}
-        Ok(None) => {
-            return HttpResponse::NotFound().json(serde_json::json!({
-                "message": "User not found.",
-            }))
-        }
-        Err(err) => {
-            return HttpResponse::InternalServerError().json(serde_json::json!({
-                "message": format!("Could not add friend: {}", err),
-            }))
-        }
-    }
-
-    match users::add_friend_in_db(&mut db, uid, target) {
-        Ok(()) => match users::list_friends_in_db(&mut db, uid) {
-            Ok(friends) => HttpResponse::Ok().json(friends),
-            Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-                "message": format!("Could not load friends: {}", err),
-            })),
-        },
-        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "message": format!("Could not add friend: {}", err),
-        })),
-    }
-}
-
-#[delete("/friends/{id}")]
-pub async fn remove_friend(
-    pool: web::Data<Arc<AppState>>,
-    query: web::Query<FriendQuery>,
-    path: web::Path<(i32,)>,
-) -> impl Responder {
-    let uid = match query.user_id {
-        Some(uid) => uid,
-        None => {
-            return HttpResponse::BadRequest().json(serde_json::json!({
-                "message": "userId is required.",
-            }))
-        }
-    };
-
-    let target = path.into_inner().0;
-    let mut db = pool.database.lock().unwrap();
-    match users::remove_friend_in_db(&mut db, uid, target) {
-        Ok(()) => match users::list_friends_in_db(&mut db, uid) {
-            Ok(friends) => HttpResponse::Ok().json(friends),
-            Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-                "message": format!("Could not load friends: {}", err),
-            })),
-        },
-        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "message": format!("Could not remove friend: {}", err),
-        })),
     }
 }
 

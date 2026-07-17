@@ -15,6 +15,8 @@ pub struct Mail {
 }
 
 impl Mail {
+
+    #[allow(dead_code)]
     pub fn new(
         id: i32,
         sender: i32,

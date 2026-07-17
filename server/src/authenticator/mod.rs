@@ -1,11 +1,10 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
-use std::collections::HashMap;
-use std::sync::{OnceLock, RwLock};
 use actix_security::http::security::{Access, AuthorizationManager, RequestMatcherAuthorizer};
 use actix_security::prelude::{Argon2PasswordEncoder, Authenticator, PasswordEncoder, User};
-use actix_web::dev::{ServiceRequest};
-use crate::AppState;
+use actix_web::dev::ServiceRequest;
+use std::collections::HashMap;
+use std::sync::{OnceLock, RwLock};
 
 static USER_STORE: OnceLock<RwLock<HashMap<String, User>>> = OnceLock::new();
 
@@ -14,12 +13,17 @@ pub fn init_user_store(users: Vec<User>) {
         .into_iter()
         .map(|u| (u.get_username().to_string(), u))
         .collect();
-    USER_STORE.set(RwLock::new(map)).expect("init_user_store: already initialized!")
+    USER_STORE
+        .set(RwLock::new(map))
+        .expect("init_user_store: already initialized!")
 }
 
 pub fn register_user(user: User) {
     if let Some(store) = USER_STORE.get() {
-        store.write().expect("USER_STORE RwLock poisoned").insert(user.get_username().to_string(), user);
+        store
+            .write()
+            .expect("USER_STORE RwLock poisoned")
+            .insert(user.get_username().to_string(), user);
     }
 }
 
@@ -31,12 +35,15 @@ pub struct AuthMiddleware {
 impl AuthMiddleware {
     fn new() -> Self {
         Self {
-            store: USER_STORE.get().expect("AuthMiddleware: call init_user_store() before HttpServer::new()"),
+            store: USER_STORE
+                .get()
+                .expect("AuthMiddleware: call init_user_store() before HttpServer::new()"),
         }
     }
 }
 
 impl Authenticator for AuthMiddleware {
+    #[allow(deprecated)]
     fn get_user(&self, req: &ServiceRequest) -> Option<User> {
         let encoder = Argon2PasswordEncoder::new();
         // Parse HTTP Basic Auth: "Authorization: Basic base64(user:pass)"
@@ -46,13 +53,12 @@ impl Authenticator for AuthMiddleware {
         let decoded = base64::decode(b64).ok()?;
         let creds = std::str::from_utf8(&decoded.as_slice()).ok()?;
 
-
         // Split at first ':' only — passwords may themselves contain ':'
         let (username, raw_password) = creds.split_once(':')?;
-
+        println!("User request: {:#?} {:?}", &username, &raw_password);
         let store = self.store.read().expect("USER_STORE RwLock poisoned");
         let user = store.get(username)?;
-
+        println!("User db: {:#?}", &user);
         if encoder.matches(raw_password, user.get_password()) {
             Some(user.clone())
         } else {
@@ -61,6 +67,7 @@ impl Authenticator for AuthMiddleware {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 struct LoginFromMiddleware {
     username: String,
@@ -74,8 +81,7 @@ pub fn create_authenticator() -> AuthMiddleware {
 // Factory function: URL-based authorization rules
 pub fn create_authorizer() -> RequestMatcherAuthorizer {
     AuthorizationManager::request_matcher()
-        .http_basic()
-        .add_matcher("/users/login", Access::new().roles(vec!["ADMIN"]))
+        .add_matcher("/users/login", Access::new().roles(vec!["USER"]))
     // add more matchers per route as needed
 }
 
@@ -94,7 +100,10 @@ mod tests {
         // Use a fresh map to avoid OnceLock collision across tests
         let store: RwLock<HashMap<String, User>> = RwLock::new(HashMap::new());
         let user = alice();
-        store.write().unwrap().insert(user.get_username().to_string(), user.clone());
+        store
+            .write()
+            .unwrap()
+            .insert(user.get_username().to_string(), user.clone());
         assert!(store.read().unwrap().contains_key("alice"));
     }
 

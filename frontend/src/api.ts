@@ -5,23 +5,35 @@ import type {
   SessionUser,
   UserProfile,
 } from "./types";
+import { CREDENTIALS_KEY, PH_USER_IMAGE, SESSION_USER_KEY } from "./constants";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
-export const DEFAULT_AVATAR_URL = "/images/profile.png";
 
-let currentUser: SessionUser | null = null;
+let currentCredentials: string | null = null;
+
+/**
+ * In-memory cache of all known users, populated by listUsers().
+ * Used by findUserName() and getUserByName() for fast lookups.
+ */
 let knownUsers: UserProfile[] = [];
 
 type UserPayload = {
   id?: number | string;
+  user_id?: number | string;
   name?: string;
+  user_name?: string;
+  username?: string;
   email?: string;
+  user_email?: string;
   bio?: string;
   avatarUrl?: string;
+  avatar_url?: string;
+  avatar?: string;
   status?: string;
+  friends?: unknown;
 };
 
-class ApiRequestError extends Error {
+export class ApiRequestError extends Error {
   status: number;
 
   constructor(status: number, statusText: string) {
@@ -30,15 +42,60 @@ class ApiRequestError extends Error {
   }
 }
 
+// ─── Credential helpers ───────────────────────────────────────────────────────
+
+/**
+ * Encodes a username and password as an HTTP Basic Auth header value.
+ */
+export function buildBasicAuthHeader(name: string, password: string): string {
+  return "Basic " + btoa(`${name}:${password}`);
+}
+
+/** Called by SessionContext after login / session restore to arm requests. */
+export function setCredentials(creds: string | null): void {
+  currentCredentials = creds;
+}
+
+/** Called by SessionContext to persist credentials after login. */
+export function getCredentials(): string | null {
+  return currentCredentials;
+}
+
+// ─── Session restore (reads sessionStorage, arms credentials) ─────────────────
+
+/**
+ * Reads credentials and user data from sessionStorage.
+ * Sets currentCredentials so subsequent requests are authenticated.
+ * Returns the stored SessionUser or null if no valid session exists.
+ */
+export function restoreSession(): SessionUser | null {
+  try {
+    const credentials = sessionStorage.getItem(CREDENTIALS_KEY);
+    const userJson = sessionStorage.getItem(SESSION_USER_KEY);
+    if (!credentials || !userJson) return null;
+    const user = JSON.parse(userJson) as SessionUser;
+    currentCredentials = credentials;
+    return user;
+  } catch {
+    return null;
+  }
+}
+
+// ─── Core request helper ──────────────────────────────────────────────────────
+
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
-  });
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    ...(init?.headers as Record<string, string>),
+  };
+
+  if (currentCredentials && !headers["Authorization"]) {
+    headers["Authorization"] = currentCredentials;
+  }
+
+  console.log("apiBaseUrl: ", apiBaseUrl);
+  const response = await fetch(`${apiBaseUrl}${path}`, { ...init, headers });
 
   if (!response.ok) {
     throw new ApiRequestError(response.status, response.statusText);
@@ -46,6 +103,8 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
 
   return response.json() as Promise<T>;
 }
+
+// ─── Normalisation helpers ────────────────────────────────────────────────────
 
 function textValue(value: unknown): string {
   return typeof value === "string" ? value : "";
@@ -56,20 +115,24 @@ function numberValue(value: unknown): number | null {
   return Number.isFinite(number) ? number : null;
 }
 
-function normalizedStatus(userId: number, status: unknown): UserProfile["status"] {
-  if (currentUser?.id === userId) {
-    return "online";
-  }
+function friendsValue(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is number => typeof v === "number");
+}
 
+function normalizedStatus(status: unknown): UserProfile["status"] {
   return status === "online" ? "online" : "offline";
 }
 
-function normalizeUser(payload: unknown): UserProfile {
+export function normalizeUser(payload: unknown): UserProfile {
   const user = payload as UserPayload;
-  const id = numberValue(user.id);
-  const name = textValue(user.name);
-  const email = textValue(user.email);
-
+  const id = numberValue(user.id ?? user.user_id);
+  const name =
+    textValue(user.name) ||
+    textValue(user.username) ||
+    textValue(user.user_name);
+  const email = textValue(user.email) || textValue(user.user_email);
+  console.log("user: ", user);
   if (id === null || !name || !email) {
     throw new Error("Invalid user payload.");
   }
@@ -79,63 +142,51 @@ function normalizeUser(payload: unknown): UserProfile {
     name,
     email,
     bio: textValue(user.bio) || "No profile info yet.",
-    avatarUrl: textValue(user.avatarUrl) || DEFAULT_AVATAR_URL,
-    status: normalizedStatus(id, user.status),
+    avatarUrl:
+      textValue(user.avatarUrl) ||
+      textValue(user.avatar_url) ||
+      textValue(user.avatar) ||
+      PH_USER_IMAGE,
+    status: normalizedStatus(user.status),
+    friends: friendsValue(user.friends),
   };
 }
 
-function normalizeUsers(payload: unknown): UserProfile[] {
+export function normalizeUsers(payload: unknown): UserProfile[] {
   if (!Array.isArray(payload)) {
     throw new Error("Invalid user list payload.");
   }
-
   return payload.map(normalizeUser);
 }
 
-function rememberUser(user: UserProfile) {
-  knownUsers = knownUsers.some((item) => item.id === user.id)
-    ? knownUsers.map((item) => (item.id === user.id ? user : item))
-    : [...knownUsers, user];
-}
+// ─── User name lookup (uses in-memory cache) ──────────────────────────────────
 
 export function findUserName(id: number): string {
-  if (currentUser?.id === id) {
-    return currentUser.name;
-  }
-
-  return knownUsers.find((user) => user.id === id)?.name ?? `user#${id}`;
+  return knownUsers.find((u) => u.id === id)?.name ?? `user#${id}`;
 }
 
-// There is no session yet (the real auth layer is still in progress), so the
-// logged-in user only lives in memory: a page refresh requires a new login.
-export async function getCurrentUser(): Promise<SessionUser | null> {
-  return currentUser;
-}
+// ─── Auth ─────────────────────────────────────────────────────────────────────
 
-export async function login(name: string, password: string): Promise<SessionUser> {
+export async function login(
+  name: string,
+  password: string,
+): Promise<SessionUser> {
   const cleanName = name.trim();
 
   if (!cleanName || !password) {
     throw new Error("Name and password are required.");
   }
 
-  try {
-    const user = normalizeUser(
-      await requestJson<unknown>("/users/login", {
-        method: "POST",
-        body: JSON.stringify({ name: cleanName, password }),
-      }),
-    );
-    currentUser = { ...user, status: "online" };
-    rememberUser(currentUser);
-    return currentUser;
-  } catch (error) {
-    if (error instanceof ApiRequestError && error.status === 401) {
-      throw new Error("Name or password is incorrect.", { cause: error });
-    }
+  const credentials = buildBasicAuthHeader(cleanName, password);
+  const user = normalizeUser(
+    await requestJson<unknown>("/users/login", {
+      method: "GET",
+      headers: { Authorization: credentials },
+    }),
+  );
 
-    throw error;
-  }
+  currentCredentials = credentials;
+  return { ...user, status: "online" };
 }
 
 export async function register(
@@ -150,68 +201,59 @@ export async function register(
     throw new Error("Name, email, and password are required.");
   }
 
-  try {
+  const user = normalizeUser(
     await requestJson<unknown>("/users/create", {
       method: "POST",
       body: JSON.stringify({ name: cleanName, email: cleanEmail, password }),
-    });
-  } catch (error) {
-    if (error instanceof ApiRequestError && error.status === 417) {
-      throw new Error("Name or email is already registered.", { cause: error });
-    }
+    }),
+  );
 
-    throw error;
-  }
-
-  // Backend create only returns a confirmation; log in to fetch the user info.
-  return login(cleanName, password);
+  currentCredentials = buildBasicAuthHeader(cleanName, password);
+  return { ...user, status: "online" };
 }
 
-export async function logout(): Promise<void> {
-  currentUser = null;
+/** Clears the in-memory credentials. SessionContext handles sessionStorage. */
+export function logout(): void {
+  currentCredentials = null;
+  knownUsers = [];
 }
+
+// ─── Users ───────────────────────────────────────────────────────────────────
 
 export async function listUsers(): Promise<UserProfile[]> {
-  try {
-    knownUsers = normalizeUsers(await requestJson<unknown>("/users/show"));
-    return knownUsers;
-  } catch {
-    return knownUsers;
-  }
+  const users = normalizeUsers(await requestJson<unknown>("/users/show"));
+  knownUsers = users;
+  return users;
 }
 
 export async function getUser(id: number): Promise<UserProfile | null> {
   try {
     const user = normalizeUser(await requestJson<unknown>(`/users/show/${id}`));
-    rememberUser(user);
+    const idx = knownUsers.findIndex((u) => u.id === id);
+    if (idx >= 0) {
+      knownUsers[idx] = user;
+    } else {
+      knownUsers = [...knownUsers, user];
+    }
     return user;
-  } catch {
-    return knownUsers.find((item) => item.id === id) ?? null;
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 404) return null;
+    throw error;
   }
 }
 
 export async function getUserByName(name: string): Promise<UserProfile | null> {
   const cleanName = name.trim();
-  const cachedUser = knownUsers.find((user) => user.name === cleanName);
-
-  if (cachedUser) {
-    return cachedUser;
-  }
-
+  const cached = knownUsers.find((u) => u.name === cleanName);
+  if (cached) return cached;
   const users = await listUsers();
-  return users.find((user) => user.name === cleanName) ?? null;
+  return users.find((u) => u.name === cleanName) ?? null;
 }
 
-export async function updateCurrentUserProfile(update: {
-  name: string;
-  email: string;
-  bio: string;
-  avatarUrl?: string;
-}): Promise<SessionUser> {
-  if (!currentUser) {
-    throw new Error("Login first to update your profile.");
-  }
-
+export async function updateCurrentUserProfile(
+  userId: number,
+  update: { name: string; email: string; bio: string; avatarUrl?: string },
+): Promise<SessionUser> {
   const cleanName = update.name.trim();
   const cleanEmail = update.email.trim();
   const cleanBio = update.bio.trim();
@@ -220,173 +262,156 @@ export async function updateCurrentUserProfile(update: {
     throw new Error("Name and email are required.");
   }
 
-  // No session: the backend needs to be told which user to update.
-  const body: Record<string, string | number> = {
-    id: currentUser.id,
-    name: cleanName,
-    email: cleanEmail,
-    bio: cleanBio,
+  const user = normalizeUser(
+    await requestJson<unknown>(`/users/update/${userId}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        name: cleanName,
+        email: cleanEmail,
+        bio: cleanBio || "No profile info yet.",
+        ...(update.avatarUrl ? { avatarUrl: update.avatarUrl } : {}),
+      }),
+    }),
+  );
+
+  return { ...user, status: "online" };
+}
+
+export async function uploadAvatar(file: File): Promise<string> {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("Avatar must be an image file.");
+  }
+
+  const params = new URLSearchParams({ filename: file.name || "avatar" });
+  const uploadHeaders: Record<string, string> = {
+    "Content-Type": file.type,
   };
 
-  // An empty avatarUrl tells the backend to keep the current avatar.
-  if (update.avatarUrl) {
-    body.avatarUrl = update.avatarUrl;
+  if (currentCredentials) {
+    uploadHeaders["Authorization"] = currentCredentials;
   }
 
-  const user = normalizeUser(
-    await requestJson<unknown>("/users/update", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
+  const response = await fetch(`/avatar-upload?${params.toString()}`, {
+    method: "POST",
+    headers: uploadHeaders,
+    body: file,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Avatar upload failed with status ${response.status}.`);
+  }
+
+  const payload = (await response.json()) as { avatarUrl?: string };
+  if (!payload.avatarUrl) {
+    throw new Error("Avatar upload did not return an image path.");
+  }
+
+  return payload.avatarUrl;
+}
+
+// ─── Friends ─────────────────────────────────────────────────────────────────
+
+/**
+ * Pure helper — resolves a list of friend IDs to full UserProfile objects
+ * using the provided user pool. No network request.
+ */
+export function listFriends(
+  friendIds: number[],
+  allUsers: UserProfile[],
+): UserProfile[] {
+  return friendIds
+    .map((id) => allUsers.find((u) => u.id === id))
+    .filter((u): u is UserProfile => Boolean(u));
+}
+
+export async function addFriend(
+  currentUserId: number,
+  targetUserId: number,
+): Promise<void> {
+  await requestJson<unknown>(`/users/${currentUserId}/friends`, {
+    method: "POST",
+    body: JSON.stringify({ friendId: targetUserId }),
+  });
+}
+
+export async function removeFriend(
+  currentUserId: number,
+  targetUserId: number,
+): Promise<void> {
+  await requestJson<unknown>(
+    `/users/${currentUserId}/friends/${targetUserId}`,
+    { method: "DELETE" },
   );
-  currentUser = { ...user, status: "online" };
-  rememberUser(currentUser);
-  return currentUser;
 }
 
-export async function listFriends(): Promise<UserProfile[]> {
-  if (!currentUser) {
-    return [];
-  }
-
-  try {
-    const friends = normalizeUsers(
-      await requestJson<unknown>(`/users/friends?userId=${currentUser.id}`),
-    );
-    friends.forEach(rememberUser);
-    return friends;
-  } catch {
-    return [];
-  }
-}
-
-export async function addFriend(userId: number): Promise<UserProfile[]> {
-  if (!currentUser) {
-    throw new Error("Login first to add friends.");
-  }
-
-  if (currentUser.id === userId) {
-    throw new Error("You cannot add yourself as a friend.");
-  }
-
-  const friends = normalizeUsers(
-    await requestJson<unknown>(`/users/friends/${userId}?userId=${currentUser.id}`, {
-      method: "POST",
-    }),
-  );
-  friends.forEach(rememberUser);
-  return friends;
-}
-
-export async function removeFriend(userId: number): Promise<UserProfile[]> {
-  if (!currentUser) {
-    throw new Error("Login first to remove friends.");
-  }
-
-  const friends = normalizeUsers(
-    await requestJson<unknown>(`/users/friends/${userId}?userId=${currentUser.id}`, {
-      method: "DELETE",
-    }),
-  );
-  friends.forEach(rememberUser);
-  return friends;
-}
+// ─── Discussions ──────────────────────────────────────────────────────────────
 
 export async function listDiscussions(): Promise<DiscussionThread[]> {
-  try {
-    return await requestJson<DiscussionThread[]>("/discussions/show");
-  } catch {
-    return [];
-  }
+  return requestJson<DiscussionThread[]>("/discussions/show");
 }
 
-export async function getDiscussion(id: number): Promise<DiscussionThread | null> {
-  try {
-    return await requestJson<DiscussionThread>(`/discussions/show/${id}`);
-  } catch {
-    return null;
-  }
+export async function getDiscussion(id: number): Promise<DiscussionThread> {
+  return requestJson<DiscussionThread>(`/discussions/show/${id}`);
 }
 
 export async function createDiscussion(
   title: string,
   body: string,
+  authorId: number,
 ): Promise<DiscussionThread> {
-  if (!currentUser) {
-    throw new Error("Login first to write discussions.");
-  }
-
   return requestJson<DiscussionThread>("/discussions/create", {
     method: "POST",
-    body: JSON.stringify({ name: title, info: body, author: currentUser.id }),
+    body: JSON.stringify({ name: title, info: body, author: authorId }),
   });
 }
 
 export async function createPost(
   discussionId: number,
   body: string,
+  authorId: number,
 ): Promise<DiscussionThread> {
-  if (!currentUser) {
-    throw new Error("Login first to write replies.");
-  }
-
   return requestJson<DiscussionThread>(`/discussions/${discussionId}/posts`, {
     method: "POST",
-    body: JSON.stringify({ body, author: currentUser.id }),
+    body: JSON.stringify({ body, author: authorId }),
   });
 }
 
-export async function listMail(): Promise<MailMessage[]> {
-  if (!currentUser) {
-    return [];
-  }
+// ─── Mail ─────────────────────────────────────────────────────────────────────
 
-  const params = new URLSearchParams({ userId: String(currentUser.id) });
-
-  try {
-    return await requestJson<MailMessage[]>(`/mail/show?${params.toString()}`);
-  } catch {
-    return [];
-  }
+export async function listMail(userId: number): Promise<MailMessage[]> {
+  const params = new URLSearchParams({ userId: String(userId) });
+  return requestJson<MailMessage[]>(`/mail/show?${params.toString()}`);
 }
 
-export async function getMail(id: number): Promise<MailMessage | null> {
-  try {
-    return await requestJson<MailMessage>(`/mail/show/${id}`);
-  } catch {
-    return null;
-  }
+export async function getMail(id: number): Promise<MailMessage> {
+  return requestJson<MailMessage>(`/mail/show/${id}`);
 }
 
 export async function sendMail(
-  to: string,
+  senderId: number,
+  recipientName: string,
   title: string,
   body: string,
 ): Promise<MailMessage> {
-  if (!currentUser) {
-    throw new Error("Login first to send mail.");
+  const recipient = await getUserByName(recipientName);
+  if (!recipient) {
+    throw new Error(`User "${recipientName}" not found.`);
   }
-
-  const recipient = await getUserByName(to);
-
   return requestJson<MailMessage>("/mail/create", {
     method: "POST",
     body: JSON.stringify({
-      sender: currentUser.id,
-      recipient: recipient?.id,
-      to,
+      sender: senderId,
+      recipient: recipient.id,
       title,
       body,
     }),
   });
 }
 
+// ─── Games ───────────────────────────────────────────────────────────────────
+
 export async function listGames(): Promise<GameSummary[]> {
-  try {
-    return await requestJson<GameSummary[]>("/games/show");
-  } catch {
-    return [];
-  }
+  return requestJson<GameSummary[]>("/games/show");
 }
 
 export async function createGame(
