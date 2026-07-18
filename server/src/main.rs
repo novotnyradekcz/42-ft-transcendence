@@ -19,7 +19,7 @@ use crate::router::{index, show_users, login_user, user_detail, create_user, sho
 
 use actix_security::http::security::{Argon2PasswordEncoder, SessionFixationStrategy};
 use actix_security::http::security::middleware::SecurityTransform;
-use actix_security::prelude::{JwtAuthenticator, JwtTokenService, SessionConfig, User};
+use actix_security::prelude::{JwtAuthenticator, JwtConfig, JwtTokenService, SessionConfig, User};
 use actix_session::{storage::CookieSessionStore, SessionMiddleware};
 use actix_web::{web, App, HttpServer, cookie};
 use actix_web::web::Data;
@@ -31,8 +31,8 @@ struct AppState {
     lobby: Lobby,
     encoder: Argon2PasswordEncoder,
     session_config: SessionConfig,
-    jwt_authenticator: Option<JwtAuthenticator>,
-    jwt_token_service: Option<JwtTokenService>,
+    jwt_authenticator: JwtAuthenticator,
+    jwt_token_service: JwtTokenService,
 }
 
 #[actix_web::main]
@@ -44,17 +44,22 @@ async fn main() -> std::io::Result<()> {
     let encoder = Argon2PasswordEncoder::new();
     let dbusers = get_all_users_from_db(&mut db).expect("Users from DB failed.");
     let users: Vec<User> = dbusers.iter().map(|user| {
-        //TODO change later to plain password_hash from database, where passwords will be already encoded
         User::with_encoded_password(user.name.as_str(), user.password.clone()).roles(&["USER".into()])
     }).collect();
+    let jwt_config = JwtConfig::new(&db.server_environment.get_jwt_hash())
+        .issuer("fttranscendence")
+        .audience("api-users")
+        .expiration_hours(24);
+    let jwt_token_service = JwtTokenService::new(jwt_config.clone()).refresh_expiration_days(7);
+    let jwt_authenticator = JwtAuthenticator::new(jwt_config);
     let session_config = SessionConfig::new().user_key("user").fixation_strategy(SessionFixationStrategy::MigrateSession);
     let state = Arc::new(AppState {
         database: Mutex::new(db),
         lobby,
         encoder,
         session_config,
-        jwt_authenticator: None,
-        jwt_token_service: None,
+        jwt_authenticator,
+        jwt_token_service,
     });
     let secret_key = cookie::Key::generate();
 

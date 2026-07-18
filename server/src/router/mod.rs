@@ -1,6 +1,6 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
-use crate::authenticator::register_user;
+use crate::authenticator::{TokenResponse, register_user, get_user_from_store};
 use crate::discussions::{CreateDiscussion, CreatePost};
 use crate::mails::{CreateMail, MailQuery};
 use crate::model::database_initializer::{DatabaseInitializer, connection};
@@ -13,7 +13,9 @@ use actix_security::prelude::AuthenticatedUser;
 use actix_web::{get, HttpResponse, post, Responder, web};
 use std::sync::Arc;
 use actix_web::dev::ServiceRequest;
+use actix_web::guard::Guard;
 use diesel::prelude::*;
+use diesel::row::NamedRow;
 use serde_json;
 use crate::AppState;
 use crate::model::{discussions, mails, users};
@@ -61,7 +63,16 @@ pub async fn login_user(pool: web::Data<Arc<AppState>>, user: AuthenticatedUser)
             "".to_string(),
             vec![]));
     match logged_from_db {
-        Ok(Some(dbUser)) => HttpResponse::Ok().json(serde_json::json!(dbUser)),
+        Ok(Some(dbUser)) => {
+            let user = get_user_from_store(&dbUser.name).unwrap();
+            match pool.jwt_token_service.generate_token_pair(&user) {
+                Ok(pair) => HttpResponse::Ok().json(
+                    TokenResponse::new(pair.access_token, pair.refresh_token, pair.token_type, pair.expires_in)
+                ),
+                Err(e) => HttpResponse::InternalServerError().body(format!("Token error: {}", e)),
+            }
+            //HttpResponse::Ok().json(serde_json::json!(dbUser))
+        },
         Ok(None) => HttpResponse::Ok().json(serde_json::json!([])),
         Err(_) => todo!("Error is not handled")
     }

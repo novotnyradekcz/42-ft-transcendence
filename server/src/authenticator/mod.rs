@@ -4,9 +4,35 @@ use actix_security::http::security::{Access, AuthorizationManager, RequestMatche
 use actix_security::prelude::{Argon2PasswordEncoder, Authenticator, PasswordEncoder, User};
 use actix_web::dev::ServiceRequest;
 use std::collections::HashMap;
-use std::sync::{OnceLock, RwLock};
+use std::fmt::Error;
+use std::io::ErrorKind;
+use std::sync::{Arc, OnceLock, RwLock, RwLockReadGuard};
+use actix_security::http::security::jwt::{Claims, JwtError};
+use actix_web::web::Data;
+use diesel::row::NamedRow;
+use serde::Serialize;
+use crate::AppState;
 
 static USER_STORE: OnceLock<RwLock<HashMap<String, User>>> = OnceLock::new();
+
+#[derive(Serialize)]
+pub struct TokenResponse {
+    access_token: String,
+    refresh_token: Option<String>,
+    token_type: String,
+    expires_in: u64,
+}
+
+impl TokenResponse {
+    pub fn new(access_token: String, refresh_token: Option<String>, token_type: String, expires_in: u64) -> Self {
+        Self {
+            access_token,
+            refresh_token,
+            token_type,
+            expires_in,
+        }
+    }
+}
 
 pub fn init_user_store(users: Vec<User>) {
     let map: HashMap<String, User> = users
@@ -24,6 +50,20 @@ pub fn register_user(user: User) {
             .write()
             .expect("USER_STORE RwLock poisoned")
             .insert(user.get_username().to_string(), user);
+    }
+}
+
+pub fn get_user_from_store(name: &str) -> Result<User, Error> {
+    if let Some(store) = USER_STORE.get() {
+        match store
+            .write()
+            .expect("USER_STORE RwLock poisoned")
+            .get(name) {
+            Some(user) => Ok(user.clone()),
+            None => Err(Error)
+        }
+    } else {
+        Err(Error)
     }
 }
 
@@ -45,25 +85,49 @@ impl AuthMiddleware {
 impl Authenticator for AuthMiddleware {
     #[allow(deprecated)]
     fn get_user(&self, req: &ServiceRequest) -> Option<User> {
-        let encoder = Argon2PasswordEncoder::new();
-        // Parse HTTP Basic Auth: "Authorization: Basic base64(user:pass)"
-        let header = req.headers().get("Authorization")?.to_str().ok()?;
-        let b64 = header.strip_prefix("Basic ")?;
-
-        let decoded = base64::decode(b64).ok()?;
-        let creds = std::str::from_utf8(&decoded.as_slice()).ok()?;
-
-        // Split at first ':' only — passwords may themselves contain ':'
-        let (username, raw_password) = creds.split_once(':')?;
-        println!("User request: {:#?} {:?}", &username, &raw_password);
+        let state = req.app_data::<Data<Arc<AppState>>>().unwrap();
+        let auth_header = req.headers().get("Authorization").and_then(|h| h.to_str().ok());
         let store = self.store.read().expect("USER_STORE RwLock poisoned");
-        let user = store.get(username)?;
-        println!("User db: {:#?}", &user);
-        if encoder.matches(raw_password, user.get_password()) {
-            Some(user.clone())
-        } else {
-            None
+        match auth_header {
+            Some(h) if h.starts_with("Bearer ") => { authenticate_jwt(&h[7..], store, state.get_ref()) }
+            Some(h) if h.starts_with("Basic ") => { authenticate_basic(&h[6..], store) }
+            _ => None
         }
+    }
+}
+
+fn authenticate_jwt(jwt_bearer: &str, store: RwLockReadGuard<HashMap<String, User>>, app_state: &Arc<AppState>) -> Option<User> {
+    match app_state.jwt_authenticator.validate_token(jwt_bearer) {
+        Ok(token_data) => {
+            match store.get(token_data.claims.sub.as_str()) {
+                Some(user) => Some(user.clone()),
+                None => None
+            }
+
+        }
+        _ => None
+    }
+}
+
+fn authenticate_basic(b64: &str, store: RwLockReadGuard<HashMap<String, User>>) -> Option<User> {
+    let encoder = Argon2PasswordEncoder::new();
+    // Parse HTTP Basic Auth: "Authorization: Basic base64(user:pass)"
+    // let header = req.headers().get("Authorization")?.to_str().ok()?;
+    // let b64 = header.strip_prefix("Basic ")?;
+
+    let decoded = base64::decode(b64).ok()?;
+    let creds = std::str::from_utf8(&decoded.as_slice()).ok()?;
+
+    // Split at first ':' only — passwords may themselves contain ':'
+    let (username, raw_password) = creds.split_once(':')?;
+    println!("User request: {:#?} {:?}", &username, &raw_password);
+
+    let user = store.get(username)?;
+    println!("User db: {:#?}", &user);
+    if encoder.matches(raw_password, user.get_password()) {
+        Some(user.clone())
+    } else {
+        None
     }
 }
 
@@ -88,6 +152,14 @@ pub fn create_authorizer() -> RequestMatcherAuthorizer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn get_user_from_store_works() {
+        let expected_user = User::new("czarte".into(), "password".into());
+        init_user_store(vec![User::new("czarte".into(), "password".into())]);
+        let user = get_user_from_store("czarte");
+        assert_eq!(user.unwrap().get_username(), expected_user.get_username())
+    }
 
     fn alice() -> User {
         let enc = Argon2PasswordEncoder::new();

@@ -7,10 +7,16 @@ use std::env;
 use crate::model::users::seed_users_in_db;
 
 #[allow(dead_code)]
-struct ServerEnvironment {
+pub struct ServerEnvironment {
     database_url: String,
     pass_hash: String,
     jwt_hash: String,
+}
+
+impl ServerEnvironment {
+    pub fn get_jwt_hash(&self) -> String {
+        self.jwt_hash.clone()
+    }
 }
 
 impl ServerEnvironment {
@@ -27,7 +33,7 @@ impl ServerEnvironment {
 pub struct DatabaseInitializer {
     pub(crate) connection: Option<PgConnection>,
     pub(crate) database_connected: bool,
-    server_environment: ServerEnvironment,
+    pub(crate) server_environment: ServerEnvironment,
 }
 
 impl DatabaseInitializer {
