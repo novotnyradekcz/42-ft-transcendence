@@ -91,101 +91,92 @@ pub enum WsClientMessage {
 
 static ROOM_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-#[get("/play/ws")]
-pub async fn play_game_ws(
-    req: HttpRequest,
-    stream: web::Payload,
+use crate::websocket::{WebSocketHandler, start_websocket_handler};
+
+pub struct GameWebSocketHandler {
     lobby: web::Data<Mutex<Lobby>>,
     db: web::Data<Mutex<DatabaseInitializer>>,
-    query: web::Query<PlayQuery>,
-) -> Result<HttpResponse, Error> {
-    let game_id = query.game_id;
-    let user_id = query.user_id;
+    game_id: i32,
+    user_id: i32,
+    user_name: String,
+    
+    // Connection-specific state
+    room_id: String,
+    player_index: i32,
+    start_match: Option<(Player, Player)>,
+}
 
-    // Get user name from DB
-    let user_name = {
-        let mut db_lock = db.lock().unwrap();
-        match crate::model::users::get_user_in_db(&mut db_lock, user_id) {
-            Ok(Some(u)) => u.name,
-            _ => format!("User#{}", user_id),
-        }
-    };
+impl WebSocketHandler for GameWebSocketHandler {
+    async fn on_connect(&mut self, session: &mut Session) {
+        // Lock lobby and matchmake
+        let (room_id, player_index, start_match) = {
+            let mut lobby_lock = self.lobby.lock().unwrap();
 
-    // Upgrade the request to WebSocket
-    let (response, session, mut msg_stream) = actix_ws::handle(&req, stream)?;
+            let mut start_match = None;
+            let mut room_id = String::new();
+            let mut player_index = 1;
 
-    // Clone session for connection management
-    let mut session_clone = session.clone();
+            if let Some(waiting_id) = lobby_lock.waiting_rooms.get(&self.game_id).cloned() {
+                // We found a waiting room!
+                if let Some(room) = lobby_lock.rooms.get_mut(&waiting_id) {
+                    // Join as player 2
+                    let p2 = Player {
+                        user_id: self.user_id,
+                        name: self.user_name.clone(),
+                        session: session.clone(),
+                    };
+                    room.player2 = Some(p2.clone());
+                    room_id = waiting_id.clone();
+                    player_index = 2;
+                    
+                    let p1 = room.player1.clone();
+                    start_match = Some((p1, p2));
+                }
+            }
 
-    // Lock lobby and matchmake
-    let mut lobby_lock = lobby.lock().unwrap();
+            if start_match.is_some() {
+                lobby_lock.waiting_rooms.remove(&self.game_id);
+            }
 
-    let mut start_match = None;
-    let mut room_id = String::new();
-    let mut player_index = 1;
+            if start_match.is_none() {
+                // Create a new waiting room using atomic counter to generate room ID
+                let num = ROOM_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                room_id = format!("room_{}", num);
+                let p1 = Player {
+                    user_id: self.user_id,
+                    name: self.user_name.clone(),
+                    session: session.clone(),
+                };
+                let new_room = Room {
+                    id: room_id.clone(),
+                    game_id: self.game_id,
+                    player1: p1,
+                    player2: None,
+                };
+                lobby_lock.rooms.insert(room_id.clone(), new_room);
+                lobby_lock.waiting_rooms.insert(self.game_id, room_id.clone());
+                player_index = 1;
+            }
 
-    if let Some(waiting_id) = lobby_lock.waiting_rooms.get(&game_id).cloned() {
-        // We found a waiting room!
-        if let Some(room) = lobby_lock.rooms.get_mut(&waiting_id) {
-            // Join as player 2
-            let p2 = Player {
-                user_id,
-                name: user_name.clone(),
-                session: session.clone(),
-            };
-            room.player2 = Some(p2.clone());
-            room_id = waiting_id.clone();
-            player_index = 2;
-            
-            let p1 = room.player1.clone();
-            start_match = Some((p1, p2));
-        }
-    }
-
-    if start_match.is_some() {
-        lobby_lock.waiting_rooms.remove(&game_id);
-    }
-
-    if start_match.is_none() {
-        // Create a new waiting room using atomic counter to generate room ID
-        let num = ROOM_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        room_id = format!("room_{}", num);
-        let p1 = Player {
-            user_id,
-            name: user_name,
-            session: session.clone(),
+            (room_id, player_index, start_match)
         };
-        let new_room = Room {
-            id: room_id.clone(),
-            game_id,
-            player1: p1,
-            player2: None,
-        };
-        lobby_lock.rooms.insert(room_id.clone(), new_room);
-        lobby_lock.waiting_rooms.insert(game_id, room_id.clone());
-        player_index = 1;
-    }
 
-    drop(lobby_lock);
+        self.room_id = room_id;
+        self.player_index = player_index;
+        self.start_match = start_match;
 
-    // Spawn async task for websocket loop
-    let lobby_task = lobby.clone();
-    let db_task = db.clone();
-    let room_id_task = room_id.clone();
-
-    actix_web::rt::spawn(async move {
         // If we are Player 1, tell the client we are waiting
-        if player_index == 1 {
+        if self.player_index == 1 {
             let waiting_msg = serde_json::to_string(&WsServerMessage::MatchWaiting).unwrap();
-            let _ = session_clone.text(waiting_msg).await;
+            let _ = session.text(waiting_msg).await;
         }
 
         // If we just joined as Player 2, trigger match start for both
-        if let Some((p1, p2)) = start_match {
+        if let Some((p1, p2)) = &self.start_match {
             // Load game script from DB
             let game = {
-                let mut db_lock = db_task.lock().unwrap();
-                get_game_in_db(&mut db_lock, game_id).ok().flatten()
+                let mut db_lock = self.db.lock().unwrap();
+                get_game_in_db(&mut db_lock, self.game_id).ok().flatten()
             };
 
             if let Some(g) = game {
@@ -212,72 +203,107 @@ pub async fn play_game_ws(
                 let _ = p2_session.text(start_p2).await;
             }
         }
+    }
 
-        // Message receiver loop
-        while let Some(Ok(msg)) = msg_stream.recv().await {
-            match msg {
-                Message::Ping(bytes) => {
-                    if session_clone.pong(&bytes).await.is_err() {
-                        break;
-                    }
-                }
-                Message::Text(text) => {
-                    // Parse text message
-                    if let Ok(client_msg) = serde_json::from_str::<WsClientMessage>(&text) {
-                        match client_msg {
-                            WsClientMessage::GameAction { data } => {
-                                // Relay to the other player
-                                let lobby_lock = lobby_task.lock().unwrap();
-                                if let Some(room) = lobby_lock.rooms.get(&room_id_task) {
-                                    let recipient = if player_index == 1 {
-                                        room.player2.as_ref()
+    async fn on_message(&mut self, _session: &mut Session, msg: Message) -> Result<(), Error> {
+        match msg {
+            Message::Text(text) => {
+                // Parse text message
+                if let Ok(client_msg) = serde_json::from_str::<WsClientMessage>(&text) {
+                    match client_msg {
+                        WsClientMessage::GameAction { data } => {
+                            // Relay to the other player
+                            let recipient = {
+                                let lobby_lock = self.lobby.lock().unwrap();
+                                lobby_lock.rooms.get(&self.room_id).and_then(|room| {
+                                    if self.player_index == 1 {
+                                        room.player2.clone()
                                     } else {
-                                        Some(&room.player1)
-                                    };
-
-                                    if let Some(opp) = recipient {
-                                        let relay_msg = serde_json::to_string(&WsServerMessage::GameAction { data }).unwrap();
-                                        let mut opp_session = opp.session.clone();
-                                        let _ = opp_session.text(relay_msg).await;
+                                        Some(room.player1.clone())
                                     }
-                                }
+                                })
+                            };
+
+                            if let Some(opp) = recipient {
+                                let relay_msg = serde_json::to_string(&WsServerMessage::GameAction { data }).unwrap();
+                                let mut opp_session = opp.session.clone();
+                                let _ = opp_session.text(relay_msg).await;
                             }
                         }
                     }
                 }
-                Message::Close(_) => {
-                    break;
-                }
-                _ => {}
             }
+            _ => {}
         }
+        Ok(())
+    }
 
+    async fn on_close(&mut self, _session: &mut Session) {
         // Clean up connection
-        let mut lobby_lock = lobby_task.lock().unwrap();
-        // Remove room from lobby
-        if let Some(room) = lobby_lock.rooms.remove(&room_id_task) {
-            // Remove from waiting rooms if it was there
-            if let Some(waiting_id) = lobby_lock.waiting_rooms.get(&game_id) {
-                if waiting_id == &room_id_task {
-                    lobby_lock.waiting_rooms.remove(&game_id);
+        let (other_player, _waiting_removed) = {
+            let mut lobby_lock = self.lobby.lock().unwrap();
+            let room = lobby_lock.rooms.remove(&self.room_id);
+            
+            let mut waiting_removed = false;
+            if let Some(waiting_id) = lobby_lock.waiting_rooms.get(&self.game_id) {
+                if waiting_id == &self.room_id {
+                    waiting_removed = true;
                 }
             }
-
-            // Notify the other player
-            let other_player = if player_index == 1 {
-                room.player2
-            } else {
-                Some(room.player1)
-            };
-
-            if let Some(opp) = other_player {
-                let disconnect_msg = serde_json::to_string(&WsServerMessage::OpponentDisconnected).unwrap();
-                let mut opp_session = opp.session.clone();
-                let _ = opp_session.text(disconnect_msg).await;
-                let _ = opp_session.close(None).await;
+            if waiting_removed {
+                lobby_lock.waiting_rooms.remove(&self.game_id);
             }
-        }
-    });
 
-    Ok(response)
+            let other_player = room.and_then(|r| {
+                if self.player_index == 1 {
+                    r.player2
+                } else {
+                    Some(r.player1)
+                }
+            });
+
+            (other_player, waiting_removed)
+        };
+
+        if let Some(opp) = other_player {
+            let disconnect_msg = serde_json::to_string(&WsServerMessage::OpponentDisconnected).unwrap();
+            let mut opp_session = opp.session.clone();
+            let _ = opp_session.text(disconnect_msg).await;
+            let _ = opp_session.close(None).await;
+        }
+    }
+}
+
+#[get("/play/ws")]
+pub async fn play_game_ws(
+    req: HttpRequest,
+    stream: web::Payload,
+    lobby: web::Data<Mutex<Lobby>>,
+    db: web::Data<Mutex<DatabaseInitializer>>,
+    query: web::Query<PlayQuery>,
+) -> Result<HttpResponse, Error> {
+    let game_id = query.game_id;
+    let user_id = query.user_id;
+
+    // Get user name from DB
+    let user_name = {
+        let mut db_lock = db.lock().unwrap();
+        match crate::model::users::get_user_in_db(&mut db_lock, user_id) {
+            Ok(Some(u)) => u.name,
+            _ => format!("User#{}", user_id),
+        }
+    };
+
+    let handler = GameWebSocketHandler {
+        lobby,
+        db,
+        game_id,
+        user_id,
+        user_name,
+        room_id: String::new(),
+        player_index: 1,
+        start_match: None,
+    };
+
+    start_websocket_handler(req, stream, handler).await
 }

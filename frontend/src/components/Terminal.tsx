@@ -4,7 +4,7 @@ import { useData } from "../context/DataContext";
 import { useSession } from "../context/SessionContext";
 import { useTerminal } from "../context/TerminalContext";
 import { pageFromPath } from "../router";
-import GamePlayPage from "../GamePlayPage";
+import GamePlayPage from "../pages/GamePlayPage";
 import DiscussionDetailPage from "../pages/DiscussionDetailPage";
 import DiscussionsPage from "../pages/DiscussionsPage";
 import FriendsPage from "../pages/FriendsPage";
