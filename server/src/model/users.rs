@@ -169,6 +169,10 @@ pub fn seed_users_in_db(db: &mut DatabaseInitializer) -> Result<(), diesel::resu
                     password: &seed_password,
                 })
                 .execute(conn)?;
+        } else {
+            diesel::update(ftt_users.filter(name.eq(seed_name)))
+                .set(password.eq(&seed_password))
+                .execute(conn)?;
         }
     }
 

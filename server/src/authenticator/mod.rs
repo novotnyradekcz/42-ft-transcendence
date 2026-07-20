@@ -81,9 +81,18 @@ pub fn create_authenticator() -> AuthMiddleware {
 // Factory function: URL-based authorization rules
 pub fn create_authorizer() -> RequestMatcherAuthorizer {
     AuthorizationManager::request_matcher()
-        .add_matcher("/users/login", Access::new().roles(vec!["USER"]))
-    // add more matchers per route as needed
+        .add_matcher("/users/login", Access::new())
+        .add_matcher("/", Access::new())
+        .add_matcher("/users/create", Access::new())
+        .add_matcher("/users/show", Access::new())
+        .add_matcher("/users/show/**", Access::new())
+        .add_matcher("/discussions/show", Access::new())
+        .add_matcher("/discussions/show/**", Access::new())
+        .add_matcher("/games/show", Access::new())
+        .add_matcher("/games/show/**", Access::new())
+        .add_matcher("/**", Access::new().roles(vec!["USER"])) // secure everything else
 }
+
 
 #[cfg(test)]
 mod tests {
