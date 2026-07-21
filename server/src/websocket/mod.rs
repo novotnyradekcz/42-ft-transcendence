@@ -18,7 +18,7 @@ pub fn validate_credentials(
             if let Ok(creds) = std::str::from_utf8(&decoded) {
                 if let Some((username, raw_password)) = creds.split_once(':') {
                     let user_match = {
-                        let mut db_lock = pool.database.lock().unwrap();
+                        let mut db_lock = pool.database.lock().map_err(|_| actix_web::error::ErrorInternalServerError("Database lock poisoned"))?;
                         let conn = crate::model::database_initializer::connection(&mut db_lock);
                         
                         use crate::schema::ftt_users::dsl::*;
@@ -29,8 +29,7 @@ pub fn validate_credentials(
                             .select(DbUser::as_select())
                             .first::<DbUser>(conn)
                             .optional()
-                            .ok()
-                            .flatten()
+                            .map_err(actix_web::error::ErrorInternalServerError)?
                     };
                     if let Some(user_info) = user_match {
                         if user_info.name == username {
