@@ -80,6 +80,7 @@ async fn main() -> std::io::Result<()> {
             .service(
                 web::scope("/users")
                     .service(login_user)
+                    .service(get_user)
                     // .service(logout)
                     .service(show_users)
                     .service(user_detail)

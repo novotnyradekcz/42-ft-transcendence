@@ -80,6 +80,31 @@ pub async fn login_user(pool: web::Data<Arc<AppState>>, user: AuthenticatedUser)
 
 }
 
+#[get("/me")]
+pub async fn get_user(pool: web::Data<Arc<AppState>>, user: AuthenticatedUser) -> impl Responder {
+    let name = user.clone().into_inner().get_username().to_string();
+    let pwd = user.into_inner().get_password().to_string();
+    let mut db = pool.database.lock().expect("create_user expect DatabaseInitializer");
+    let logged_from_db = login_user_in_db(
+        &mut db,
+        &DbUser::new(
+            0,
+            name,
+            "".to_string(),
+            pwd,
+            "".to_string(),
+            "".to_string(),
+            vec![]));
+    match logged_from_db {
+        Ok(Some(dbUser)) => {
+            HttpResponse::Ok().json(serde_json::json!(dbUser))
+        },
+        Ok(None) => HttpResponse::Ok().json(serde_json::json!([])),
+        Err(_) => todo!("Error is not handled")
+    }
+
+}
+
 // #[get("/logout")]
 // pub async fn logout(req: &HttpRequest, config: &SessionConfig) -> HttpResponse {
 //     println!("req: {:#?}", req);
