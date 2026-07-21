@@ -8,6 +8,7 @@ mod model;
 mod router;
 mod schema;
 mod users;
+mod websocket;
 
 
 use crate::authenticator::{create_authenticator, create_authorizer, init_user_store};
@@ -28,7 +29,7 @@ use std::sync::{Arc, Mutex};
 #[allow(dead_code)]
 struct AppState {
     database: Mutex<DatabaseInitializer>,
-    lobby: Lobby,
+    lobby: Mutex<Lobby>,
     encoder: Argon2PasswordEncoder,
     session_config: SessionConfig,
     jwt_authenticator: Option<JwtAuthenticator>,
@@ -50,7 +51,7 @@ async fn main() -> std::io::Result<()> {
     let session_config = SessionConfig::new().user_key("user").fixation_strategy(SessionFixationStrategy::MigrateSession);
     let state = Arc::new(AppState {
         database: Mutex::new(db),
-        lobby,
+        lobby: Mutex::new(lobby),
         encoder,
         session_config,
         jwt_authenticator: None,
@@ -63,42 +64,48 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(Data::new(state.clone()))
-            .wrap(
-                SessionMiddleware::builder(CookieSessionStore::default(), secret_key.clone())
-                    .cookie_secure(false)
-                    .build(),
-            )
-            .wrap(
-                SecurityTransform::new()
-                    .config_authenticator(create_authenticator)
-                    .config_authorizer(create_authorizer),
-            )
-            .route("/", web::get().to(index))
             .service(
-                web::scope("/users")
-                    .service(login_user)
-                    .service(show_users)
-                    .service(user_detail)
-                    .service(create_user),
-            )
-            .service(
-                web::scope("/games")
-                    .service(show_games)
-                    .service(game_detail)
+                web::scope("/games/play")
                     .service(play_game_ws),
             )
             .service(
-                web::scope("/discussions")
-                    .service(show_discussions)
-                    .service(discussion_detail)
-                    .service(create_discussion)
-                    .service(create_discussion_post),
-            )
-            .service(
-                web::scope("/mail")
-                    .service(show_mail)
-                    .service(mail_detail)
-                    .service(create_mail),
+                web::scope("")
+                    .wrap(
+                        SessionMiddleware::builder(CookieSessionStore::default(), secret_key.clone())
+                            .cookie_secure(false)
+                            .build(),
+                    )
+                    .wrap(
+                        SecurityTransform::new()
+                            .config_authenticator(create_authenticator)
+                            .config_authorizer(create_authorizer),
+                    )
+                    .route("/", web::get().to(index))
+                    .service(
+                        web::scope("/users")
+                            .service(login_user)
+                            .service(show_users)
+                            .service(user_detail)
+                            .service(create_user),
+                    )
+                    .service(
+                        web::scope("/games")
+                            .service(show_games)
+                            .service(game_detail),
+                    )
+                    .service(
+                        web::scope("/discussions")
+                            .service(show_discussions)
+                            .service(discussion_detail)
+                            .service(create_discussion)
+                            .service(create_discussion_post),
+                    )
+                    .service(
+                        web::scope("/mail")
+                            .service(show_mail)
+                            .service(mail_detail)
+                            .service(create_mail),
+                    )
             )
     })
     .bind(("0.0.0.0", 8080))?

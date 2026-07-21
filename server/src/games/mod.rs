@@ -1,12 +1,11 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::Arc;
 use actix_ws::{Session, Message};
 use serde::{Serialize, Deserialize};
 use actix_web::{get, web, Error, HttpRequest, HttpResponse};
 use diesel::{Queryable, Selectable};
-use crate::model::DatabaseInitializer;
 use crate::router::get_game_in_db;
 
 #[derive(Serialize, Deserialize, Queryable, Selectable, Debug, Clone)]
@@ -91,34 +90,37 @@ pub enum WsClientMessage {
 
 static ROOM_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-#[get("/play/ws")]
+#[get("/ws")]
 pub async fn play_game_ws(
     req: HttpRequest,
     stream: web::Payload,
-    lobby: web::Data<Mutex<Lobby>>,
-    db: web::Data<Mutex<DatabaseInitializer>>,
+    pool: web::Data<Arc<crate::AppState>>,
     query: web::Query<PlayQuery>,
 ) -> Result<HttpResponse, Error> {
     let game_id = query.game_id;
     let user_id = query.user_id;
-
-    // Get user name from DB
-    let user_name = {
-        let mut db_lock = db.lock().unwrap();
-        match crate::model::users::get_user_in_db(&mut db_lock, user_id) {
-            Ok(Some(u)) => u.name,
-            _ => format!("User#{}", user_id),
-        }
-    };
+ 
+    // Extract auth from subprotocols (in Sec-WebSocket-Protocol)
+    let (auth_creds, selected_protocol) = crate::websocket::extract_auth_from_protocols(&req)
+        .ok_or_else(|| actix_web::error::ErrorUnauthorized("Missing authentication subprotocol"))?;
+ 
+    // Validate credentials passed via the auth subprotocol (expects Basic Auth)
+    let user = crate::websocket::validate_credentials(&pool, user_id, &auth_creds)?;
+    let user_name = user.name;
 
     // Upgrade the request to WebSocket
     let (response, session, mut msg_stream) = actix_ws::handle(&req, stream)?;
+    let mut response = response;
+    response.headers_mut().insert(
+        actix_web::http::header::SEC_WEBSOCKET_PROTOCOL,
+        actix_web::http::header::HeaderValue::from_str(&selected_protocol).unwrap()
+    );
 
     // Clone session for connection management
     let mut session_clone = session.clone();
 
     // Lock lobby and matchmake
-    let mut lobby_lock = lobby.lock().unwrap();
+    let mut lobby_lock = pool.lobby.lock().unwrap();
 
     let mut start_match = None;
     let mut room_id = String::new();
@@ -169,8 +171,7 @@ pub async fn play_game_ws(
     drop(lobby_lock);
 
     // Spawn async task for websocket loop
-    let lobby_task = lobby.clone();
-    let db_task = db.clone();
+    let pool_task = pool.clone();
     let room_id_task = room_id.clone();
 
     actix_web::rt::spawn(async move {
@@ -184,7 +185,7 @@ pub async fn play_game_ws(
         if let Some((p1, p2)) = start_match {
             // Load game script from DB
             let game = {
-                let mut db_lock = db_task.lock().unwrap();
+                let mut db_lock = pool_task.database.lock().unwrap();
                 get_game_in_db(&mut db_lock, game_id).ok().flatten()
             };
 
@@ -227,7 +228,7 @@ pub async fn play_game_ws(
                         match client_msg {
                             WsClientMessage::GameAction { data } => {
                                 // Relay to the other player
-                                let lobby_lock = lobby_task.lock().unwrap();
+                                let lobby_lock = pool_task.lobby.lock().unwrap();
                                 if let Some(room) = lobby_lock.rooms.get(&room_id_task) {
                                     let recipient = if player_index == 1 {
                                         room.player2.as_ref()
@@ -253,7 +254,7 @@ pub async fn play_game_ws(
         }
 
         // Clean up connection
-        let mut lobby_lock = lobby_task.lock().unwrap();
+        let mut lobby_lock = pool_task.lobby.lock().unwrap();
         // Remove room from lobby
         if let Some(room) = lobby_lock.rooms.remove(&room_id_task) {
             // Remove from waiting rooms if it was there
