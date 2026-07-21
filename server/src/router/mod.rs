@@ -8,9 +8,10 @@ use crate::model::users::{CreateUserError, DbUser, login_user_in_db};
 use crate::model::users::{create_user_in_db, get_user_in_db, list_users_in_db};
 use crate::users::CreateUser;
 use crate::games::GameInfo;
+// use crate::session::user_from_session;
 use actix_security::http::security::{Argon2PasswordEncoder, PasswordEncoder, User};
-use actix_security::prelude::AuthenticatedUser;
-use actix_web::{get, HttpResponse, post, Responder, web};
+use actix_security::prelude::{AuthenticatedUser, SessionConfig, SessionAuthenticator};
+use actix_web::{get, HttpRequest, HttpResponse, post, Responder, web};
 use std::sync::Arc;
 use actix_web::dev::ServiceRequest;
 use actix_web::guard::Guard;
@@ -78,6 +79,23 @@ pub async fn login_user(pool: web::Data<Arc<AppState>>, user: AuthenticatedUser)
     }
 
 }
+
+// #[get("/logout")]
+// pub async fn logout(req: &HttpRequest, config: &SessionConfig) -> HttpResponse {
+//     println!("req: {:#?}", req);
+//     HttpResponse::Ok().body("Logged out")
+//     // match user_from_session(session).await {
+//     //     Ok(_) => {
+//     //         SessionAuthenticator::logout(session, &config);
+//     //         HttpResponse::Ok().body("Logged out")
+//     //     }
+//     //     Err(_) => actix_web::HttpResponse::BadRequest().json(serde_json::json!({
+//     //         "error":
+//     //         "We currently have some issues. Kindly try again and ensure you are logged in"
+//     //             .to_string(),
+//     //     }))
+//     // }
+// }
 
 #[post("/create")]
 pub async fn create_user(

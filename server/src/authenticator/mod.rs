@@ -111,9 +111,6 @@ fn authenticate_jwt(jwt_bearer: &str, store: RwLockReadGuard<HashMap<String, Use
 
 fn authenticate_basic(b64: &str, store: RwLockReadGuard<HashMap<String, User>>) -> Option<User> {
     let encoder = Argon2PasswordEncoder::new();
-    // Parse HTTP Basic Auth: "Authorization: Basic base64(user:pass)"
-    // let header = req.headers().get("Authorization")?.to_str().ok()?;
-    // let b64 = header.strip_prefix("Basic ")?;
 
     let decoded = base64::decode(b64).ok()?;
     let creds = std::str::from_utf8(&decoded.as_slice()).ok()?;
