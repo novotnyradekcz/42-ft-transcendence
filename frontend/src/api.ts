@@ -1,21 +1,33 @@
 import type {
   DiscussionThread,
-  GameSummary,
+  GameSummary, JwtObject,
   MailMessage,
   SessionUser,
   UserProfile,
 } from "./types";
-import { CREDENTIALS_KEY, PH_USER_IMAGE, SESSION_USER_KEY } from "./constants";
+import {CREDENTIALS_KEY, PH_USER_IMAGE, SESSION_USER_KEY} from "./constants";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 
-let currentCredentials: string | null = null;
+type userCredentials = {
+  basic_auth: string | null,
+  jwt_token: JwtObject | null,
+}
+
+let currentCredentials: userCredentials | null = null;
 
 /**
  * In-memory cache of all known users, populated by listUsers().
  * Used by findUserName() and getUserByName() for fast lookups.
  */
 let knownUsers: UserProfile[] = [];
+
+type JwtPayload = {
+  access_token?: string;
+  expires_in?: number;
+  refresh_token?: string;
+  token_type?: string;
+}
 
 type UserPayload = {
   id?: number | string;
@@ -52,12 +64,25 @@ export function buildBasicAuthHeader(name: string, password: string): string {
 }
 
 /** Called by SessionContext after login / session restore to arm requests. */
-export function setCredentials(creds: string | null): void {
-  currentCredentials = creds;
+
+export function setCredentialsBasic(creds: string | null): void {
+  if (currentCredentials) {
+    currentCredentials.basic_auth = creds;
+  } else {
+    currentCredentials = { basic_auth: creds, jwt_token: null };
+  }
+}
+
+export function setCredentialsJwt(creds: JwtObject | null): void {
+  if (currentCredentials) {
+    currentCredentials.jwt_token = creds;
+  } else {
+    currentCredentials = { basic_auth: null, jwt_token: creds };
+  }
 }
 
 /** Called by SessionContext to persist credentials after login. */
-export function getCredentials(): string | null {
+export function getCredentials(): userCredentials | null {
   return currentCredentials;
 }
 
@@ -70,12 +95,17 @@ export function getCredentials(): string | null {
  */
 export function restoreSession(): SessionUser | null {
   try {
-    const credentials = sessionStorage.getItem(CREDENTIALS_KEY);
-    const userJson = sessionStorage.getItem(SESSION_USER_KEY);
-    if (!credentials || !userJson) return null;
-    const user = JSON.parse(userJson) as SessionUser;
-    currentCredentials = credentials;
-    return user;
+    const sessionCreds = sessionStorage.getItem(CREDENTIALS_KEY);
+    if (sessionCreds) {
+      const credentials = JSON.parse(sessionCreds);
+      const userJson = sessionStorage.getItem(SESSION_USER_KEY);
+      if (!credentials || !userJson) return null;
+      const user = JSON.parse(userJson) as SessionUser;
+      currentCredentials = credentials;
+      return user;
+    } else {
+      return null;
+    }
   } catch {
     return null;
   }
@@ -90,8 +120,8 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     ...(init?.headers as Record<string, string>),
   };
 
-  if (currentCredentials && !headers["Authorization"]) {
-    headers["Authorization"] = currentCredentials;
+  if (currentCredentials?.basic_auth && !headers["Authorization"]) {
+    headers["Authorization"] = currentCredentials.basic_auth;
   }
 
   console.log("apiBaseUrl: ", apiBaseUrl);
@@ -101,7 +131,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiRequestError(response.status, response.statusText);
   }
 
-  return response.json() as Promise<T>;
+  return await response.json() as Promise<T>;
 }
 
 // ─── Normalisation helpers ────────────────────────────────────────────────────
@@ -122,6 +152,15 @@ function friendsValue(value: unknown): number[] {
 
 function normalizedStatus(status: unknown): UserProfile["status"] {
   return status === "online" ? "online" : "offline";
+}
+
+export function normalizeJwt(payload: JwtPayload): JwtObject {
+  return {
+    access_token: payload.access_token || "",
+    expires_in: payload.expires_in || 0,
+    refresh_token: payload.refresh_token || "",
+    token_type: payload.access_token || "Bearer",
+  }
 }
 
 export function normalizeUser(payload: unknown): UserProfile {
@@ -178,14 +217,25 @@ export async function login(
   }
 
   const credentials = buildBasicAuthHeader(cleanName, password);
-  const user = normalizeUser(
-    await requestJson<unknown>("/users/login", {
-      method: "GET",
-      headers: { Authorization: credentials },
-    }),
+  const jwt_token = normalizeJwt(
+      await requestJson<JwtPayload>("/users/login", {
+        method: "GET",
+        headers: { Authorization: credentials },
+      }),
   );
-
-  currentCredentials = credentials;
+  if (jwt_token.expires_in === 0) {
+    throw new Error("Login failed: server returned an invalid token.");
+  }
+  const user = normalizeUser(
+      await requestJson<unknown>("/users/me", {
+        method: "GET",
+        headers: { Authorization: credentials },
+      }),
+  );
+  currentCredentials = {
+    basic_auth: credentials,
+    jwt_token,
+  };
   return { ...user, status: "online" };
 }
 
@@ -208,7 +258,7 @@ export async function register(
     }),
   );
 
-  currentCredentials = buildBasicAuthHeader(cleanName, password);
+  currentCredentials = { basic_auth: buildBasicAuthHeader(cleanName, password), jwt_token: null };
   return { ...user, status: "online" };
 }
 
@@ -288,7 +338,9 @@ export async function uploadAvatar(file: File): Promise<string> {
   };
 
   if (currentCredentials) {
-    uploadHeaders["Authorization"] = currentCredentials;
+    if (currentCredentials.basic_auth) {
+      uploadHeaders["Authorization"] = currentCredentials.basic_auth;
+    }
   }
 
   const response = await fetch(`/avatar-upload?${params.toString()}`, {

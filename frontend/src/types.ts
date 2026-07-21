@@ -25,6 +25,13 @@ export type UserProfile = {
   friends: number[];
 };
 
+export type JwtObject = {
+  access_token: string;
+  expires_in: number;
+  refresh_token: string;
+  token_type: string;
+};
+
 export type SessionUser = UserProfile;
 
 export type DiscussionPost = {

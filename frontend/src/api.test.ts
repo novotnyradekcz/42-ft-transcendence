@@ -16,7 +16,7 @@ import {
   normalizeUser,
   register,
   restoreSession,
-  setCredentials,
+  setCredentialsBasic,
   uploadAvatar,
 } from "./api";
 import { CREDENTIALS_KEY, PH_USER_IMAGE, SESSION_USER_KEY } from "./constants";
@@ -396,14 +396,14 @@ describe("restoreSession", () => {
 
 // ─── setCredentials ───────────────────────────────────────────────────────────
 
-describe("setCredentials", () => {
+describe("setCredentialsBasic", () => {
   afterEach(() => {
     logout();
     vi.unstubAllGlobals();
   });
 
   it("happy path: credentials set externally are used on the next request", async () => {
-    setCredentials("Basic " + btoa("bob:pass"));
+    setCredentialsBasic("Basic " + btoa("bob:pass"));
 
     const listFetch = stubFetch(200, [BASE_USER]);
     await listUsers();
@@ -414,8 +414,8 @@ describe("setCredentials", () => {
   });
 
   it("edge case: passing null removes credentials from subsequent requests", async () => {
-    setCredentials("Basic " + btoa("bob:pass"));
-    setCredentials(null);
+    setCredentialsBasic("Basic " + btoa("bob:pass"));
+    setCredentialsBasic(null);
 
     const listFetch = stubFetch(200, [BASE_USER]);
     await listUsers();

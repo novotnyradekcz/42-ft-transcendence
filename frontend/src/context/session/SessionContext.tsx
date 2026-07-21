@@ -42,7 +42,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   function persistSession(user: SessionUser): void {
     const credentials = getCredentials();
     if (credentials) {
-      sessionStorage.setItem(CREDENTIALS_KEY, credentials);
+      sessionStorage.setItem(CREDENTIALS_KEY, JSON.stringify(credentials));
       sessionStorage.setItem(SESSION_USER_KEY, JSON.stringify(user));
     }
   }
