@@ -105,16 +105,8 @@ pub async fn play_game_ws(
         .ok_or_else(|| actix_web::error::ErrorUnauthorized("Missing authentication subprotocol"))?;
  
     // Validate credentials passed via the auth subprotocol (expects Basic Auth)
-    let _user = crate::websocket::validate_credentials(&pool, user_id, &auth_creds)?;
-
-    // Get user name from DB
-    let user_name = {
-        let mut db_lock = pool.database.lock().unwrap();
-        match crate::model::users::get_user_in_db(&mut db_lock, user_id) {
-            Ok(Some(u)) => u.name,
-            _ => format!("User#{}", user_id),
-        }
-    };
+    let user = crate::websocket::validate_credentials(&pool, user_id, &auth_creds)?;
+    let user_name = user.name;
 
     // Upgrade the request to WebSocket
     let (response, session, mut msg_stream) = actix_ws::handle(&req, stream)?;
