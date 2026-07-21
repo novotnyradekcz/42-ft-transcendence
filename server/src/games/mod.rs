@@ -1,13 +1,13 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::Arc;
 use actix_ws::{Session, Message};
 use serde::{Serialize, Deserialize};
 use actix_web::{get, web, Error, HttpRequest, HttpResponse};
 use diesel::{Queryable, Selectable};
-use crate::model::DatabaseInitializer;
 use crate::router::get_game_in_db;
+use actix_security::http::security::{Argon2PasswordEncoder, PasswordEncoder};
 
 #[derive(Serialize, Deserialize, Queryable, Selectable, Debug, Clone)]
 #[diesel(table_name = crate::schema::ftt_games)]
@@ -57,6 +57,7 @@ pub struct PlayQuery {
     pub game_id: i32,
     #[serde(rename = "user_id")]
     pub user_id: i32,
+    pub auth: String,
 }
 
 #[derive(Serialize)]
@@ -91,20 +92,68 @@ pub enum WsClientMessage {
 
 static ROOM_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-#[get("/play/ws")]
+#[get("/ws")]
 pub async fn play_game_ws(
     req: HttpRequest,
     stream: web::Payload,
-    lobby: web::Data<Mutex<Lobby>>,
-    db: web::Data<Mutex<DatabaseInitializer>>,
+    pool: web::Data<Arc<crate::AppState>>,
     query: web::Query<PlayQuery>,
 ) -> Result<HttpResponse, Error> {
     let game_id = query.game_id;
     let user_id = query.user_id;
+    let auth = &query.auth;
+
+    // Validate credentials passed via the auth query parameter (expects Basic Auth)
+    let validated = if let Some(b64) = auth.strip_prefix("Basic ") {
+        if let Ok(decoded) = base64::decode(b64) {
+            if let Ok(creds) = std::str::from_utf8(&decoded) {
+                if let Some((username, raw_password)) = creds.split_once(':') {
+                    let user_match = {
+                        let mut db_lock = pool.database.lock().unwrap();
+                        let conn = crate::model::database_initializer::connection(&mut db_lock);
+                        
+                        use crate::schema::ftt_users::dsl::*;
+                        use crate::model::users::DbUser;
+                        use diesel::prelude::*;
+                        
+                        ftt_users
+                            .filter(id.eq(user_id))
+                            .select(DbUser::as_select())
+                            .first::<DbUser>(conn)
+                            .optional()
+                            .ok()
+                            .flatten()
+                    };
+                    if let Some(user_info) = user_match {
+                        if user_info.name == username {
+                            let encoder = Argon2PasswordEncoder::new();
+                            encoder.matches(raw_password, &user_info.password)
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    if !validated {
+        return Err(actix_web::error::ErrorUnauthorized("Invalid credentials"));
+    }
 
     // Get user name from DB
     let user_name = {
-        let mut db_lock = db.lock().unwrap();
+        let mut db_lock = pool.database.lock().unwrap();
         match crate::model::users::get_user_in_db(&mut db_lock, user_id) {
             Ok(Some(u)) => u.name,
             _ => format!("User#{}", user_id),
@@ -118,7 +167,7 @@ pub async fn play_game_ws(
     let mut session_clone = session.clone();
 
     // Lock lobby and matchmake
-    let mut lobby_lock = lobby.lock().unwrap();
+    let mut lobby_lock = pool.lobby.lock().unwrap();
 
     let mut start_match = None;
     let mut room_id = String::new();
@@ -169,8 +218,7 @@ pub async fn play_game_ws(
     drop(lobby_lock);
 
     // Spawn async task for websocket loop
-    let lobby_task = lobby.clone();
-    let db_task = db.clone();
+    let pool_task = pool.clone();
     let room_id_task = room_id.clone();
 
     actix_web::rt::spawn(async move {
@@ -184,7 +232,7 @@ pub async fn play_game_ws(
         if let Some((p1, p2)) = start_match {
             // Load game script from DB
             let game = {
-                let mut db_lock = db_task.lock().unwrap();
+                let mut db_lock = pool_task.database.lock().unwrap();
                 get_game_in_db(&mut db_lock, game_id).ok().flatten()
             };
 
@@ -227,7 +275,7 @@ pub async fn play_game_ws(
                         match client_msg {
                             WsClientMessage::GameAction { data } => {
                                 // Relay to the other player
-                                let lobby_lock = lobby_task.lock().unwrap();
+                                let lobby_lock = pool_task.lobby.lock().unwrap();
                                 if let Some(room) = lobby_lock.rooms.get(&room_id_task) {
                                     let recipient = if player_index == 1 {
                                         room.player2.as_ref()
@@ -253,7 +301,7 @@ pub async fn play_game_ws(
         }
 
         // Clean up connection
-        let mut lobby_lock = lobby_task.lock().unwrap();
+        let mut lobby_lock = pool_task.lobby.lock().unwrap();
         // Remove room from lobby
         if let Some(room) = lobby_lock.rooms.remove(&room_id_task) {
             // Remove from waiting rooms if it was there

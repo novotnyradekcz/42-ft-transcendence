@@ -5,6 +5,7 @@ import { useSession } from "./context/session/useSession";
 import { useTranslation } from "./context/language/i18n";
 import { PAGE_PATHS } from "./router";
 import type { GameSummary } from "./types";
+import { getCredentials } from "./api";
 
 const GRID_COLS = 40;
 const GRID_ROWS = 20;
@@ -105,7 +106,8 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
 
     const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${wsProtocol}//${window.location.host}${apiBaseUrl}/games/play/ws?game_id=${game.id}&user_id=${sessionUser.id}`;
+    const creds = getCredentials();
+    const wsUrl = `${wsProtocol}//${window.location.host}${apiBaseUrl}/games/play/ws?game_id=${game.id}&user_id=${sessionUser.id}${creds ? `&auth=${encodeURIComponent(creds)}` : ""}`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
