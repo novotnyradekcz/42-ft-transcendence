@@ -8,6 +8,7 @@ mod model;
 mod router;
 mod schema;
 mod users;
+mod websocket;
 
 
 use crate::authenticator::{create_authenticator, create_authorizer, init_user_store};

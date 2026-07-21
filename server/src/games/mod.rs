@@ -7,7 +7,6 @@ use serde::{Serialize, Deserialize};
 use actix_web::{get, web, Error, HttpRequest, HttpResponse};
 use diesel::{Queryable, Selectable};
 use crate::router::get_game_in_db;
-use actix_security::http::security::{Argon2PasswordEncoder, PasswordEncoder};
 
 #[derive(Serialize, Deserialize, Queryable, Selectable, Debug, Clone)]
 #[diesel(table_name = crate::schema::ftt_games)]
@@ -104,52 +103,7 @@ pub async fn play_game_ws(
     let auth = &query.auth;
 
     // Validate credentials passed via the auth query parameter (expects Basic Auth)
-    let validated = if let Some(b64) = auth.strip_prefix("Basic ") {
-        if let Ok(decoded) = base64::decode(b64) {
-            if let Ok(creds) = std::str::from_utf8(&decoded) {
-                if let Some((username, raw_password)) = creds.split_once(':') {
-                    let user_match = {
-                        let mut db_lock = pool.database.lock().unwrap();
-                        let conn = crate::model::database_initializer::connection(&mut db_lock);
-                        
-                        use crate::schema::ftt_users::dsl::*;
-                        use crate::model::users::DbUser;
-                        use diesel::prelude::*;
-                        
-                        ftt_users
-                            .filter(id.eq(user_id))
-                            .select(DbUser::as_select())
-                            .first::<DbUser>(conn)
-                            .optional()
-                            .ok()
-                            .flatten()
-                    };
-                    if let Some(user_info) = user_match {
-                        if user_info.name == username {
-                            let encoder = Argon2PasswordEncoder::new();
-                            encoder.matches(raw_password, &user_info.password)
-                        } else {
-                            false
-                        }
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            } else {
-                false
-            }
-        } else {
-            false
-        }
-    } else {
-        false
-    };
-
-    if !validated {
-        return Err(actix_web::error::ErrorUnauthorized("Invalid credentials"));
-    }
+    let _user = crate::websocket::validate_credentials(&pool, user_id, auth)?;
 
     // Get user name from DB
     let user_name = {

@@ -5,7 +5,7 @@ import { useSession } from "./context/session/useSession";
 import { useTranslation } from "./context/language/i18n";
 import { PAGE_PATHS } from "./router";
 import type { GameSummary } from "./types";
-import { getCredentials } from "./api";
+import { useWebSocket } from "./hooks/useWebSocket";
 
 const GRID_COLS = 40;
 const GRID_ROWS = 20;
@@ -43,7 +43,6 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
   >("connecting");
   const [statusMessage, setStatusMessage] = useState(t("Connecting to server..."));
 
-  const wsRef = useRef<WebSocket | null>(null);
   const luaEngineRef = useRef<any>(null);
   const gridRef = useRef<Cell[][]>(createEmptyGrid());
   const statusRef = useRef(status);
@@ -94,6 +93,100 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
     }
   };
 
+  const queryParams: Record<string, string | number> = game && sessionUser
+    ? { game_id: game.id, user_id: sessionUser.id }
+    : {};
+
+  const { sendMessage } = useWebSocket(
+    game && sessionUser ? "/games/play/ws" : null,
+    queryParams,
+    {
+      onOpen: () => {
+        setStatus("connecting");
+        setStatusMessage(tRef.current("Connected, searching for an opponent..."));
+      },
+      onMessage: async (msg) => {
+        try {
+          if (msg.type === "match_waiting") {
+            setStatus("waiting");
+            setStatusMessage(tRef.current("Waiting for an opponent to join..."));
+          } else if (msg.type === "match_start") {
+            setStatus("playing");
+            setStatusMessage(
+              tRef.current("Playing vs {name}", { name: msg.opponent_name }),
+            );
+
+            cleanupLua();
+
+            const factory = new LuaFactory("/glue.wasm");
+            const lua = await factory.createEngine();
+            luaEngineRef.current = lua;
+
+            lua.global.set(
+              "draw_cell",
+              (x: number, y: number, text: string, color: string) => {
+                const r = y - 1;
+                const cStart = x - 1;
+                if (r >= 0 && r < GRID_ROWS) {
+                  const str = String(text ?? " ");
+                  for (let i = 0; i < str.length; i++) {
+                    const c = cStart + i;
+                    if (c >= 0 && c < GRID_COLS) {
+                      gridRef.current[r][c] = {
+                        char: str[i],
+                        color: color || "green",
+                      };
+                    }
+                  }
+                }
+              },
+            );
+
+            lua.global.set("clear_screen", () => {
+              gridRef.current = createEmptyGrid();
+            });
+
+            lua.global.set("send_message", (payload: string) => {
+              sendMessage({ type: "game_action", data: payload });
+            });
+
+            lua.global.set("player_index", msg.player_index);
+
+            await lua.doString(msg.script);
+            forceUpdate();
+          } else if (msg.type === "game_action") {
+            if (luaEngineRef.current) {
+              const onNetworkMessage =
+                luaEngineRef.current.global.get("on_network_message");
+              if (onNetworkMessage) {
+                await onNetworkMessage(msg.data);
+                forceUpdate();
+              }
+            }
+          } else if (msg.type === "opponent_disconnected") {
+            setStatus("disconnected");
+            setStatusMessage(tRef.current("Opponent disconnected. Game ended."));
+            cleanupLua();
+          }
+        } catch (err) {
+          console.error("Error in onMessage handler:", err);
+        }
+      },
+      onClose: () => {
+        if (statusRef.current !== "disconnected") {
+          setStatus("disconnected");
+          setStatusMessage(tRef.current("Connection to server closed."));
+        }
+        cleanupLua();
+      },
+      onError: () => {
+        setStatus("error");
+        setStatusMessage(tRef.current("WebSocket connection error."));
+        cleanupLua();
+      },
+    }
+  );
+
   useEffect(() => {
     if (!game || !sessionUser) {
       setStatus("error");
@@ -104,111 +197,8 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
     gridRef.current = createEmptyGrid();
     forceUpdate();
 
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
-    const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const creds = getCredentials();
-    const wsUrl = `${wsProtocol}//${window.location.host}${apiBaseUrl}/games/play/ws?game_id=${game.id}&user_id=${sessionUser.id}${creds ? `&auth=${encodeURIComponent(creds)}` : ""}`;
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      setStatus("connecting");
-      setStatusMessage(tRef.current("Connected, searching for an opponent..."));
-    };
-
-    ws.onmessage = async (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-
-        if (msg.type === "match_waiting") {
-          setStatus("waiting");
-          setStatusMessage(tRef.current("Waiting for an opponent to join..."));
-        } else if (msg.type === "match_start") {
-          setStatus("playing");
-          setStatusMessage(
-            tRef.current("Playing vs {name}", { name: msg.opponent_name }),
-          );
-
-          cleanupLua();
-
-          const factory = new LuaFactory("/glue.wasm");
-          const lua = await factory.createEngine();
-          luaEngineRef.current = lua;
-
-          lua.global.set(
-            "draw_cell",
-            (x: number, y: number, text: string, color: string) => {
-              const r = y - 1;
-              const cStart = x - 1;
-              if (r >= 0 && r < GRID_ROWS) {
-                const str = String(text ?? " ");
-                for (let i = 0; i < str.length; i++) {
-                  const c = cStart + i;
-                  if (c >= 0 && c < GRID_COLS) {
-                    gridRef.current[r][c] = {
-                      char: str[i],
-                      color: color || "green",
-                    };
-                  }
-                }
-              }
-            },
-          );
-
-          lua.global.set("clear_screen", () => {
-            gridRef.current = createEmptyGrid();
-          });
-
-          lua.global.set("send_message", (payload: string) => {
-            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-              wsRef.current.send(
-                JSON.stringify({ type: "game_action", data: payload }),
-              );
-            }
-          });
-
-          lua.global.set("player_index", msg.player_index);
-
-          await lua.doString(msg.script);
-          forceUpdate();
-        } else if (msg.type === "game_action") {
-          if (luaEngineRef.current) {
-            const onNetworkMessage =
-              luaEngineRef.current.global.get("on_network_message");
-            if (onNetworkMessage) {
-              await onNetworkMessage(msg.data);
-              forceUpdate();
-            }
-          }
-        } else if (msg.type === "opponent_disconnected") {
-          setStatus("disconnected");
-          setStatusMessage(tRef.current("Opponent disconnected. Game ended."));
-          cleanupLua();
-        }
-      } catch (err) {
-        console.error("Error in onmessage:", err);
-      }
-    };
-
-    ws.onclose = () => {
-      if (statusRef.current !== "disconnected") {
-        setStatus("disconnected");
-        setStatusMessage(tRef.current("Connection to server closed."));
-      }
-      cleanupLua();
-    };
-
-    ws.onerror = () => {
-      setStatus("error");
-      setStatusMessage(tRef.current("WebSocket connection error."));
-      cleanupLua();
-    };
-
     return () => {
       cleanupLua();
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
     };
   }, [game, sessionUser]);
 
