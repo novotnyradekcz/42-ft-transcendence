@@ -1,0 +1,12 @@
+# Production overrides — use with:
+#   docker compose -f docker-compose.yml -f docker-compose.production.yml up -d
+#
+# Requires Let's Encrypt certificates already issued on the host at:
+#   /etc/letsencrypt/live/transcendence.spaceorange.eu/
+#
+# To obtain certificates (run once on the production host, before starting the stack):
+#   certbot certonly --standalone -d transcendence.spaceorange.eu
+services:
+  frontend:
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro

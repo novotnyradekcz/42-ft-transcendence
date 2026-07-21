@@ -1,5 +1,4 @@
 services:
-  
 
   # ── PostgreSQL 17 ─────────────────────────────────────────────────────────
   db:
@@ -18,7 +17,7 @@ services:
     restart: unless-stopped
     volumes:
       - postgres-data:/var/lib/postgresql/data
-  
+
   # ── Rust / Actix-web server ───────────────────────────────────────────────
   server:
     build:
@@ -29,24 +28,25 @@ services:
     environment:
       DATABASE_URL: postgres://postgres:postgres@db:5432/ft_transcendence
     volumes:
-      # Bind-mount the source tree so the container can build & run it.
-      # The compiled artefacts (target/) stay on the host for layer caching.
       - ./server:/app
     depends_on:
       db:
         condition: service_healthy
     restart: on-failure
-  
+
   # ── Node.js / React frontend ───────────────────────────────────────────────
   frontend:
     build:
       context: ./frontend
       args:
         VITE_API_BASE_URL: /api
+    env_file:
+      - ./frontend/.env
     depends_on:
       - server
     ports:
-      - "3000:80"
+      - "80:80"
+      - "443:443"
 
 volumes:
   postgres-data:
