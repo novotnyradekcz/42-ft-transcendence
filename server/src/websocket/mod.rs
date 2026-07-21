@@ -29,8 +29,7 @@ pub fn validate_credentials(
                             .select(DbUser::as_select())
                             .first::<DbUser>(conn)
                             .optional()
-                            .ok()
-                            .flatten()
+                            .map_err(actix_web::error::ErrorInternalServerError)?
                     };
                     if let Some(user_info) = user_match {
                         if user_info.name == username {
