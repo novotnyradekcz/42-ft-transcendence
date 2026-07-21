@@ -64,3 +64,30 @@ pub fn validate_credentials(
         None => Err(actix_web::error::ErrorUnauthorized("Invalid credentials")),
     }
 }
+
+/// Extracts auth credentials from the Sec-WebSocket-Protocol header.
+/// Returns a tuple of (credentials, raw_subprotocol) if successful.
+pub fn extract_auth_from_protocols(req: &actix_web::HttpRequest) -> Option<(String, String)> {
+    let protocol_header = req.headers().get("Sec-WebSocket-Protocol")?.to_str().ok()?;
+    for proto in protocol_header.split(',') {
+        let proto = proto.trim();
+        if let Some(hex_str) = proto.strip_prefix("auth-") {
+            if let Some(bytes) = decode_hex(hex_str) {
+                if let Ok(creds) = String::from_utf8(bytes) {
+                    return Some((creds, proto.to_string()));
+                }
+            }
+        }
+    }
+    None
+}
+
+fn decode_hex(s: &str) -> Option<Vec<u8>> {
+    if s.len() % 2 != 0 {
+        return None;
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
+        .collect()
+}

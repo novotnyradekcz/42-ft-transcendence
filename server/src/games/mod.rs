@@ -56,7 +56,6 @@ pub struct PlayQuery {
     pub game_id: i32,
     #[serde(rename = "user_id")]
     pub user_id: i32,
-    pub auth: String,
 }
 
 #[derive(Serialize)]
@@ -100,10 +99,13 @@ pub async fn play_game_ws(
 ) -> Result<HttpResponse, Error> {
     let game_id = query.game_id;
     let user_id = query.user_id;
-    let auth = &query.auth;
-
-    // Validate credentials passed via the auth query parameter (expects Basic Auth)
-    let _user = crate::websocket::validate_credentials(&pool, user_id, auth)?;
+ 
+    // Extract auth from subprotocols (in Sec-WebSocket-Protocol)
+    let (auth_creds, selected_protocol) = crate::websocket::extract_auth_from_protocols(&req)
+        .ok_or_else(|| actix_web::error::ErrorUnauthorized("Missing authentication subprotocol"))?;
+ 
+    // Validate credentials passed via the auth subprotocol (expects Basic Auth)
+    let _user = crate::websocket::validate_credentials(&pool, user_id, &auth_creds)?;
 
     // Get user name from DB
     let user_name = {
@@ -116,6 +118,11 @@ pub async fn play_game_ws(
 
     // Upgrade the request to WebSocket
     let (response, session, mut msg_stream) = actix_ws::handle(&req, stream)?;
+    let mut response = response;
+    response.headers_mut().insert(
+        actix_web::http::header::SEC_WEBSOCKET_PROTOCOL,
+        actix_web::http::header::HeaderValue::from_str(&selected_protocol).unwrap()
+    );
 
     // Clone session for connection management
     let mut session_clone = session.clone();

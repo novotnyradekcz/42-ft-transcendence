@@ -32,12 +32,19 @@ export function useWebSocket<IncomingMessage = any, OutgoingMessage = any>(
     for (const [key, val] of Object.entries(queryParams)) {
       params.append(key, String(val));
     }
-    if (creds) {
-      params.append("auth", creds);
-    }
 
     const wsUrl = `${wsProtocol}//${window.location.host}${apiBaseUrl}${path}?${params.toString()}`;
-    const ws = new WebSocket(wsUrl);
+
+    // Pass authentication token via Sec-WebSocket-Protocol (hex-encoded to satisfy RFC grammar constraints)
+    const subprotocols: string[] = [];
+    if (creds) {
+      const hex = Array.from(new TextEncoder().encode(creds))
+        .map(b => b.toString(16).padStart(2, "0"))
+        .join("");
+      subprotocols.push(`auth-${hex}`);
+    }
+
+    const ws = new WebSocket(wsUrl, subprotocols);
     wsRef.current = ws;
 
     ws.onopen = () => {
