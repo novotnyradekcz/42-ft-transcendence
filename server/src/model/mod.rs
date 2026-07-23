@@ -1,13 +1,13 @@
 pub(crate) mod database_initializer;
 mod database_migrations;
-pub mod game_handler;
+pub mod games;
 
 pub(crate) mod users;
 pub(crate) mod discussions;
 pub(crate) mod mails;
 pub(crate) use database_initializer::DatabaseInitializer;
 use users::seed_users_in_db;
-use game_handler::seed_games_in_db;
+use games::seed_games_in_db;
 
 pub fn inittialize_db() -> DatabaseInitializer {
     let mut dbinitializer = DatabaseInitializer::new();
