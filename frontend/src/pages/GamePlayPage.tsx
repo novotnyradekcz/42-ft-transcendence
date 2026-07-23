@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LuaFactory } from "wasmoon";
-import { useSession } from "./context/session/useSession";
-import { useTranslation } from "./context/language/i18n";
-import { PAGE_PATHS } from "./router";
-import type { GameSummary } from "./types";
-import { useWebSocket } from "./hooks/useWebSocket";
+import { useSession } from "../context/session/useSession";
+import { useTranslation } from "../context/language/i18n";
+import { PAGE_PATHS } from "../router";
+import type { GameSummary } from "../types";
+import { useWebSocket } from "../hooks/useWebSocket";
 
 const GRID_COLS = 40;
 const GRID_ROWS = 20;
@@ -38,6 +38,7 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
     }
     return flat;
   });
+
   const [status, setStatus] = useState<
     "connecting" | "waiting" | "playing" | "disconnected" | "error"
   >("connecting");
