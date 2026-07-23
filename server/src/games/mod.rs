@@ -7,8 +7,8 @@ use serde::{Serialize, Deserialize};
 use actix_web::{get, web, Error, error::ErrorUnauthorized, http::header, HttpRequest, HttpResponse, rt::spawn};
 use diesel::{Queryable, Selectable};
 use crate::AppState;
-use crate::router::get_game_in_db;
 use crate::websocket::{extract_auth_from_protocols, validate_credentials};
+use crate::model::games::get_game_in_db;
 
 #[derive(Serialize, Deserialize, Queryable, Selectable, Debug, Clone)]
 #[diesel(table_name = crate::schema::ftt_games)]

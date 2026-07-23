@@ -7,7 +7,7 @@ use crate::model::database_initializer::{DatabaseInitializer, connection};
 use crate::model::users::{CreateUserError, DbUser, login_user_in_db};
 use crate::model::users::{create_user_in_db, get_user_in_db, list_users_in_db};
 use crate::users::CreateUser;
-use crate::games::GameInfo;
+
 use actix_security::http::security::{Argon2PasswordEncoder, PasswordEncoder, User};
 use actix_security::prelude::AuthenticatedUser;
 use actix_web::{get, HttpResponse, post, Responder, web};
@@ -16,6 +16,7 @@ use actix_web::dev::ServiceRequest;
 use diesel::prelude::*;
 use serde_json;
 use crate::AppState;
+use crate::model::games::{get_game_in_db, list_games_in_db};
 use crate::model::{discussions, mails, users};
 
 pub async fn index() -> HttpResponse {
@@ -302,31 +303,6 @@ pub async fn create_mail(
     }
 }
 
-pub fn list_games_in_db(
-    db: &mut DatabaseInitializer,
-) -> Result<Vec<GameInfo>, diesel::result::Error> {
-    use crate::schema::ftt_games::dsl as games;
-
-    let conn = connection(db);
-    games::ftt_games
-        .order(games::id.asc())
-        .select(GameInfo::as_select())
-        .load::<GameInfo>(conn)
-}
-
-pub fn get_game_in_db(
-    db: &mut DatabaseInitializer,
-    game_id: i32,
-) -> Result<Option<GameInfo>, diesel::result::Error> {
-    use crate::schema::ftt_games::dsl as games;
-
-    let conn = connection(db);
-    games::ftt_games
-        .filter(games::id.eq(game_id))
-        .select(GameInfo::as_select())
-        .first::<GameInfo>(conn)
-        .optional()
-}
 
 #[get("/show")]
 pub async fn show_games(pool: web::Data<Arc<AppState>>) -> impl Responder {
