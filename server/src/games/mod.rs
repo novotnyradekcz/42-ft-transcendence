@@ -4,9 +4,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use actix_ws::{Session, Message};
 use serde::{Serialize, Deserialize};
-use actix_web::{get, web, Error, HttpRequest, HttpResponse};
+use actix_web::{get, web, Error, error::ErrorUnauthorized, http::header, HttpRequest, HttpResponse, rt::spawn};
 use diesel::{Queryable, Selectable};
+use crate::AppState;
 use crate::router::get_game_in_db;
+use crate::websocket::{extract_auth_from_protocols, validate_credentials};
 
 #[derive(Serialize, Deserialize, Queryable, Selectable, Debug, Clone)]
 #[diesel(table_name = crate::schema::ftt_games)]
@@ -94,26 +96,26 @@ static ROOM_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64
 pub async fn play_game_ws(
     req: HttpRequest,
     stream: web::Payload,
-    pool: web::Data<Arc<crate::AppState>>,
+    pool: web::Data<Arc<AppState>>,
     query: web::Query<PlayQuery>,
 ) -> Result<HttpResponse, Error> {
     let game_id = query.game_id;
     let user_id = query.user_id;
  
     // Extract auth from subprotocols (in Sec-WebSocket-Protocol)
-    let (auth_creds, selected_protocol) = crate::websocket::extract_auth_from_protocols(&req)
-        .ok_or_else(|| actix_web::error::ErrorUnauthorized("Missing authentication subprotocol"))?;
+    let (auth_creds, selected_protocol) = extract_auth_from_protocols(&req)
+        .ok_or_else(|| ErrorUnauthorized("Missing authentication subprotocol"))?;
  
     // Validate credentials passed via the auth subprotocol (expects Basic Auth)
-    let user = crate::websocket::validate_credentials(&pool, user_id, &auth_creds)?;
+    let user = validate_credentials(&pool, user_id, &auth_creds)?;
     let user_name = user.name;
 
     // Upgrade the request to WebSocket
     let (response, session, mut msg_stream) = actix_ws::handle(&req, stream)?;
     let mut response = response;
     response.headers_mut().insert(
-        actix_web::http::header::SEC_WEBSOCKET_PROTOCOL,
-        actix_web::http::header::HeaderValue::from_str(&selected_protocol).unwrap()
+        header::SEC_WEBSOCKET_PROTOCOL,
+        header::HeaderValue::from_str(&selected_protocol).unwrap()
     );
 
     // Clone session for connection management
@@ -174,7 +176,7 @@ pub async fn play_game_ws(
     let pool_task = pool.clone();
     let room_id_task = room_id.clone();
 
-    actix_web::rt::spawn(async move {
+    spawn(async move {
         // If we are Player 1, tell the client we are waiting
         if player_index == 1 {
             let waiting_msg = serde_json::to_string(&WsServerMessage::MatchWaiting).unwrap();

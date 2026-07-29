@@ -1,9 +1,10 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
 use std::sync::Arc;
-use actix_web::Error;
+use actix_web::{Error, error::ErrorInternalServerError};
 use actix_security::http::security::{Argon2PasswordEncoder, PasswordEncoder};
 use crate::AppState;
+use crate::model::database_initializer::connection;
 use crate::model::users::DbUser;
 
 /// Validates query-based credentials against the database.
@@ -18,8 +19,8 @@ pub fn validate_credentials(
             if let Ok(creds) = std::str::from_utf8(&decoded) {
                 if let Some((username, raw_password)) = creds.split_once(':') {
                     let user_match = {
-                        let mut db_lock = pool.database.lock().map_err(|_| actix_web::error::ErrorInternalServerError("Database lock poisoned"))?;
-                        let conn = crate::model::database_initializer::connection(&mut db_lock);
+                        let mut db_lock = pool.database.lock().map_err(|_| ErrorInternalServerError("Database lock poisoned"))?;
+                        let conn = connection(&mut db_lock);
                         
                         use crate::schema::ftt_users::dsl::*;
                         use diesel::prelude::*;
@@ -29,7 +30,7 @@ pub fn validate_credentials(
                             .select(DbUser::as_select())
                             .first::<DbUser>(conn)
                             .optional()
-                            .map_err(actix_web::error::ErrorInternalServerError)?
+                            .map_err(ErrorInternalServerError)?
                     };
                     if let Some(user_info) = user_match {
                         if user_info.name == username {
