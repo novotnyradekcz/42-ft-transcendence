@@ -65,3 +65,30 @@ pub fn get_game_in_db(
         .first::<GameInfo>(conn)
         .optional()
 }
+
+#[derive(Insertable)]
+#[diesel(table_name = crate::schema::ftt_games)]
+pub struct NewGame<'a> {
+    pub author: i32,
+    pub name: &'a str,
+    pub body: &'a str,
+}
+
+pub fn create_game_in_db(
+    db: &mut DatabaseInitializer,
+    author_id: i32,
+    name: &str,
+    body: &str,
+) -> Result<GameInfo, diesel::result::Error> {
+    use crate::schema::ftt_games::dsl as games;
+
+    let conn = connection(db);
+    diesel::insert_into(games::ftt_games)
+        .values(&NewGame {
+            author: author_id,
+            name,
+            body,
+        })
+        .returning(GameInfo::as_returning())
+        .get_result::<GameInfo>(conn)
+}

@@ -60,6 +60,13 @@ pub struct PlayQuery {
     pub user_id: i32,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CreateGame {
+    pub name: String,
+    pub body: String,
+    pub author: Option<i32>,
+}
+
 #[derive(Serialize)]
 #[serde(tag = "type")]
 pub enum WsServerMessage {

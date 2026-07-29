@@ -13,7 +13,8 @@ use actix_web::{get, HttpResponse, post, Responder, web};
 use std::sync::Arc;
 use serde_json;
 use crate::AppState;
-use crate::model::games::{get_game_in_db, list_games_in_db};
+use crate::games::CreateGame;
+use crate::model::games::{create_game_in_db, get_game_in_db, list_games_in_db};
 use crate::model::{discussions, mails, users};
 
 pub async fn index() -> HttpResponse {
@@ -327,6 +328,35 @@ pub async fn game_detail(
         })),
         Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
             "message": format!("Could not load game {}: {}", game_id, err),
+        })),
+    }
+}
+
+#[post("/create")]
+pub async fn create_game(
+    pool: web::Data<Arc<AppState>>,
+    body: web::Json<CreateGame>,
+) -> impl Responder {
+    let author_id = match body.author {
+        Some(author_id) => author_id,
+        None => {
+            return HttpResponse::BadRequest().json(serde_json::json!({
+                "message": "Game author is required.",
+            }))
+        }
+    };
+
+    if body.name.trim().is_empty() || body.body.trim().is_empty() {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "message": "Game name and body are required.",
+        }));
+    }
+
+    let mut db = pool.database.lock().expect("create_game expect DatabaseInitializer");
+    match create_game_in_db(&mut db, author_id, &body.name, &body.body) {
+        Ok(game) => HttpResponse::Created().json(game),
+        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "message": format!("Could not create game: {}", err),
         })),
     }
 }
