@@ -27,7 +27,7 @@ pub fn seed_games_in_db(db: &mut DatabaseInitializer) -> Result<(), diesel::resu
         .optional()?
         .unwrap_or(2); // fallback to ID 2 (which is admin's ID)
 
-    let tic_tac_toe_lua = include_str!("tic_tac_toe.lua");
+    let tic_tac_toe_lua = include_str!("../games/scripts/tic_tac_toe.lua");
 
     diesel::insert_into(ftt_games)
         .values((
