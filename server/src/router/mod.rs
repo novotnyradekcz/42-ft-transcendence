@@ -3,7 +3,6 @@
 use crate::authenticator::register_user;
 use crate::discussions::{CreateDiscussion, CreatePost};
 use crate::mails::{CreateMail, MailQuery};
-use crate::model::database_initializer::{DatabaseInitializer, connection};
 use crate::model::users::{CreateUserError, DbUser, login_user_in_db};
 use crate::model::users::{create_user_in_db, get_user_in_db, list_users_in_db};
 use crate::users::CreateUser;
@@ -12,8 +11,6 @@ use actix_security::http::security::{Argon2PasswordEncoder, PasswordEncoder, Use
 use actix_security::prelude::AuthenticatedUser;
 use actix_web::{get, HttpResponse, post, Responder, web};
 use std::sync::Arc;
-use actix_web::dev::ServiceRequest;
-use diesel::prelude::*;
 use serde_json;
 use crate::AppState;
 use crate::model::games::{get_game_in_db, list_games_in_db};
@@ -62,7 +59,7 @@ pub async fn login_user(pool: web::Data<Arc<AppState>>, user: AuthenticatedUser)
             "".to_string(),
             vec![]));
     match logged_from_db {
-        Ok(Some(dbUser)) => HttpResponse::Ok().json(serde_json::json!(dbUser)),
+        Ok(Some(db_user)) => HttpResponse::Ok().json(serde_json::json!(db_user)),
         Ok(None) => HttpResponse::Ok().json(serde_json::json!([])),
         Err(_) => todo!("Error is not handled")
     }
