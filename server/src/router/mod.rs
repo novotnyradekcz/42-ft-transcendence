@@ -346,9 +346,24 @@ pub async fn create_game(
         }
     };
 
-    if body.name.trim().is_empty() || body.body.trim().is_empty() {
+    let name = body.name.trim();
+    let script_body = body.body.trim();
+
+    if name.is_empty() || name.len() > 100 {
         return HttpResponse::BadRequest().json(serde_json::json!({
-            "message": "Game name and body are required.",
+            "message": "Game name must be between 1 and 100 characters.",
+        }));
+    }
+
+    if script_body.is_empty() {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "message": "Game script body cannot be empty.",
+        }));
+    }
+
+    if script_body.len() > 100 * 1024 {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "message": "Game script body exceeds maximum allowed size of 100 KB.",
         }));
     }
 

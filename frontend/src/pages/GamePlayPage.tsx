@@ -9,6 +9,8 @@ import { useWebSocket } from "../hooks/useWebSocket";
 
 const GRID_COLS = 40;
 const GRID_ROWS = 20;
+const MAX_PAYLOAD_LEN = 2000;
+const SAFE_COLOR_REGEX = /^[a-zA-Z0-9#,-]+$/;
 
 const createEmptyGrid = () =>
   Array.from({ length: GRID_ROWS }, () =>
@@ -90,7 +92,11 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
         forceUpdate();
       }
     } catch (err) {
-      console.error("Error in on_click:", err);
+      console.error("Error in Lua on_click handler:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setStatus("error");
+      setStatusMessage(tRef.current("Game script runtime error: {msg}", { msg }));
+      cleanupLua();
     }
   };
 
@@ -125,17 +131,26 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
 
             lua.global.set(
               "draw_cell",
-              (x: number, y: number, text: string, color: string) => {
-                const r = y - 1;
-                const cStart = x - 1;
+              (x: unknown, y: unknown, text: unknown, color: unknown) => {
+                const posX = Number(x);
+                const posY = Number(y);
+                if (Number.isNaN(posX) || Number.isNaN(posY)) return;
+
+                const r = Math.floor(posY) - 1;
+                const cStart = Math.floor(posX) - 1;
+
                 if (r >= 0 && r < GRID_ROWS) {
-                  const str = String(text ?? " ");
+                  const rawStr = String(text ?? " ");
+                  const str = rawStr.length > 40 ? rawStr.slice(0, 40) : rawStr;
+                  const colorStr = String(color ?? "green");
+                  const safeColor = SAFE_COLOR_REGEX.test(colorStr) ? colorStr : "green";
+
                   for (let i = 0; i < str.length; i++) {
                     const c = cStart + i;
                     if (c >= 0 && c < GRID_COLS) {
                       gridRef.current[r][c] = {
                         char: str[i],
-                        color: color || "green",
+                        color: safeColor,
                       };
                     }
                   }
@@ -147,21 +162,43 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
               gridRef.current = createEmptyGrid();
             });
 
-            lua.global.set("send_message", (payload: string) => {
-              sendMessage({ type: "game_action", data: payload });
+            lua.global.set("send_message", (payload: unknown) => {
+              const str = String(payload ?? "");
+              if (str.length > MAX_PAYLOAD_LEN) return;
+              sendMessage({ type: "game_action", data: str });
             });
 
             lua.global.set("player_index", msg.player_index);
 
-            await lua.doString(msg.script);
-            forceUpdate();
+            try {
+              await lua.doString(msg.script);
+              forceUpdate();
+            } catch (evalErr) {
+              console.error("Error executing game script:", evalErr);
+              const scriptError = evalErr instanceof Error ? evalErr.message : String(evalErr);
+              setStatus("error");
+              setStatusMessage(
+                tRef.current("Game script failed to run: {error}", { error: scriptError }),
+              );
+              cleanupLua();
+            }
           } else if (msg.type === "game_action") {
             if (luaEngineRef.current) {
               const onNetworkMessage =
                 luaEngineRef.current.global.get("on_network_message");
               if (onNetworkMessage) {
-                await onNetworkMessage(msg.data);
-                forceUpdate();
+                try {
+                  await onNetworkMessage(msg.data);
+                  forceUpdate();
+                } catch (netErr) {
+                  console.error("Error in Lua on_network_message handler:", netErr);
+                  const msgErr = netErr instanceof Error ? netErr.message : String(netErr);
+                  setStatus("error");
+                  setStatusMessage(
+                    tRef.current("Game script network error: {msg}", { msg: msgErr }),
+                  );
+                  cleanupLua();
+                }
               }
             }
           } else if (msg.type === "opponent_disconnected") {
@@ -171,6 +208,9 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
           }
         } catch (err) {
           console.error("Error in onMessage handler:", err);
+          setStatus("error");
+          setStatusMessage(tRef.current("Unexpected error processing game message."));
+          cleanupLua();
         }
       },
       onClose: () => {
