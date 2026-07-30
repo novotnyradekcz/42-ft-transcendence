@@ -138,18 +138,20 @@ pub async fn play_game_ws(
     if let Some(waiting_id) = lobby_lock.waiting_rooms.get(&game_id).cloned() {
         // We found a waiting room!
         if let Some(room) = lobby_lock.rooms.get_mut(&waiting_id) {
-            // Join as player 2
-            let p2 = Player {
-                user_id,
-                name: user_name.clone(),
-                session: session.clone(),
-            };
-            room.player2 = Some(p2.clone());
-            room_id = waiting_id.clone();
-            player_index = 2;
-            
-            let p1 = room.player1.clone();
-            start_match = Some((p1, p2));
+            // Only join if Player 1 is a different user (prevent matching against oneself)
+            if room.player1.user_id != user_id {
+                let p2 = Player {
+                    user_id,
+                    name: user_name.clone(),
+                    session: session.clone(),
+                };
+                room.player2 = Some(p2.clone());
+                room_id = waiting_id.clone();
+                player_index = 2;
+                
+                let p1 = room.player1.clone();
+                start_match = Some((p1, p2));
+            }
         }
     }
 

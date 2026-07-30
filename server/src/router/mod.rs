@@ -335,17 +335,9 @@ pub async fn game_detail(
 #[post("/create")]
 pub async fn create_game(
     pool: web::Data<Arc<AppState>>,
+    user: AuthenticatedUser,
     body: web::Json<CreateGame>,
 ) -> impl Responder {
-    let author_id = match body.author {
-        Some(author_id) => author_id,
-        None => {
-            return HttpResponse::BadRequest().json(serde_json::json!({
-                "message": "Game author is required.",
-            }))
-        }
-    };
-
     let name = body.name.trim();
     let script_body = body.body.trim();
 
@@ -367,8 +359,25 @@ pub async fn create_game(
         }));
     }
 
+    let username = user.into_inner().get_username().to_string();
+
     let mut db = pool.database.lock().expect("create_game expect DatabaseInitializer");
-    match create_game_in_db(&mut db, author_id, &body.name, &body.body) {
+
+    let author_id = match users::find_user_id_by_name(&mut db, &username) {
+        Ok(Some(id)) => id,
+        Ok(None) => {
+            return HttpResponse::Unauthorized().json(serde_json::json!({
+                "message": "Authenticated user not found in database.",
+            }))
+        }
+        Err(err) => {
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": format!("Could not lookup user: {}", err),
+            }))
+        }
+    };
+
+    match create_game_in_db(&mut db, author_id, name, script_body) {
         Ok(game) => HttpResponse::Created().json(game),
         Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
             "message": format!("Could not create game: {}", err),
