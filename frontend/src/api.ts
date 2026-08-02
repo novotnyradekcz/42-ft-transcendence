@@ -417,10 +417,9 @@ export async function listGames(): Promise<GameSummary[]> {
 export async function createGame(
   name: string,
   body: string,
-  authorId: number,
 ): Promise<GameSummary> {
   return requestJson<GameSummary>("/games/create", {
     method: "POST",
-    body: JSON.stringify({ name, body, author: authorId }),
+    body: JSON.stringify({ name, body }),
   });
 }

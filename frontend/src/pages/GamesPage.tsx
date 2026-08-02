@@ -66,7 +66,7 @@ export default function GamesPage() {
       const body = await file.text();
       const name = file.name.replace(/\.lua$/i, "").trim() || "Untitled Game";
 
-      await createGame(name, body, sessionUser.id);
+      await createGame(name, body);
       await refreshBoard();
 
       const successStr = t("uploaded game '{name}'.", { name });

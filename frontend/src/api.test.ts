@@ -585,7 +585,7 @@ describe("createGame", () => {
     };
     const mockFetch = stubFetch(201, mockGame);
 
-    const result = await createGame("Custom Pong", "print('pong')", 2);
+    const result = await createGame("Custom Pong", "print('pong')");
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
@@ -594,7 +594,6 @@ describe("createGame", () => {
     expect(JSON.parse(init.body as string)).toEqual({
       name: "Custom Pong",
       body: "print('pong')",
-      author: 2,
     });
     expect(result).toEqual(mockGame);
   });

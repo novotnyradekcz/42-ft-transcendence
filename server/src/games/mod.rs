@@ -65,7 +65,6 @@ pub struct PlayQuery {
 pub struct CreateGame {
     pub name: String,
     pub body: String,
-    pub author: Option<i32>,
 }
 
 #[derive(Serialize)]
