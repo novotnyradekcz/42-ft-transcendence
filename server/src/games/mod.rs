@@ -120,10 +120,14 @@ pub async fn play_game_ws(
     // Upgrade the request to WebSocket
     let (response, session, mut msg_stream) = actix_ws::handle(&req, stream)?;
     let mut response = response;
-    response.headers_mut().insert(
-        header::SEC_WEBSOCKET_PROTOCOL,
-        header::HeaderValue::from_str(&selected_protocol).unwrap()
-    );
+    if let Ok(header_value) = actix_web::http::header::HeaderValue::from_str(&selected_protocol) {
+        response.headers_mut().insert(
+            actix_web::http::header::SEC_WEBSOCKET_PROTOCOL,
+            header_value,
+        );
+    } else {
+        return Err(actix_web::error::ErrorBadRequest("Invalid WebSocket subprotocol"));
+    }
 
     // Clone session for connection management
     let mut session_clone = session.clone();
