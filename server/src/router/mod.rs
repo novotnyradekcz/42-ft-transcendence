@@ -339,7 +339,8 @@ pub async fn create_game(
     body: web::Json<CreateGame>,
 ) -> impl Responder {
     let name = body.name.trim();
-    let script_body = body.body.trim();
+    let script_body = body.body.as_str();
+    let script_body_trimmed = script_body.trim();
 
     if name.is_empty() || name.len() > 100 {
         return HttpResponse::BadRequest().json(serde_json::json!({
@@ -347,7 +348,7 @@ pub async fn create_game(
         }));
     }
 
-    if script_body.is_empty() {
+    if script_body_trimmed.is_empty() {
         return HttpResponse::BadRequest().json(serde_json::json!({
             "message": "Game script body cannot be empty.",
         }));
