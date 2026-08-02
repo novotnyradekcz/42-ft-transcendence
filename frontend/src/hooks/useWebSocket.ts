@@ -10,8 +10,8 @@ export interface UseWebSocketOptions<T> {
 
 /**
  * A custom React hook that abstracts and manages standard WebSocket connections.
- * Automatically appends the user's current session credentials and other parameters
- * to the query string for authentication.
+ * Appends the provided `queryParams` to the URL query string, and (if present)
+ * forwards the user's Basic Auth credentials via a WebSocket subprotocol.
  */
 export function useWebSocket<IncomingMessage = any, OutgoingMessage = any>(
   path: string | null,
