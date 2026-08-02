@@ -130,6 +130,10 @@ export function createCommandHandlers(
       }
       if (page !== "games") {
         goTo(PAGE_PATHS.games);
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent("trigger-game-upload"));
+        }, 0);
+        return;
       }
       window.dispatchEvent(new CustomEvent("trigger-game-upload"));
       return;
