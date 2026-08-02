@@ -4,11 +4,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use actix_ws::{Session, Message};
 use serde::{Serialize, Deserialize};
-use actix_web::{get, web, Error, error::ErrorUnauthorized, http::header, HttpRequest, HttpResponse, rt::spawn};
+use actix_web::{get, web, Error, error::ErrorUnauthorized, HttpRequest, HttpResponse, rt::spawn};
 use diesel::{Queryable, Selectable};
 use crate::AppState;
-use crate::router::get_game_in_db;
 use crate::websocket::{extract_auth_from_protocols, validate_credentials};
+use crate::model::games::get_game_in_db;
 
 #[derive(Serialize, Deserialize, Queryable, Selectable, Debug, Clone)]
 #[diesel(table_name = crate::schema::ftt_games)]
@@ -25,6 +25,7 @@ pub struct Player {
     pub user_id: i32,
     pub name: String,
     pub session: Session,
+    pub conn_id: u64,
 }
 
 #[allow(dead_code)]
@@ -60,6 +61,12 @@ pub struct PlayQuery {
     pub user_id: i32,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CreateGame {
+    pub name: String,
+    pub body: String,
+}
+
 #[derive(Serialize)]
 #[serde(tag = "type")]
 pub enum WsServerMessage {
@@ -91,6 +98,7 @@ pub enum WsClientMessage {
 }
 
 static ROOM_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static CONN_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 #[get("/ws")]
 pub async fn play_game_ws(
@@ -113,13 +121,18 @@ pub async fn play_game_ws(
     // Upgrade the request to WebSocket
     let (response, session, mut msg_stream) = actix_ws::handle(&req, stream)?;
     let mut response = response;
-    response.headers_mut().insert(
-        header::SEC_WEBSOCKET_PROTOCOL,
-        header::HeaderValue::from_str(&selected_protocol).unwrap()
-    );
+    if let Ok(header_value) = actix_web::http::header::HeaderValue::from_str(&selected_protocol) {
+        response.headers_mut().insert(
+            actix_web::http::header::SEC_WEBSOCKET_PROTOCOL,
+            header_value,
+        );
+    } else {
+        return Err(actix_web::error::ErrorBadRequest("Invalid WebSocket subprotocol"));
+    }
 
     // Clone session for connection management
     let mut session_clone = session.clone();
+    let conn_id = CONN_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
     // Lock lobby and matchmake
     let mut lobby_lock = pool.lobby.lock().unwrap();
@@ -131,18 +144,38 @@ pub async fn play_game_ws(
     if let Some(waiting_id) = lobby_lock.waiting_rooms.get(&game_id).cloned() {
         // We found a waiting room!
         if let Some(room) = lobby_lock.rooms.get_mut(&waiting_id) {
-            // Join as player 2
-            let p2 = Player {
-                user_id,
-                name: user_name.clone(),
-                session: session.clone(),
-            };
-            room.player2 = Some(p2.clone());
-            room_id = waiting_id.clone();
-            player_index = 2;
-            
-            let p1 = room.player1.clone();
-            start_match = Some((p1, p2));
+            if room.player1.user_id == user_id {
+                // Same user reconnecting to their own waiting room: replace player 1's session
+                let old_session = room.player1.session.clone();
+                room.player1 = Player {
+                    user_id,
+                    name: user_name.clone(),
+                    session: session.clone(),
+                    conn_id,
+                };
+                room_id = waiting_id.clone();
+                player_index = 1;
+
+                // Close the old session so its task loop exits
+                actix_web::rt::spawn(async move {
+                    let s = old_session;
+                    let _ = s.close(None).await;
+                });
+            } else {
+                // Different user joining as player 2
+                let p2 = Player {
+                    user_id,
+                    name: user_name.clone(),
+                    session: session.clone(),
+                    conn_id,
+                };
+                room.player2 = Some(p2.clone());
+                room_id = waiting_id.clone();
+                player_index = 2;
+                
+                let p1 = room.player1.clone();
+                start_match = Some((p1, p2));
+            }
         }
     }
 
@@ -150,7 +183,7 @@ pub async fn play_game_ws(
         lobby_lock.waiting_rooms.remove(&game_id);
     }
 
-    if start_match.is_none() {
+    if start_match.is_none() && room_id.is_empty() {
         // Create a new waiting room using atomic counter to generate room ID
         let num = ROOM_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         room_id = format!("room_{}", num);
@@ -158,6 +191,7 @@ pub async fn play_game_ws(
             user_id,
             name: user_name,
             session: session.clone(),
+            conn_id,
         };
         let new_room = Room {
             id: room_id.clone(),
@@ -175,6 +209,7 @@ pub async fn play_game_ws(
     // Spawn async task for websocket loop
     let pool_task = pool.clone();
     let room_id_task = room_id.clone();
+    let conn_id_task = conn_id;
 
     spawn(async move {
         // If we are Player 1, tell the client we are waiting
@@ -257,27 +292,36 @@ pub async fn play_game_ws(
 
         // Clean up connection
         let mut lobby_lock = pool_task.lobby.lock().unwrap();
-        // Remove room from lobby
-        if let Some(room) = lobby_lock.rooms.remove(&room_id_task) {
-            // Remove from waiting rooms if it was there
-            if let Some(waiting_id) = lobby_lock.waiting_rooms.get(&game_id) {
-                if waiting_id == &room_id_task {
-                    lobby_lock.waiting_rooms.remove(&game_id);
-                }
-            }
-
-            // Notify the other player
-            let other_player = if player_index == 1 {
-                room.player2
+        if let Some(room) = lobby_lock.rooms.get(&room_id_task) {
+            let is_active_player = if player_index == 1 {
+                room.player1.conn_id == conn_id_task
             } else {
-                Some(room.player1)
+                room.player2.as_ref().map(|p| p.conn_id) == Some(conn_id_task)
             };
 
-            if let Some(opp) = other_player {
-                let disconnect_msg = serde_json::to_string(&WsServerMessage::OpponentDisconnected).unwrap();
-                let mut opp_session = opp.session.clone();
-                let _ = opp_session.text(disconnect_msg).await;
-                let _ = opp_session.close(None).await;
+            if is_active_player {
+                let room = lobby_lock.rooms.remove(&room_id_task).unwrap();
+
+                // Remove from waiting rooms if it was there
+                if let Some(waiting_id) = lobby_lock.waiting_rooms.get(&game_id) {
+                    if waiting_id == &room_id_task {
+                        lobby_lock.waiting_rooms.remove(&game_id);
+                    }
+                }
+
+                // Notify the other player
+                let other_player = if player_index == 1 {
+                    room.player2
+                } else {
+                    Some(room.player1)
+                };
+
+                if let Some(opp) = other_player {
+                    let disconnect_msg = serde_json::to_string(&WsServerMessage::OpponentDisconnected).unwrap();
+                    let mut opp_session = opp.session.clone();
+                    let _ = opp_session.text(disconnect_msg).await;
+                    let _ = opp_session.close(None).await;
+                }
             }
         }
     });

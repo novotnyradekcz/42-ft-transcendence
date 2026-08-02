@@ -413,3 +413,13 @@ export async function sendMail(
 export async function listGames(): Promise<GameSummary[]> {
   return requestJson<GameSummary[]>("/games/show");
 }
+
+export async function createGame(
+  name: string,
+  body: string,
+): Promise<GameSummary> {
+  return requestJson<GameSummary>("/games/create", {
+    method: "POST",
+    body: JSON.stringify({ name, body }),
+  });
+}
