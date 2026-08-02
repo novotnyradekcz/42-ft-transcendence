@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App.tsx";
 import { LanguageProvider } from "./context/language/LanguageContext.tsx";
 import { DataProvider } from "./context/data/DataContext.tsx";
+import { StatusProvider } from "./context/status/StatusContext.tsx";
 import { SessionProvider } from "./context/session/SessionContext.tsx";
 import { TerminalProvider } from "./context/terminal/TerminalContext.tsx";
 import "./index.css";
@@ -13,6 +14,7 @@ import "./index.css";
  *
  *   BrowserRouter        — React Router (needed by TerminalContext hooks)
  *   SessionProvider      — auth, credentials, knownUsers
+ *   StatusProvider       — live online status over WebSocket (needs Session)
  *   DataProvider         — resource data (discussions, mail, games, selected items)
  *   TerminalProvider     — command UI state + execution (uses Session + Data)
  *   App → Terminal       — renders the full BBS UI and <Routes>
@@ -22,11 +24,13 @@ createRoot(document.getElementById("root")!).render(
     <LanguageProvider>
       <BrowserRouter>
         <SessionProvider>
-          <DataProvider>
-            <TerminalProvider>
-              <App />
-            </TerminalProvider>
-          </DataProvider>
+          <StatusProvider>
+            <DataProvider>
+              <TerminalProvider>
+                <App />
+              </TerminalProvider>
+            </DataProvider>
+          </StatusProvider>
         </SessionProvider>
       </BrowserRouter>
     </LanguageProvider>

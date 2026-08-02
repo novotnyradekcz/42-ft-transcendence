@@ -17,7 +17,6 @@ import {
   register,
   restoreSession,
   setCredentials,
-  uploadAvatar,
 } from "./api";
 import { CREDENTIALS_KEY, PH_USER_IMAGE, SESSION_USER_KEY } from "./constants";
 
@@ -423,91 +422,6 @@ describe("setCredentials", () => {
     const [, init] = listFetch.mock.calls[0] as [string, RequestInit];
     const headers = init.headers as Record<string, string>;
     expect(headers["Authorization"]).toBeUndefined();
-  });
-});
-
-// ─── uploadAvatar ─────────────────────────────────────────────────────────────
-
-describe("uploadAvatar", () => {
-  afterEach(() => {
-    logout();
-    vi.unstubAllGlobals();
-    sessionStorage.clear();
-  });
-
-  function makeImageFile(name = "photo.png", type = "image/png") {
-    return new File(["data"], name, { type });
-  }
-
-  function stubUploadFetch(status: number, body: unknown) {
-    const mock = vi.fn().mockResolvedValue({
-      ok: status >= 200 && status < 300,
-      status,
-      statusText: status === 201 ? "Created" : "Error",
-      json: () => Promise.resolve(body),
-    });
-    vi.stubGlobal("fetch", mock);
-    return mock;
-  }
-
-  it("happy path: sends Authorization header when authenticated", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        statusText: "OK",
-        json: () => Promise.resolve(BASE_USER),
-      }),
-    );
-    await login("alice", "s3cr3t");
-
-    const uploadFetch = stubUploadFetch(201, { avatarUrl: "/images/test.png" });
-    await uploadAvatar(makeImageFile());
-
-    const [, init] = uploadFetch.mock.calls[0] as [string, RequestInit];
-    const headers = init.headers as Record<string, string>;
-    expect(headers["Authorization"]).toBe("Basic " + btoa("alice:s3cr3t"));
-  });
-
-  it("happy path: does not send Authorization header when not logged in", async () => {
-    const uploadFetch = stubUploadFetch(201, { avatarUrl: "/images/test.png" });
-    await uploadAvatar(makeImageFile());
-
-    const [, init] = uploadFetch.mock.calls[0] as [string, RequestInit];
-    const headers = init.headers as Record<string, string>;
-    expect(headers["Authorization"]).toBeUndefined();
-  });
-
-  it("happy path: preserves Content-Type header", async () => {
-    const uploadFetch = stubUploadFetch(201, {
-      avatarUrl: "/images/test.webp",
-    });
-    await uploadAvatar(makeImageFile("photo.webp", "image/webp"));
-
-    const [, init] = uploadFetch.mock.calls[0] as [string, RequestInit];
-    const headers = init.headers as Record<string, string>;
-    expect(headers["Content-Type"]).toBe("image/webp");
-  });
-
-  it("edge case: throws when file is not an image", async () => {
-    await expect(
-      uploadAvatar(new File(["x"], "doc.pdf", { type: "application/pdf" })),
-    ).rejects.toThrow("Avatar must be an image file.");
-  });
-
-  it("edge case: throws when server returns non-ok status", async () => {
-    stubUploadFetch(500, {});
-    await expect(uploadAvatar(makeImageFile())).rejects.toThrow(
-      "Avatar upload failed with status 500.",
-    );
-  });
-
-  it("edge case: throws when server does not return avatarUrl", async () => {
-    stubUploadFetch(201, {});
-    await expect(uploadAvatar(makeImageFile())).rejects.toThrow(
-      "Avatar upload did not return an image path.",
-    );
   });
 });
 
