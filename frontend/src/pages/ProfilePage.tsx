@@ -83,7 +83,8 @@ export default function ProfilePage() {
             <label>
               {t("Avatar URL")}
               <input
-                type="url"
+                type="text"
+                inputMode="url"
                 value={avatarUrl}
                 placeholder={PH_USER_IMAGE}
                 onChange={(e) => setAvatarUrl(e.target.value)}
