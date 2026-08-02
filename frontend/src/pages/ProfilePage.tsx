@@ -1,7 +1,9 @@
-import { type ChangeEvent, type FormEvent, useState } from "react";
-import { updateCurrentUserProfile, uploadAvatar } from "../api";
+import { type FormEvent, useState } from "react";
+import { updateCurrentUserProfile } from "../api";
+import { PH_USER_IMAGE } from "../constants";
 import AvatarImage from "../components/AvatarImage";
 import TerminalSection from "../components/TerminalSection";
+import { useStatus } from "../context/status/useStatus";
 import { useSession } from "../context/session/useSession";
 import { useTerminal } from "../context/terminal/useTerminal";
 import { useTranslation } from "../context/language/i18n";
@@ -10,12 +12,14 @@ type FormSubmitEvent = FormEvent<HTMLFormElement>;
 
 export default function ProfilePage() {
   const { sessionUser, updateSessionUser, refreshUsers } = useSession();
+  const { statusOf } = useStatus();
   const { addLine } = useTerminal();
   const { t } = useTranslation();
 
   const [name, setName] = useState(sessionUser?.name ?? "");
   const [email, setEmail] = useState(sessionUser?.email ?? "");
   const [bio, setBio] = useState(sessionUser?.bio ?? "");
+  const [avatarUrl, setAvatarUrl] = useState(sessionUser?.avatarUrl ?? "");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -32,6 +36,7 @@ export default function ProfilePage() {
         name,
         email,
         bio,
+        avatarUrl: avatarUrl.trim(),
       });
       updateSessionUser(nextUser);
       await refreshUsers().catch(() => {});
@@ -47,35 +52,6 @@ export default function ProfilePage() {
     }
   }
 
-  async function handleAvatarChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    setMessage("");
-    setError("");
-    try {
-      const avatarUrl = await uploadAvatar(file);
-      const nextUser = await updateCurrentUserProfile(sessionUser!.id, {
-        name: sessionUser!.name,
-        email: sessionUser!.email,
-        bio: sessionUser!.bio,
-        avatarUrl,
-      });
-      updateSessionUser(nextUser);
-      await refreshUsers().catch(() => {});
-      addLine(t("avatar uploaded."));
-      setMessage(t("avatar saved."));
-    } catch (caughtError) {
-      const msg =
-        caughtError instanceof Error
-          ? caughtError.message
-          : t("could not save avatar.");
-      setError(msg);
-      addLine(msg);
-    } finally {
-      event.target.value = "";
-    }
-  }
-
   return (
     <TerminalSection title={t("Profile")}>
       <div className="profile-layout">
@@ -87,7 +63,7 @@ export default function ProfilePage() {
             <dt>{t("Email")}</dt>
             <dd>{sessionUser.email}</dd>
             <dt>{t("Status")}</dt>
-            <dd>{t(sessionUser.status)}</dd>
+            <dd>{t(statusOf(sessionUser.id))}</dd>
             <dt>{t("Bio")}</dt>
             <dd>{sessionUser.bio}</dd>
           </dl>
@@ -105,11 +81,12 @@ export default function ProfilePage() {
               <textarea value={bio} onChange={(e) => setBio(e.target.value)} />
             </label>
             <label>
-              {t("Avatar")}
+              {t("Avatar URL")}
               <input
-                type="file"
-                accept="image/*"
-                onChange={handleAvatarChange}
+                type="url"
+                value={avatarUrl}
+                placeholder={PH_USER_IMAGE}
+                onChange={(e) => setAvatarUrl(e.target.value)}
               />
             </label>
             <button className="terminal-button" type="submit">

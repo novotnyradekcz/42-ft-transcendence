@@ -1,10 +1,12 @@
 import AvatarImage from "../components/AvatarImage";
 import TerminalSection from "../components/TerminalSection";
+import { useStatus } from "../context/status/useStatus";
 import { useSession } from "../context/session/useSession";
 import { useTranslation } from "../context/language/i18n";
 
 export default function FriendsPage() {
   const { sessionUser, knownUsers } = useSession();
+  const { statusOf } = useStatus();
   const { t } = useTranslation();
   const friendIds = sessionUser?.friends ?? [];
   const friends = knownUsers.filter((u) => friendIds.includes(u.id));
@@ -20,7 +22,7 @@ export default function FriendsPage() {
               <AvatarImage user={friend} />
               <span>{friend.name}</span>
               <small>
-                {friend.email} / {t(friend.status)}
+                {friend.email} / {t(statusOf(friend.id))}
               </small>
             </li>
           ))}
