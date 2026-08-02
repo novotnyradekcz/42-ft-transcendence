@@ -362,7 +362,14 @@ pub async fn create_game(
 
     let username = user.into_inner().get_username().to_string();
 
-    let mut db = pool.database.lock().expect("create_game expect DatabaseInitializer");
+    let mut db = match pool.database.lock() {
+        Ok(db) => db,
+        Err(_) => {
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Database lock poisoned.",
+            }));
+        }
+    };
 
     let author_id = match users::find_user_id_by_name(&mut db, &username) {
         Ok(Some(id)) => id,
