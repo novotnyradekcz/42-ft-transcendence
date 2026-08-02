@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use actix_ws::{Session, Message};
 use serde::{Serialize, Deserialize};
-use actix_web::{get, web, Error, error::ErrorUnauthorized, http::header, HttpRequest, HttpResponse, rt::spawn};
+use actix_web::{get, web, Error, error::ErrorUnauthorized, HttpRequest, HttpResponse, rt::spawn};
 use diesel::{Queryable, Selectable};
 use crate::AppState;
 use crate::websocket::{extract_auth_from_protocols, validate_credentials};
