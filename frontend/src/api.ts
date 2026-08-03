@@ -252,7 +252,7 @@ export async function register(
   }
 
   const user = normalizeUser(
-    await requestJson<unknown>("/users/create", {
+    await requestJson<unknown>("/register", {
       method: "POST",
       body: JSON.stringify({ name: cleanName, email: cleanEmail, password }),
     }),

@@ -5,6 +5,8 @@ pub mod game_handler;
 pub(crate) mod users;
 pub(crate) mod discussions;
 pub(crate) mod mails;
+pub(crate) mod session;
+
 pub(crate) use database_initializer::DatabaseInitializer;
 use users::seed_users_in_db;
 use game_handler::seed_games_in_db;

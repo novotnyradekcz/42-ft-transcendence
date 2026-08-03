@@ -7,23 +7,27 @@ mod mails;
 mod model;
 mod router;
 mod schema;
-mod users;
 mod session;
+mod users;
 
-use crate::authenticator::{create_authenticator, create_authorizer, init_user_store};
-use model::database_initializer::inittialize_db;
-use crate::games::{Lobby, play_game_ws};
-use crate::model::DatabaseInitializer;
+use crate::authenticator::{
+    create_authenticator, create_authorizer, init_user_store, register_user,
+};
+use crate::games::{play_game_ws, Lobby};
 use crate::model::users::get_all_users_from_db;
+use crate::model::DatabaseInitializer;
 use crate::router::*;
+use crate::session::load_valid_blacklisted_tokens;
+use model::database_initializer::inittialize_db;
 //{index, show_users, login_user, user_detail, create_user, show_games, game_detail, show_discussions, discussion_detail, create_discussion, create_discussion_post, show_mail, mail_detail, create_mail};
 
-use actix_security::http::security::{Argon2PasswordEncoder, SessionFixationStrategy};
 use actix_security::http::security::middleware::SecurityTransform;
+use actix_security::http::security::{Argon2PasswordEncoder, SessionFixationStrategy};
 use actix_security::prelude::{JwtAuthenticator, JwtConfig, JwtTokenService, SessionConfig, User};
-use actix_web::{web, App, HttpServer, cookie};
 use actix_web::web::Data;
-use std::sync::{Arc, Mutex};
+use actix_web::{cookie, web, App, HttpServer};
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex, RwLock};
 
 #[allow(dead_code)]
 struct AppState {
@@ -33,6 +37,8 @@ struct AppState {
     session_config: SessionConfig,
     jwt_authenticator: JwtAuthenticator,
     jwt_token_service: JwtTokenService,
+    /// In-memory blacklist of invalidated token JTIs (or raw tokens when jti is absent).
+    token_blacklist: RwLock<HashSet<String>>,
 }
 
 #[actix_web::main]
@@ -43,20 +49,25 @@ async fn main() -> std::io::Result<()> {
     let lobby = Lobby::new();
     let encoder = Argon2PasswordEncoder::new();
     let dbusers = get_all_users_from_db(&mut db).expect("Users from DB failed.");
-    let users: Vec<User> = dbusers.iter().map(|user| {
-            User::with_encoded_password(
-                user.name.as_str(),
-                user.password.clone()).roles(&["USER".into()])
-        }).collect();
+    let users: Vec<User> = dbusers
+        .iter()
+        .map(|user| {
+            User::with_encoded_password(user.name.as_str(), user.password.clone())
+                .roles(&["USER".into()])
+        })
+        .collect();
     let jwt_config = JwtConfig::new(&db.server_environment.get_jwt_hash())
         .issuer("fttranscendence")
         .audience("api-users")
-        .expiration_hours(24);
-    let jwt_token_service = JwtTokenService::new(jwt_config.clone())
-        .refresh_expiration_days(7);
+        .expiration_secs(10 * 60);
+    let jwt_token_service = JwtTokenService::new(jwt_config.clone()).refresh_expiration_days(1);
     let jwt_authenticator = JwtAuthenticator::new(jwt_config);
-    let session_config = SessionConfig::new().user_key("user")
+    let session_config = SessionConfig::new()
+        .user_key("user")
         .fixation_strategy(SessionFixationStrategy::MigrateSession);
+    // Load non-expired blacklisted tokens from the database so the in-memory
+    // set is consistent with the DB after a restart.
+    let token_blacklist = RwLock::new(load_valid_blacklisted_tokens(&mut db));
     let state = Arc::new(AppState {
         database: Mutex::new(db),
         lobby,
@@ -64,6 +75,7 @@ async fn main() -> std::io::Result<()> {
         session_config,
         jwt_authenticator,
         jwt_token_service,
+        token_blacklist,
     });
 
     init_user_store(users);
@@ -71,6 +83,7 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(Data::new(state.clone()))
+            .service(create_user)
             .wrap(
                 SecurityTransform::new()
                     .config_authenticator(create_authenticator)
@@ -81,10 +94,9 @@ async fn main() -> std::io::Result<()> {
                 web::scope("/users")
                     .service(login_user)
                     .service(get_user)
-                    // .service(logout)
+                    .service(logout)
                     .service(show_users)
-                    .service(user_detail)
-                    .service(create_user),
+                    .service(user_detail),
             )
             .service(
                 web::scope("/games")

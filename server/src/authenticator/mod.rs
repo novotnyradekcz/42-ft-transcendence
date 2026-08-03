@@ -1,17 +1,15 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
-use actix_security::http::security::{Access, AuthorizationManager, RequestMatcherAuthorizer};
+use crate::AppState;
+use actix_security::http::security::{AuthorizationManager, RequestMatcherAuthorizer};
 use actix_security::prelude::{Argon2PasswordEncoder, Authenticator, PasswordEncoder, User};
 use actix_web::dev::ServiceRequest;
-use std::collections::HashMap;
-use std::fmt::Error;
-use std::io::ErrorKind;
-use std::sync::{Arc, OnceLock, RwLock, RwLockReadGuard};
-use actix_security::http::security::jwt::{Claims, JwtError};
 use actix_web::web::Data;
 use diesel::row::NamedRow;
 use serde::Serialize;
-use crate::AppState;
+use std::collections::HashMap;
+use std::fmt::Error;
+use std::sync::{Arc, OnceLock, RwLock, RwLockReadGuard};
 
 static USER_STORE: OnceLock<RwLock<HashMap<String, User>>> = OnceLock::new();
 
@@ -24,7 +22,12 @@ pub struct TokenResponse {
 }
 
 impl TokenResponse {
-    pub fn new(access_token: String, refresh_token: Option<String>, token_type: String, expires_in: u64) -> Self {
+    pub fn new(
+        access_token: String,
+        refresh_token: Option<String>,
+        token_type: String,
+        expires_in: u64,
+    ) -> Self {
         Self {
             access_token,
             refresh_token,
@@ -55,12 +58,9 @@ pub fn register_user(user: User) {
 
 pub fn get_user_from_store(name: &str) -> Result<User, Error> {
     if let Some(store) = USER_STORE.get() {
-        match store
-            .write()
-            .expect("USER_STORE RwLock poisoned")
-            .get(name) {
+        match store.write().expect("USER_STORE RwLock poisoned").get(name) {
             Some(user) => Ok(user.clone()),
-            None => Err(Error)
+            None => Err(Error),
         }
     } else {
         Err(Error)
@@ -86,26 +86,49 @@ impl Authenticator for AuthMiddleware {
     #[allow(deprecated)]
     fn get_user(&self, req: &ServiceRequest) -> Option<User> {
         let state = req.app_data::<Data<Arc<AppState>>>().unwrap();
-        let auth_header = req.headers().get("Authorization").and_then(|h| h.to_str().ok());
+        let auth_header = req
+            .headers()
+            .get("Authorization")
+            .and_then(|h| h.to_str().ok());
         let store = self.store.read().expect("USER_STORE RwLock poisoned");
         match auth_header {
-            Some(h) if h.starts_with("Bearer ") => { authenticate_jwt(&h[7..], store, state.get_ref()) }
-            Some(h) if h.starts_with("Basic ") => { authenticate_basic(&h[6..], store) }
-            _ => None
+            Some(h) if h.starts_with("Bearer ") => {
+                authenticate_jwt(&h[7..], store, state.get_ref())
+            }
+            Some(h) if h.starts_with("Basic ") => authenticate_basic(&h[6..], store),
+            _ => None,
         }
     }
 }
 
-fn authenticate_jwt(jwt_bearer: &str, store: RwLockReadGuard<HashMap<String, User>>, app_state: &Arc<AppState>) -> Option<User> {
+pub fn authenticate_jwt(
+    jwt_bearer: &str,
+    store: RwLockReadGuard<HashMap<String, User>>,
+    app_state: &Arc<AppState>,
+) -> Option<User> {
     match app_state.jwt_authenticator.validate_token(jwt_bearer) {
         Ok(token_data) => {
-            match store.get(token_data.claims.sub.as_str()) {
-                Some(user) => Some(user.clone()),
-                None => None
+            // Reject tokens that have been explicitly invalidated via logout.
+            let blacklist_key = token_data
+                .claims
+                .jti
+                .clone()
+                .unwrap_or_else(|| jwt_bearer.to_string());
+            if app_state
+                .token_blacklist
+                .read()
+                .expect("token_blacklist RwLock poisoned")
+                .contains(&blacklist_key)
+            {
+                return None;
             }
 
+            match store.get(token_data.claims.sub.as_str()) {
+                Some(user) => Some(user.clone()),
+                None => None,
+            }
         }
-        _ => None
+        _ => None,
     }
 }
 
@@ -142,7 +165,8 @@ pub fn create_authenticator() -> AuthMiddleware {
 // Factory function: URL-based authorization rules
 pub fn create_authorizer() -> RequestMatcherAuthorizer {
     AuthorizationManager::request_matcher()
-        .add_matcher("/users/login", Access::new().roles(vec!["USER"]))
+        .login_url("/register") // public — no auth required for registration
+        .http_basic()
     // add more matchers per route as needed
 }
 

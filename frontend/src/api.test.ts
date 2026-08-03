@@ -526,7 +526,7 @@ describe("register", () => {
     await register("alice", "alice@example.com", "s3cr3t");
 
     const [url, init] = fetch.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("/users/create");
+    expect(url).toContain("/register");
 
     const headers = init.headers as Record<string, string>;
     expect(headers["Authorization"]).toBeUndefined();
