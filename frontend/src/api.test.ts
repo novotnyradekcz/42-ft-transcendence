@@ -33,6 +33,13 @@ const BASE_USER = {
   friends: [2, 3],
 };
 
+const BASE_JWT_TOKEN = {
+  "access_token": "s3cr3ts3cr3ts3cr3ts3cr3t",
+  "refresh_token": "s3cr3ts3cr3ts3cr3t",
+  "token_type": "Bearer",
+  "expires_in": 600
+}
+
 function stubFetch(status: number, body: unknown) {
   const mock = vi.fn().mockResolvedValue({
     ok: status >= 200 && status < 300,
@@ -224,7 +231,16 @@ describe("login", () => {
   });
 
   it("happy path: sends Authorization header (no JSON body) and returns the user", async () => {
-    const fetch = stubFetch(200, BASE_USER);
+    const makeResponse = (body: unknown) => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: () => Promise.resolve(body),
+    });
+    const fetch = vi.fn()
+        .mockResolvedValueOnce(makeResponse(BASE_JWT_TOKEN))
+        .mockResolvedValueOnce(makeResponse(BASE_USER));
+    vi.stubGlobal("fetch", fetch);
 
     const user = await login("alice", "s3cr3t");
 
@@ -241,7 +257,16 @@ describe("login", () => {
   });
 
   it("happy path: trims leading/trailing whitespace from the name", async () => {
-    const fetch = stubFetch(200, BASE_USER);
+    const makeResponse = (body: unknown) => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: () => Promise.resolve(body),
+    });
+    const fetch = vi.fn()
+        .mockResolvedValueOnce(makeResponse(BASE_JWT_TOKEN))
+        .mockResolvedValueOnce(makeResponse(BASE_USER));
+    vi.stubGlobal("fetch", fetch);
 
     await login("  alice  ", "s3cr3t");
 
@@ -250,8 +275,36 @@ describe("login", () => {
     expect(headers["Authorization"]).toBe("Basic " + btoa("alice:s3cr3t"));
   });
 
+  it("happy path: login use Bearer token for auth headers", async () => {
+    const makeResponse = (body: unknown) => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: () => Promise.resolve(body),
+    });
+    const fetch = vi.fn()
+        .mockResolvedValueOnce(makeResponse(BASE_JWT_TOKEN))
+        .mockResolvedValueOnce(makeResponse(BASE_USER));
+    vi.stubGlobal("fetch", fetch);
+
+    await login("Bearer", "s3cr3ts3cr3ts3cr3ts3cr3t");
+
+    const [, init] = fetch.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers["Authorization"]).toBe("Bearer " + btoa("s3cr3ts3cr3ts3cr3ts3cr3t"));
+  });
+
   it("happy path: returned user has status online", async () => {
-    stubFetch(200, { ...BASE_USER, status: "offline" });
+    const makeResponse = (body: unknown) => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: () => Promise.resolve(body),
+    });
+    const fetch = vi.fn()
+        .mockResolvedValueOnce(makeResponse(BASE_JWT_TOKEN))
+        .mockResolvedValueOnce(makeResponse({...BASE_USER, status: "offline"}));
+    vi.stubGlobal("fetch", fetch);
     const user = await login("alice", "s3cr3t");
     expect(user.status).toBe("online");
   });
@@ -294,7 +347,16 @@ describe("logout", () => {
   });
 
   it("happy path: clears credentials — subsequent requests carry no Authorization header", async () => {
-    stubFetch(200, BASE_USER);
+    const makeResponse = (body: unknown) => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: () => Promise.resolve(body),
+    });
+    const fetch = vi.fn()
+        .mockResolvedValueOnce(makeResponse(BASE_JWT_TOKEN))
+        .mockResolvedValueOnce(makeResponse(BASE_USER));
+    vi.stubGlobal("fetch", fetch);
     await login("alice", "s3cr3t");
     logout();
 
@@ -317,7 +379,16 @@ describe("authenticated requests after login", () => {
   });
 
   it("attaches stored credentials to every subsequent request", async () => {
-    stubFetch(200, BASE_USER);
+    const makeResponse = (body: unknown) => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: () => Promise.resolve(body),
+    });
+    const fetch = vi.fn()
+        .mockResolvedValueOnce(makeResponse(BASE_JWT_TOKEN))
+        .mockResolvedValueOnce(makeResponse(BASE_USER));
+    vi.stubGlobal("fetch", fetch);
     await login("alice", "s3cr3t");
 
     const listFetch = stubFetch(200, [BASE_USER]);

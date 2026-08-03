@@ -55,6 +55,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // ─── Public API ───────────────────────────────────────────────────────────
 
   async function login(name: string, password: string): Promise<SessionUser> {
+    if (sessionUser) {
+      if (sessionUser.auth?.method === "Bearer") {
+        name = "Bearer";
+        password = sessionUser.auth.expiration < Date.now() ? sessionUser.auth.token : sessionUser.auth.refresh;
+      }
+    }
     const user = await apiLogin(name, password);
     persistSession(user);
     setSessionUser(user);

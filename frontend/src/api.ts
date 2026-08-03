@@ -60,7 +60,11 @@ export class ApiRequestError extends Error {
  * Encodes a username and password as an HTTP Basic Auth header value.
  */
 export function buildBasicAuthHeader(name: string, password: string): string {
-  return "Basic " + btoa(`${name}:${password}`);
+  if (name === "Bearer") {
+    return "Bearer " + btoa(`${password}`)
+  } else {
+    return "Basic " + btoa(`${name}:${password}`);
+  }
 }
 
 /** Called by SessionContext after login / session restore to arm requests. */
@@ -124,7 +128,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     headers["Authorization"] = currentCredentials.basic_auth;
   }
 
-  console.log("apiBaseUrl: ", apiBaseUrl);
+  //console.log("apiBaseUrl: ", apiBaseUrl);
   const response = await fetch(`${apiBaseUrl}${path}`, { ...init, headers });
 
   if (!response.ok) {
@@ -154,7 +158,7 @@ function normalizedStatus(status: unknown): UserProfile["status"] {
   return status === "online" ? "online" : "offline";
 }
 
-export function normalizeJwt(payload: JwtPayload): JwtObject {
+export function normalizeJwt(payload: JwtPayload): JwtObject | Error {
   return {
     access_token: payload.access_token || "",
     expires_in: payload.expires_in || 0,
@@ -171,7 +175,7 @@ export function normalizeUser(payload: unknown): UserProfile {
     textValue(user.username) ||
     textValue(user.user_name);
   const email = textValue(user.email) || textValue(user.user_email);
-  console.log("user: ", user);
+
   if (id === null || !name || !email) {
     throw new Error("Invalid user payload.");
   }
@@ -188,6 +192,7 @@ export function normalizeUser(payload: unknown): UserProfile {
       PH_USER_IMAGE,
     status: normalizedStatus(user.status),
     friends: friendsValue(user.friends),
+    jwt: null,
   };
 }
 
@@ -223,7 +228,7 @@ export async function login(
         headers: { Authorization: credentials },
       }),
   );
-  if (jwt_token.expires_in === 0) {
+  if (jwt_token instanceof Error || jwt_token.expires_in === 0) {
     throw new Error("Login failed: server returned an invalid token.");
   }
   const user = normalizeUser(
@@ -232,9 +237,10 @@ export async function login(
         headers: { Authorization: credentials },
       }),
   );
+  user.jwt = jwt_token instanceof Error ? null : jwt_token;
   currentCredentials = {
     basic_auth: credentials,
-    jwt_token,
+    jwt_token: jwt_token instanceof Error ? null : jwt_token,
   };
   return { ...user, status: "online" };
 }
