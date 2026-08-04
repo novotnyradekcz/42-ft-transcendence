@@ -124,7 +124,9 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     ...(init?.headers as Record<string, string>),
   };
 
-  if (currentCredentials?.basic_auth && !headers["Authorization"]) {
+  if (currentCredentials?.jwt_token) {
+    headers["Authorization"] = "Bearer " + btoa(`${currentCredentials.jwt_token.access_token}`);
+  } else if (currentCredentials?.basic_auth && !headers["Authorization"]) {
     headers["Authorization"] = currentCredentials.basic_auth;
   }
 
@@ -192,7 +194,6 @@ export function normalizeUser(payload: unknown): UserProfile {
       PH_USER_IMAGE,
     status: normalizedStatus(user.status),
     friends: friendsValue(user.friends),
-    jwt: null,
   };
 }
 
@@ -231,13 +232,12 @@ export async function login(
   if (jwt_token instanceof Error || jwt_token.expires_in === 0) {
     throw new Error("Login failed: server returned an invalid token.");
   }
-  const user = normalizeUser(
+  const user: UserProfile = {...normalizeUser(
       await requestJson<unknown>("/users/me", {
         method: "GET",
         headers: { Authorization: credentials },
       }),
-  );
-  user.jwt = jwt_token instanceof Error ? null : jwt_token;
+  )};
   currentCredentials = {
     basic_auth: credentials,
     jwt_token: jwt_token instanceof Error ? null : jwt_token,
@@ -269,9 +269,20 @@ export async function register(
 }
 
 /** Clears the in-memory credentials. SessionContext handles sessionStorage. */
-export function logout(): void {
-  currentCredentials = null;
-  knownUsers = [];
+export async function logout(): Promise<boolean> {
+  const body = currentCredentials?.jwt_token ? JSON.stringify({ refresh_token: currentCredentials.jwt_token.refresh_token }) : null;
+  const result = await requestJson<{ message: string }>("/users/logout", {
+    method: "POST",
+    body: body
+  })
+  if (result && typeof (result) === "object" && result.message === "Logged out successfully") {
+    currentCredentials = null;
+    knownUsers = [];
+    return true;
+  } else {
+    return false
+  }
+
 }
 
 // ─── Users ───────────────────────────────────────────────────────────────────

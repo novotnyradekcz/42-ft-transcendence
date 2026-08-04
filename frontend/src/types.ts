@@ -23,7 +23,6 @@ export type UserProfile = {
   avatarUrl: string;
   status: "online" | "offline";
   friends: number[];
-  jwt: JwtObject | null;
 };
 
 export type JwtObject = {

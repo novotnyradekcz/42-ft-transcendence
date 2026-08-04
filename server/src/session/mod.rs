@@ -42,7 +42,15 @@ pub fn extract_access_claims(
         _ => return Err(Error::other("Missing or invalid Authorization header")),
     };
 
-    match pool.jwt_authenticator.validate_token(raw_access) {
+    let decoded = match base64::decode(raw_access).ok() {
+        Some(s) => s,
+        None => return Err(Error::other("Missing or invalid Authorization header"))
+    };
+    let creds = match std::str::from_utf8(&decoded.as_slice()).ok() {
+        Some(s) => s,
+        None => return Err(Error::other("Missing or invalid Authorization header"))
+    };
+    match pool.jwt_authenticator.validate_token(creds) {
         Ok(token_data) => Ok(Some((token_data.claims, raw_access.to_string()))),
         Err(_) => Ok(None),
     }

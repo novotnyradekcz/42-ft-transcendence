@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import type { SessionUser, UserProfile } from "../../types";
+import type {SessionUser, UserProfile} from "../../types";
 import { CREDENTIALS_KEY, SESSION_USER_KEY } from "../../constants";
 import {
   getCredentials,
@@ -55,12 +55,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // ─── Public API ───────────────────────────────────────────────────────────
 
   async function login(name: string, password: string): Promise<SessionUser> {
-    if (sessionUser) {
-      if (sessionUser.auth?.method === "Bearer") {
-        name = "Bearer";
-        password = sessionUser.auth.expiration < Date.now() ? sessionUser.auth.token : sessionUser.auth.refresh;
-      }
-    }
     const user = await apiLogin(name, password);
     persistSession(user);
     setSessionUser(user);
@@ -82,11 +76,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return user;
   }
 
-  function logout(): void {
-    apiLogout(); // clears currentCredentials + knownUsers in api module
-    clearSession();
-    setSessionUser(null);
-    setKnownUsers([]);
+  async function logout(): Promise<void> {
+    if (await apiLogout()) // clears currentCredentials + knownUsers in api module
+    {
+      clearSession();
+      setSessionUser(null);
+      setKnownUsers([]);
+    }
   }
 
   function updateSessionUser(user: SessionUser): void {

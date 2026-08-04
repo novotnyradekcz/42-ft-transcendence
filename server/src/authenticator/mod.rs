@@ -93,9 +93,15 @@ impl Authenticator for AuthMiddleware {
         let store = self.store.read().expect("USER_STORE RwLock poisoned");
         match auth_header {
             Some(h) if h.starts_with("Bearer ") => {
-                authenticate_jwt(&h[7..], store, state.get_ref())
-            }
-            Some(h) if h.starts_with("Basic ") => authenticate_basic(&h[6..], store),
+                let result = authenticate_jwt(&h[7..], store, state.get_ref());
+                println!("We authenticate with Bearer token {:?}", result);
+                result
+            },
+            Some(h) if h.starts_with("Basic ") => {
+                let result = authenticate_basic(&h[6..], store);
+                println!("We authenticate with Basic {:?}", result);
+                result
+            },
             _ => None,
         }
     }
@@ -106,14 +112,16 @@ pub fn authenticate_jwt(
     store: RwLockReadGuard<HashMap<String, User>>,
     app_state: &Arc<AppState>,
 ) -> Option<User> {
-    match app_state.jwt_authenticator.validate_token(jwt_bearer) {
+    let decoded = base64::decode(jwt_bearer).ok()?;
+    let creds = std::str::from_utf8(&decoded.as_slice()).ok()?;
+    match app_state.jwt_authenticator.validate_token(creds) {
         Ok(token_data) => {
             // Reject tokens that have been explicitly invalidated via logout.
             let blacklist_key = token_data
                 .claims
                 .jti
                 .clone()
-                .unwrap_or_else(|| jwt_bearer.to_string());
+                .unwrap_or_else(|| creds.to_string());
             if app_state
                 .token_blacklist
                 .read()
@@ -140,10 +148,10 @@ fn authenticate_basic(b64: &str, store: RwLockReadGuard<HashMap<String, User>>) 
 
     // Split at first ':' only — passwords may themselves contain ':'
     let (username, raw_password) = creds.split_once(':')?;
-    println!("User request: {:#?} {:?}", &username, &raw_password);
+    //println!("User request: {:#?} {:?}", &username, &raw_password);
 
     let user = store.get(username)?;
-    println!("User db: {:#?}", &user);
+    //println!("User db: {:#?}", &user);
     if encoder.matches(raw_password, user.get_password()) {
         Some(user.clone())
     } else {
