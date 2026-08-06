@@ -22,6 +22,7 @@ use diesel::prelude::*;
 use diesel::row::NamedRow;
 use serde_json;
 use std::sync::Arc;
+use diesel::dsl::now;
 
 pub async fn index() -> HttpResponse {
     HttpResponse::Ok().body("Welcome")
@@ -161,6 +162,33 @@ pub async fn logout(
         },
         Ok(None) => HttpResponse::Unauthorized().json(serde_json::json!({
             "message": "Invalid or expired access token",
+        }))
+    }
+}
+
+#[post("/users/refresh_token")]
+pub async fn refresh_token(
+    pool: web::Data<Arc<AppState>>,
+    body: web::Json<serde_json::Value>,
+) -> impl Responder {
+    let refresh_token = match body.get("refresh_token").and_then(|v| v.as_str()) {
+        Some(t) => t,
+        None => return HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "refresh_token is missing"
+        }))
+    };
+
+    match pool.jwt_token_service.refresh_tokens(refresh_token) {
+        Ok(pair) => {
+            HttpResponse::Ok().json(TokenResponse::new(
+                pair.access_token,
+                pair.refresh_token,
+                pair.token_type,
+                pair.expires_in
+            ))
+        },
+        Err(e) => HttpResponse::Unauthorized().json(serde_json::json!({
+            "error": format!("Invalid refresh token: {}", e)
         }))
     }
 }
@@ -501,7 +529,7 @@ pub async fn game_detail(
 }
 
 #[cfg(test)]
-mod logout_tests {
+mod router_tests {
     use super::*;
     use crate::games::Lobby;
     use crate::model::database_initializer::inittialize_db;
@@ -543,6 +571,40 @@ mod logout_tests {
             .expect("Token pair generation failed in test");
         let refresh = pair.refresh_token.expect("Expected a refresh token");
         (pair.access_token, refresh)
+    }
+
+    #[actix_web::test]
+    async fn refresh_token_works() {
+        let state = make_state();
+        let (access, refresh) = make_token_pair(&state);
+        let app = test::init_service(
+            App::new()
+                .app_data(actix_web::web::Data::new(state.clone()))
+                .service(refresh_token),
+        )
+            .await;
+
+        let req = test::TestRequest::post()
+            .uri("/users/refresh_token")
+            .insert_header(("Authorization", format!("Bearer {}", access)))
+            .insert_header(("Content-Type", "application/json"))
+            .set_payload(format!(r#"{{"refresh_token":"{}"}}"#, refresh))
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(state.token_blacklist.read().unwrap().len(), 0);
+        let body = test::read_body(resp).await;
+        let json: serde_json::Value =
+            serde_json::from_slice(&body).expect("Response is not valid JSON");
+        let obj = json.as_object().expect("Response body is not a JSON object");
+        assert_eq!(obj.len(), 4, "Expected exactly 4 fields in the response body");
+        assert!(obj.contains_key("access_token"),  "Missing field: access_token");
+        assert!(obj.contains_key("refresh_token"), "Missing field: refresh_token");
+        assert!(obj.contains_key("expires_in"),    "Missing field: expires_in");
+        assert!(obj.contains_key("token_type"),    "Missing field: token_type");
+
     }
 
     // ── Happy paths ────────────────────────────────────────────────────────
