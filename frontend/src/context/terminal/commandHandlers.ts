@@ -129,6 +129,24 @@ export function createCommandHandlers(
       handleWriteCommand();
       return;
     }
+    if (command === "upload") {
+      if (!sessionUser) {
+        addLine(t("login first to upload games."));
+        setAuthFlow({ mode: "login", step: "name", name: "" });
+        setAuthError("");
+        goTo(PAGE_PATHS.login);
+        return;
+      }
+      if (page !== "games") {
+        goTo(PAGE_PATHS.games);
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent("trigger-game-upload"));
+        }, 0);
+        return;
+      }
+      window.dispatchEvent(new CustomEvent("trigger-game-upload"));
+      return;
+    }
     if (command === "enter") {
       await handleEnterCommand(args[0]);
       return;

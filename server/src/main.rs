@@ -13,12 +13,12 @@ mod websocket;
 
 
 use crate::authenticator::{create_authenticator, create_authorizer, init_user_store};
-use model::database_initializer::inittialize_db;
+use model::database_initializer::initialize_db;
 use crate::games::{Lobby, play_game_ws};
 use crate::model::DatabaseInitializer;
 use crate::model::users::get_all_users_from_db;
 use crate::status::{StatusRegistry, status_ws};
-use crate::router::{index, show_users, login_user, user_detail, create_user, show_games, game_detail, show_discussions, discussion_detail, create_discussion, create_discussion_post, show_mail, mail_detail, create_mail};
+use crate::router::{index, show_users, login_user, user_detail, create_user, show_games, game_detail, create_game, show_discussions, discussion_detail, create_discussion, create_discussion_post, show_mail, mail_detail, create_mail};
 
 use actix_security::http::security::{Argon2PasswordEncoder, SessionFixationStrategy};
 use actix_security::http::security::middleware::SecurityTransform;
@@ -43,7 +43,7 @@ struct AppState {
 async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::default().default_filter_or("debug"));
 
-    let mut db = inittialize_db();
+    let mut db = initialize_db();
     let lobby = Lobby::new();
     let encoder = Argon2PasswordEncoder::new();
     let dbusers = get_all_users_from_db(&mut db).expect("Users from DB failed.");
@@ -102,7 +102,8 @@ async fn main() -> std::io::Result<()> {
                     .service(
                         web::scope("/games")
                             .service(show_games)
-                            .service(game_detail),
+                            .service(game_detail)
+                            .service(create_game),
                     )
                     .service(
                         web::scope("/discussions")

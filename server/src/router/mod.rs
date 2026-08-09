@@ -3,19 +3,18 @@
 use crate::authenticator::register_user;
 use crate::discussions::{CreateDiscussion, CreatePost};
 use crate::mails::{CreateMail, MailQuery};
-use crate::model::database_initializer::{DatabaseInitializer, connection};
 use crate::model::users::{CreateUserError, DbUser, login_user_in_db};
 use crate::model::users::{create_user_in_db, get_user_in_db, list_users_in_db};
 use crate::users::CreateUser;
-use crate::games::GameInfo;
+
 use actix_security::http::security::{Argon2PasswordEncoder, PasswordEncoder, User};
 use actix_security::prelude::AuthenticatedUser;
 use actix_web::{get, HttpResponse, post, Responder, web};
 use std::sync::Arc;
-use actix_web::dev::ServiceRequest;
-use diesel::prelude::*;
 use serde_json;
 use crate::AppState;
+use crate::games::CreateGame;
+use crate::model::games::{create_game_in_db, get_game_in_db, list_games_in_db};
 use crate::model::{discussions, mails, users};
 
 pub async fn index() -> HttpResponse {
@@ -61,7 +60,7 @@ pub async fn login_user(pool: web::Data<Arc<AppState>>, user: AuthenticatedUser)
             "".to_string(),
             vec![]));
     match logged_from_db {
-        Ok(Some(dbUser)) => HttpResponse::Ok().json(serde_json::json!(dbUser)),
+        Ok(Some(db_user)) => HttpResponse::Ok().json(serde_json::json!(db_user)),
         Ok(None) => HttpResponse::Ok().json(serde_json::json!([])),
         Err(_) => todo!("Error is not handled")
     }
@@ -302,31 +301,6 @@ pub async fn create_mail(
     }
 }
 
-pub fn list_games_in_db(
-    db: &mut DatabaseInitializer,
-) -> Result<Vec<GameInfo>, diesel::result::Error> {
-    use crate::schema::ftt_games::dsl as games;
-
-    let conn = connection(db);
-    games::ftt_games
-        .order(games::id.asc())
-        .select(GameInfo::as_select())
-        .load::<GameInfo>(conn)
-}
-
-pub fn get_game_in_db(
-    db: &mut DatabaseInitializer,
-    game_id: i32,
-) -> Result<Option<GameInfo>, diesel::result::Error> {
-    use crate::schema::ftt_games::dsl as games;
-
-    let conn = connection(db);
-    games::ftt_games
-        .filter(games::id.eq(game_id))
-        .select(GameInfo::as_select())
-        .first::<GameInfo>(conn)
-        .optional()
-}
 
 #[get("/show")]
 pub async fn show_games(pool: web::Data<Arc<AppState>>) -> impl Responder {
@@ -354,6 +328,67 @@ pub async fn game_detail(
         })),
         Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
             "message": format!("Could not load game {}: {}", game_id, err),
+        })),
+    }
+}
+
+#[post("/create")]
+pub async fn create_game(
+    pool: web::Data<Arc<AppState>>,
+    user: AuthenticatedUser,
+    body: web::Json<CreateGame>,
+) -> impl Responder {
+    let name = body.name.trim();
+    let script_body = body.body.as_str();
+    let script_body_trimmed = script_body.trim();
+
+    if name.is_empty() || name.len() > 100 {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "message": "Game name must be between 1 and 100 characters.",
+        }));
+    }
+
+    if script_body_trimmed.is_empty() {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "message": "Game script body cannot be empty.",
+        }));
+    }
+
+    if script_body.len() > 100 * 1024 {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "message": "Game script body exceeds maximum allowed size of 100 KB.",
+        }));
+    }
+
+    let username = user.into_inner().get_username().to_string();
+
+    let mut db = match pool.database.lock() {
+        Ok(db) => db,
+        Err(_) => {
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Database lock poisoned.",
+            }));
+        }
+    };
+
+    let author_id = match users::find_user_id_by_name(&mut db, &username) {
+        Ok(Some(id)) => id,
+        Ok(None) => {
+            return HttpResponse::Unauthorized().json(serde_json::json!({
+                "message": "Authenticated user not found in database.",
+            }))
+        }
+        Err(err) => {
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": format!("Could not lookup user: {}", err),
+            }))
+        }
+    };
+
+    match create_game_in_db(&mut db, author_id, name, script_body) {
+        Ok(game) => HttpResponse::Created().json(game),
+        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "message": format!("Could not create game: {}", err),
         })),
     }
 }

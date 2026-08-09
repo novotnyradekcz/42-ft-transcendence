@@ -23,6 +23,8 @@ const RECONNECT_BASE_DELAY_MS = 500;
 
 /**
  * A custom React hook that abstracts and manages standard WebSocket connections.
+ * Appends the provided `queryParams` to the URL query string, and (if present)
+ * forwards the user's Basic Auth credentials via a WebSocket subprotocol.
  * Credentials are passed as a hex-encoded `auth-` subprotocol, since browsers
  * cannot set an Authorization header on a WebSocket handshake.
  */

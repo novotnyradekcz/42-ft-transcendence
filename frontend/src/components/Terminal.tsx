@@ -5,7 +5,7 @@ import { useSession } from "../context/session/useSession";
 import { useTerminal } from "../context/terminal/useTerminal";
 import { useTranslation } from "../context/language/i18n";
 import { pageFromPath } from "../router";
-import GamePlayPage from "../GamePlayPage";
+import GamePlayPage from "../pages/GamePlayPage";
 import DiscussionDetailPage from "../pages/DiscussionDetailPage";
 import DiscussionsPage from "../pages/DiscussionsPage";
 import FriendsPage from "../pages/FriendsPage";

@@ -2,6 +2,8 @@
 
 use std::sync::Arc;
 use actix_web::{Error, error::ErrorInternalServerError};
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use actix_security::http::security::{Argon2PasswordEncoder, PasswordEncoder};
 use crate::AppState;
 use crate::model::database_initializer::connection;
@@ -15,7 +17,7 @@ pub fn validate_credentials(
     auth: &str,
 ) -> Result<DbUser, Error> {
     let validated = if let Some(b64) = auth.strip_prefix("Basic ") {
-        if let Ok(decoded) = base64::decode(b64) {
+        if let Ok(decoded) = STANDARD.decode(b64) {
             if let Ok(creds) = std::str::from_utf8(&decoded) {
                 if let Some((username, raw_password)) = creds.split_once(':') {
                     let user_match = {

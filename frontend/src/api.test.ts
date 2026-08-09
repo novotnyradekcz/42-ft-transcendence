@@ -9,6 +9,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildBasicAuthHeader,
+  createGame,
   listFriends,
   listUsers,
   login,
@@ -481,5 +482,33 @@ describe("register", () => {
     await expect(
       register("alice", "alice@example.com", "s3cr3t"),
     ).rejects.toThrow("400");
+  });
+});
+
+describe("createGame", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("happy path: sends POST request to /games/create and returns created game", async () => {
+    const mockGame = {
+      id: 5,
+      author: 2,
+      name: "Custom Pong",
+      body: "print('pong')",
+    };
+    const mockFetch = stubFetch(201, mockGame);
+
+    const result = await createGame("Custom Pong", "print('pong')");
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/games/create");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({
+      name: "Custom Pong",
+      body: "print('pong')",
+    });
+    expect(result).toEqual(mockGame);
   });
 });

@@ -80,6 +80,12 @@ export const commandDefinitions: CommandDefinition[] = [
     description: "Open the games section.",
   },
   {
+    command: "upload",
+    aliases: ["up", "ul"],
+    usage: "upload",
+    description: "Upload a new custom game (.lua file).",
+  },
+  {
     command: "list",
     aliases: ["li"],
     usage: "list",
@@ -144,7 +150,7 @@ const pageCommands: Record<Page, string[]> = {
   "discussion-detail": ["write", "discussions", "menu", "back"],
   mail: ["list", "enter <number>", "write", "menu", "back"],
   "mail-detail": ["mail", "menu", "back"],
-  games: ["list", "enter <number>", "menu", "back"],
+  games: ["list", "enter <number>", "upload", "menu", "back"],
   "game-play": ["back"],
 };
 
