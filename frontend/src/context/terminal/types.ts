@@ -19,6 +19,8 @@ export interface TerminalContextValue {
   addLine: (line: string) => void;
   /** Incremented whenever the terminal context wants the input to be focused. */
   focusInputSignal: number;
+  /** Whether the activity log is rendered below the page content. Off by default. */
+  logVisible: boolean;
 
   authFlow: AuthFlow;
   authError: string;

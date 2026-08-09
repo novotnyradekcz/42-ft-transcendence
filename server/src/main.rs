@@ -7,6 +7,7 @@ mod mails;
 mod model;
 mod router;
 mod schema;
+mod status;
 mod users;
 mod websocket;
 
@@ -16,6 +17,7 @@ use model::database_initializer::inittialize_db;
 use crate::games::{Lobby, play_game_ws};
 use crate::model::DatabaseInitializer;
 use crate::model::users::get_all_users_from_db;
+use crate::status::{StatusRegistry, status_ws};
 use crate::router::{index, show_users, login_user, user_detail, create_user, show_games, game_detail, show_discussions, discussion_detail, create_discussion, create_discussion_post, show_mail, mail_detail, create_mail};
 
 use actix_security::http::security::{Argon2PasswordEncoder, SessionFixationStrategy};
@@ -30,6 +32,7 @@ use std::sync::{Arc, Mutex};
 struct AppState {
     database: Mutex<DatabaseInitializer>,
     lobby: Mutex<Lobby>,
+    status: Mutex<StatusRegistry>,
     encoder: Argon2PasswordEncoder,
     session_config: SessionConfig,
     jwt_authenticator: Option<JwtAuthenticator>,
@@ -52,6 +55,7 @@ async fn main() -> std::io::Result<()> {
     let state = Arc::new(AppState {
         database: Mutex::new(db),
         lobby: Mutex::new(lobby),
+        status: Mutex::new(StatusRegistry::new()),
         encoder,
         session_config,
         jwt_authenticator: None,
@@ -64,9 +68,16 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(Data::new(state.clone()))
+            // WebSocket scopes sit outside SecurityTransform: a browser cannot set an
+            // Authorization header on a WS handshake, so the middleware would redirect
+            // them. Both handlers authenticate themselves via the auth subprotocol.
             .service(
                 web::scope("/games/play")
                     .service(play_game_ws),
+            )
+            .service(
+                web::scope("/status")
+                    .service(status_ws),
             )
             .service(
                 web::scope("")

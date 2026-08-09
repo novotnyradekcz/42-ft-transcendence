@@ -47,7 +47,6 @@ export const cs: Record<string, string> = {
   From: "Od",
   To: "Komu",
   Title: "Předmět",
-  Avatar: "Avatar",
   "Avatar URL": "URL avataru",
   "aliases: {aliases}": "aliasy: {aliases}",
   "add friend": "přidat přítele",
@@ -58,9 +57,7 @@ export const cs: Record<string, string> = {
   "by {name}": "od {name}",
   "save profile": "uložit profil",
   "saved.": "uloženo.",
-  "avatar saved.": "avatar uložen.",
   "could not save profile.": "profil se nepodařilo uložit.",
-  "could not save avatar.": "avatar se nepodařilo uložit.",
   "Login happens in the command input. Current prompt: {step}.":
     "Přihlášení probíhá v příkazovém řádku. Aktuální krok: {step}.",
   "Press Ctrl+C or Esc to quit login.":
@@ -174,7 +171,6 @@ export const cs: Record<string, string> = {
   "login/register cancelled.": "přihlášení/registrace zrušeno.",
   "write cancelled.": "psaní zrušeno.",
   "profile updated.": "profil aktualizován.",
-  "avatar uploaded.": "avatar nahrán.",
   "Recipient name does not exist.": "Jméno příjemce neexistuje.",
   "Could not send mail.": "Poštu se nepodařilo odeslat.",
   "Could not write discussion.": "Diskuzi se nepodařilo vytvořit.",

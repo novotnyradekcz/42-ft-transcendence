@@ -54,6 +54,8 @@ export interface TerminalDeps {
   setWriteFlow: Dispatch<SetStateAction<WriteFlow>>;
   setWriteError: Dispatch<SetStateAction<string>>;
   setCommandHelpOpen: Dispatch<SetStateAction<boolean>>;
+  logVisible: boolean;
+  setLogVisible: Dispatch<SetStateAction<boolean>>;
 
   // helpers
   addLine: (line: string) => void;
