@@ -80,6 +80,9 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   const [writeFlow, setWriteFlow] = useState<WriteFlow>(null);
   const [writeError, setWriteError] = useState("");
   const [commandHelpOpen, setCommandHelpOpen] = useState(false);
+  // The log starts hidden; the footer status line carries the newest message so
+  // commands still give feedback without it. Toggled by the `log` command.
+  const [logVisible, setLogVisible] = useState(false);
 
   const availableCommands = useMemo(
     () => getAvailableCommands(page, Boolean(sessionUser)),
@@ -137,6 +140,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     setWriteFlow,
     setWriteError,
     setCommandHelpOpen,
+    logVisible,
+    setLogVisible,
     addLine,
     clearWriteModes,
     goTo,
@@ -244,6 +249,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
         terminalLines,
         addLine,
         focusInputSignal,
+        logVisible,
         authFlow,
         authError,
         writeFlow,

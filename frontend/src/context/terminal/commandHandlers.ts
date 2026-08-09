@@ -36,6 +36,8 @@ export function createCommandHandlers(
     setAuthFlow,
     setAuthError,
     setCommandHelpOpen,
+    logVisible,
+    setLogVisible,
     addLine,
     t,
     setLang,
@@ -81,6 +83,13 @@ export function createCommandHandlers(
       } else {
         addLine(t("Usage: lang <en|cs|sl>"));
       }
+      return;
+    }
+
+    if (command === "log") {
+      const nextVisible = !logVisible;
+      setLogVisible(nextVisible);
+      addLine(nextVisible ? t("Log shown.") : t("Log hidden."));
       return;
     }
 

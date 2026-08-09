@@ -115,6 +115,12 @@ export const commandDefinitions: CommandDefinition[] = [
     usage: "lang en",
     description: "Switch the interface language.",
   },
+  {
+    command: "log",
+    aliases: ["output"],
+    usage: "log",
+    description: "Show or hide the activity log below the page content.",
+  },
 ];
 
 const pageCommands: Record<Page, string[]> = {
@@ -131,6 +137,7 @@ const pageCommands: Record<Page, string[]> = {
     "mail",
     "games",
     "lang <code>",
+    "log",
   ],
   help: ["menu", "back"],
   users: ["list", "enter <number>", "addfriend <number>", "menu", "back"],

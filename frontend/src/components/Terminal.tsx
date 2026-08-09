@@ -22,7 +22,7 @@ import UsersPage from "../pages/UsersPage";
 import WelcomePage from "../pages/WelcomePage";
 export default function Terminal() {
   const commandInputRef = useRef<HTMLInputElement>(null);
-  const outputRef = useRef<HTMLElement>(null);
+  const bodyRef = useRef<HTMLElement>(null);
 
   const location = useLocation();
   const page = pageFromPath(location.pathname);
@@ -37,6 +37,7 @@ export default function Terminal() {
     setCommandInput,
     terminalLines,
     focusInputSignal,
+    logVisible,
     authFlow,
     writeFlow,
     commandHelpOpen,
@@ -60,12 +61,13 @@ export default function Terminal() {
     }
   }, [focusInputSignal]);
 
-  // Scroll the output panel to the bottom whenever new lines arrive.
+  // The log now sits at the bottom of the scrolling body, so keep the newest
+  // lines in view by scrolling the body rather than a dedicated output pane.
   useEffect(() => {
-    if (outputRef.current) {
-      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    if (logVisible && bodyRef.current) {
+      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
     }
-  }, [terminalLines]);
+  }, [terminalLines, logVisible]);
 
   function handleCommandAreaClick(event: MouseEvent<HTMLElement>) {
     const target = event.target as HTMLElement;
@@ -80,32 +82,17 @@ export default function Terminal() {
         className="terminal-window"
         aria-label="ft_transcendence terminal"
       >
-        {/* ── Header ─────────────────────────────────────────────────────── */}
+        {/* ── Header (pinned) ────────────────────────────────────────────── */}
         <header className="terminal-header">
           <pre className="bbs-banner" aria-label="ft_transcendence banner">
             {String.raw`+--------------------------------------------------+
 |              FT_TRANSCENDENCE BBS               |
 +--------------------------------------------------+`}
           </pre>
-          <p className="terminal-kicker">bbs://ft_transcendence</p>
-          <p className="terminal-session">
-            {page === "welcome"
-              ? t("connection waiting")
-              : t("connected as {name}", {
-                  name: sessionUser ? sessionUser.name : t("guest"),
-                })}
-          </p>
         </header>
 
-        {/* ── Output log ─────────────────────────────────────────────────── */}
-        <section className="terminal-output" aria-live="polite" ref={outputRef}>
-          {terminalLines.map((line, index) => (
-            <p key={`${line}-${index}`}>{line}</p>
-          ))}
-        </section>
-
-        {/* ── Page content (routed) ───────────────────────────────────────── */}
-        <section className="terminal-body">
+        {/* ── Page content (routed) — the only scrolling region ───────────── */}
+        <section className="terminal-body" ref={bodyRef}>
           <Routes>
             <Route path="/" element={<WelcomePage />} />
             <Route path="/menu" element={<HomePage />} />
@@ -132,13 +119,29 @@ export default function Terminal() {
               element={<GamePlayPage game={selectedGame} />}
             />
           </Routes>
+
+          {/* Activity log — hidden by default, toggled by the `log` command. */}
+          {logVisible && (
+            <section className="terminal-output" aria-live="polite">
+              <pre className="ascii-rule" aria-hidden="true">
+----------------------------------------------------
+              </pre>
+              {terminalLines.map((line, index) => (
+                <p key={`${line}-${index}`}>{line}</p>
+              ))}
+            </section>
+          )}
         </section>
 
-        {/* ── Footer / command input ──────────────────────────────────────── */}
+        {/* ── Footer / command input (pinned) ─────────────────────────────── */}
         <footer className="terminal-footer">
           <pre className="ascii-rule" aria-hidden="true">
             ----------------------------------------------------
           </pre>
+          {/* Newest log line, so commands still report back while the log is hidden. */}
+          <p className="terminal-status" aria-live="polite">
+            {terminalLines[terminalLines.length - 1]}
+          </p>
           <p>
             {t("available:")} <span>{availableCommands.join(" | ")}</span>
           </p>

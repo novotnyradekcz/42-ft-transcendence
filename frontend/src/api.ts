@@ -277,38 +277,6 @@ export async function updateCurrentUserProfile(
   return { ...user, status: "online" };
 }
 
-export async function uploadAvatar(file: File): Promise<string> {
-  if (!file.type.startsWith("image/")) {
-    throw new Error("Avatar must be an image file.");
-  }
-
-  const params = new URLSearchParams({ filename: file.name || "avatar" });
-  const uploadHeaders: Record<string, string> = {
-    "Content-Type": file.type,
-  };
-
-  if (currentCredentials) {
-    uploadHeaders["Authorization"] = currentCredentials;
-  }
-
-  const response = await fetch(`/avatar-upload?${params.toString()}`, {
-    method: "POST",
-    headers: uploadHeaders,
-    body: file,
-  });
-
-  if (!response.ok) {
-    throw new Error(`Avatar upload failed with status ${response.status}.`);
-  }
-
-  const payload = (await response.json()) as { avatarUrl?: string };
-  if (!payload.avatarUrl) {
-    throw new Error("Avatar upload did not return an image path.");
-  }
-
-  return payload.avatarUrl;
-}
-
 // ─── Friends ─────────────────────────────────────────────────────────────────
 
 /**

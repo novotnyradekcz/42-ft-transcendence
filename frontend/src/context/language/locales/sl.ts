@@ -48,7 +48,6 @@ export const sl: Record<string, string> = {
   From: "Od",
   To: "Za",
   Title: "Naslov",
-  Avatar: "Avatar",
   "Avatar URL": "URL avatarja",
   "aliases: {aliases}": "vzdevki: {aliases}",
   "add friend": "dodaj prijatelja",
@@ -59,9 +58,7 @@ export const sl: Record<string, string> = {
   "by {name}": "avtor {name}",
   "save profile": "shrani profil",
   "saved.": "shranjeno.",
-  "avatar saved.": "avatar shranjen.",
   "could not save profile.": "profila ni bilo mogoče shraniti.",
-  "could not save avatar.": "avatarja ni bilo mogoče shraniti.",
   "Login happens in the command input. Current prompt: {step}.":
     "Prijava poteka v ukazni vrstici. Trenutni korak: {step}.",
   "Press Ctrl+C or Esc to quit login.":
@@ -175,7 +172,6 @@ export const sl: Record<string, string> = {
   "login/register cancelled.": "prijava/registracija preklicana.",
   "write cancelled.": "pisanje preklicano.",
   "profile updated.": "profil posodobljen.",
-  "avatar uploaded.": "avatar naložen.",
   "Recipient name does not exist.": "Ime prejemnika ne obstaja.",
   "Could not send mail.": "Pošte ni bilo mogoče poslati.",
   "Could not write discussion.": "Razprave ni bilo mogoče ustvariti.",
