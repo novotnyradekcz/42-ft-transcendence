@@ -1,78 +1,130 @@
-*This project has been created as part of the 42 curriculum by rnovotny, spalevi, voparkan.*
+*This project has been created as part of the 42 curriculum by nspalevi, rludik, rnovotny, voparkan.*
 
 # Project Name: ft_transcendence
 
 ## Description
-A brief overview of the project, its main goal, and key features.
+**ft_transcendence** (FT_BBS - Forty-Two Bulletin Board System) is a full-stack web application inspired by the nostalgic Bulletin Board Systems (BBS) and classic UNIX terminal interfaces of the 1980s. Designed with a retro ASCII terminal user interface, the platform allows users to create accounts, customize profiles, connect with friends, send private direct mail, participate in community discussion boards, and play real-time multiplayer retro games directly in the browser.
+
+The project is architected with a high-performance **Rust (Actix-web)** backend, a **PostgreSQL** database managed via **Diesel ORM**, a **React 19 + TypeScript + Vite** frontend, an **Nginx** reverse proxy, and a WebAssembly-powered Lua game execution sandbox (**Wasmoon**).
 
 ## Instructions
+
 ### Prerequisites
-- List all required software, tools, and versions (e.g., Node.js, Docker, etc.)
-- Configuration steps (e.g., .env setup)
+
+#### Core System & Containerization
+- **Docker Engine** (v20.10+ recommended) & **Docker Compose** (v2 `docker compose` or legacy v1 `docker-compose`) for running the multi-container microservices stack (PostgreSQL 17, Actix-web server, and Nginx frontend).
+- **GNU Make** (recommended) for running single-command stack management targets (`make up`, `make down`, `make logs`, `make full`, `make fclean`).
+
+#### Environment Configuration (`.env` Setup)
+Before starting the application, ensure the backend environment configuration file (`server/.env`) exists. Initialize it by copying the template file:
+```sh
+cp server/.env.example server/.env
+```
+
+The environment variables configured in `server/.env` are:
+| Variable | Description |
+|---|---|
+| `DATABASE_URL` | PostgreSQL connection string *(overridden in Docker Compose to target `db:5432`)* |
+| `DATABASE_PASSWORD` | PostgreSQL database password |
+| `SECRET_HASH` | Secret key used for password hashing and security verification |
+| `JWT_HASH` | Secret key used for signing and verifying JWT session tokens |
+
+#### Optional Local Development Tooling
+To run local non-containerized development server, tests, or code checks directly on your host system (or when executing `make full`):
+- **Node.js** (v22+ or v24+, see `.nvmrc`) & **npm** (v10+): Required for frontend package installation (`npm ci`), development server (`npm run dev`), SPA bundle build (`npm run build`), ESLint (`npm run lint`), and Vitest (`npm test`).
+- **Rust Toolchain** (v1.95.0, Edition 2021) & **Cargo**: Required for local backend compilation and syntax verification (`cargo check`).
+- **PostgreSQL 17 Client Libraries (`libpq`) & C Build Tools**: Required if compiling the backend natively outside Docker (`pq-sys`, `openssl-sys`).
+
+---
 
 ### Installation & Execution
 
-Run everything with one command from this folder:
+#### 1. Configure Environment
+Initialize the environment configuration file:
+```sh
+cp server/.env.example server/.env
+```
+Add configuration values to `.env` file.
+
+#### 2. Launch the Application
+Run the full stack with a single command from the repository root:
 ```sh
 make up
 ```
-Or run Compose directly in detached mode:
+*Alternatively, invoke Docker Compose directly:*
 ```sh
 docker compose up --build -d
 ```
-If the installed CLI on your workstation is the legacy Compose v1 binary, the equivalent command is:
-```sh
-docker-compose up --build -d
-```
-For logs, run:
-```sh
-make logs
-```
-To stop everything:
-```sh
-make down
-```
-To install local dependencies, run checks, and build the Docker images:
-```sh
-make full
-```
-To stop the stack and remove generated local artifacts plus this Compose
-project's local images and database volume:
-```sh
-make fclean
-```
-Website:
-```text
-http://localhost:3000
-```
-backend:
-```text
-http://localhost:8080
-```
+*(For workstations with legacy Compose v1: `docker-compose up --build -d`)*
 
-Seeded users are created on backend startup if they do not already exist:
+#### 3. Access Points & Seeded Accounts
+Once containers are running, access the services:
+- **Web Interface (Frontend):** [http://localhost:3000](http://localhost:3000)
+- **REST API Backend:** [http://localhost:8080](http://localhost:8080) (or via Nginx proxy at `http://localhost:3000/api`)
 
-```text
-test / test
-admin / admin
-guest / guest
-```
+Default seeded test accounts created on backend startup (if they do not already exist):
+
+| Username | Password | Role |
+|---|---|---|
+| `test` | `test` | Standard User |
+| `admin` | `admin` | Administrator |
+| `guest` | `guest` | Guest User |
+
+#### 4. Stack Management Commands
+Below are the GNU Make shortcut commands available for managing the project stack:
+
+| Command | Action |
+|---|---|
+| `make up` | Build Docker images and start all containers in detached mode |
+| `make logs` | Stream live combined logs from all containers (`docker compose logs -f`) |
+| `make ps` | List running container status and port mappings (`docker compose ps`) |
+| `make build` | Rebuild Docker container images (`docker compose build`) |
+| `make down` | Stop and remove running containers (`docker compose down`) |
+| `make full` | Install local dependencies (`npm ci`), run backend checks (`cargo check`), build frontend assets (`npm run build`), run frontend linter (`npm run lint`), and build Docker images |
+| `make fclean` | Stop containers, remove volumes (`--volumes`), delete local images (`--rmi local`), remove orphaned containers, and purge local build artifacts (`frontend/node_modules`, `frontend/dist`, `server/target`) |
+
 
 ## Resources
-- List of classic references (documentation, articles, tutorials, etc.)
-- **AI Usage:** Describe how AI was used, for which tasks, and which parts of the project.
+
+### Technology Documentation & References
+- **Rust & Actix-web**: [Actix-web Documentation](https://actix.rs/docs/) & [The Rust Programming Language Book](https://doc.rust-lang.org/book/)
+- **Diesel ORM**: [Diesel Getting Started Guide](https://diesel.rs/guides/)
+- **PostgreSQL**: [PostgreSQL 17 Official Manual](https://www.postgresql.org/docs/17/index.html)
+- **React & TypeScript**: [React 19 Documentation](https://react.dev/) & [TypeScript Handbook](https://www.typescriptlang.org/docs/)
+- **Vite Tooling**: [Vite Guide](https://vite.dev/guide/)
+- **Wasmoon (Lua WASM)**: [Wasmoon GitHub Repository](https://github.com/ceifa/wasmoon)
+- **Docker & Compose**: [Docker Compose Documentation](https://docs.docker.com/compose/)
+- **Nginx**: [Nginx Beginner's Guide](https://nginx.org/en/docs/beginners_guide.html)
+
+### AI Usage
+Artificial Intelligence tools (LLMs and AI coding assistants) were used throughout the development process for several key tasks:
+- **Boilerplate Generation:** Generating initial boilerplate code for React components, Actix-web route handler signatures, and Diesel migration files.
+- **Documentation & README Drafting:** Structuring and drafting project documentation, architectural overviews, database schema definitions (Mermaid ER diagrams), and section summaries.
+- **Learning New Technologies:** Accelerated learning curves for unfamiliar tools, such as embedding WebAssembly Lua sandboxes (`wasmoon`), configuring `actix-security` authentication pipelines, and writing compile-time validated Diesel ORM queries.
+- **Troubleshooting & Debugging:** Diagnosing compiler errors, analyzing stack traces, debugging WebSocket lobby state synchronization, and optimizing multi-stage Docker container builds.
 
 ## Team Information
 | Name      | Role(s)              | Responsibilities                |
 |-----------|----------------------|---------------------------------|
-| rnovotny  | PO, Developer        | PRD, backlog                    |
 | nspalevi  | PM, Developer        | meetings, deadlines             |
+| rludvik   | Developer            | development, testing            |
+| rnovotny  | PO, Developer        | PRD, backlog, documentation     |
 | voparkan  | Tech Lead, Developer | architecture, technical details |
 
 ## Project Management
-- **Organization:** How the team distributed tasks, held meetings, etc.
-- **Tools:** (e.g., GitHub Issues, Trello)
-- **Communication:** (e.g., Discord, Slack)
+### Organization
+- Initial product vision was created by the PO, with specific tech details added by the Tech Lead. The PM created tasks from this description and the team members chose tasks to work on.
+- Weekly to biweekly standups were held to discuss progress and any issues encountered. The date of the next meeting was decided at the end and posted to Slack by the PM.
+
+### Tools
+- A Github repository was used to store the code and a GitHub project was used to organize work.
+- A Kanban board in Github was used to track issues. Issues were moved from the *Backlog* column to the *Ready* column, and when someone started working on an issue, they moved it to the *In progress* column.
+- After completing work on an issue, a PR was created in GitHub and the issue was moved to the *In review* column. Other team members provided feedback and comments and when they approved the PR, the issue was moved to the *Done* column and marked completed.
+
+
+### Communication
+- Slack was used for messaging, planning and organizing meetings.
+- After some issues with Slack's voice chat, Discord was used for online meetings.
 
 ## Technical Stack
 ### Frontend
