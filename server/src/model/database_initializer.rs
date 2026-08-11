@@ -5,6 +5,7 @@ use diesel::prelude::*;
 use dotenvy::dotenv;
 use std::env;
 use crate::model::users::seed_users_in_db;
+use crate::model::games::seed_games_in_db;
 
 #[allow(dead_code)]
 pub struct ServerEnvironment {
@@ -55,10 +56,11 @@ impl DatabaseInitializer {
     }
 }
 
-pub fn inittialize_db() -> DatabaseInitializer {
+pub fn initialize_db() -> DatabaseInitializer {
     let mut dbinitializer = DatabaseInitializer::new();
     dbinitializer.connect();
     seed_users_in_db(&mut dbinitializer).expect("Failed to seed database users");
+    seed_games_in_db(&mut dbinitializer).expect("Failed to seed database games");
     dbinitializer
 }
 
@@ -70,11 +72,11 @@ pub fn connection(db: &mut DatabaseInitializer) -> &mut PgConnection {
 
 #[cfg(test)]
 mod test {
-    use crate::model::database_initializer::inittialize_db;
+    use super::*;
 
     #[test]
     fn initialize_db_work() {
-        let db = inittialize_db();
+        let db = initialize_db();
         assert_eq!(db.database_connected, true)
     }
 }

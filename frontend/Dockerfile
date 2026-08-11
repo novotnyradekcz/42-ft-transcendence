@@ -10,9 +10,10 @@ ARG VITE_API_BASE_URL=/api
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 RUN npm run build
 
-FROM nginx:1.29-alpine
-
-RUN apk add --no-cache openssl
+# Debian-based nginx: ships the openssl CLI that docker-entrypoint.sh needs for
+# the local self-signed certificate. The alpine variant does not, and installing
+# it would require reaching the Alpine mirror during the build.
+FROM nginx:1.29
 
 COPY nginx.local.conf      /etc/nginx/templates/nginx.local.conf
 COPY nginx.production.conf /etc/nginx/templates/nginx.production.conf

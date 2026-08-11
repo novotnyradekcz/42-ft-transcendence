@@ -80,6 +80,12 @@ export const commandDefinitions: CommandDefinition[] = [
     description: "Open the games section.",
   },
   {
+    command: "upload",
+    aliases: ["up", "ul"],
+    usage: "upload",
+    description: "Upload a new custom game (.lua file).",
+  },
+  {
     command: "list",
     aliases: ["li"],
     usage: "list",
@@ -109,10 +115,16 @@ export const commandDefinitions: CommandDefinition[] = [
     usage: "lang en",
     description: "Switch the interface language.",
   },
+  {
+    command: "log",
+    aliases: ["output"],
+    usage: "log",
+    description: "Show or hide the activity log below the page content.",
+  },
 ];
 
 const pageCommands: Record<Page, string[]> = {
-  welcome: ["menu"],
+  welcome: ["menu", "login", "register", "lang <code>", "help"],
   home: [
     "help",
     "users",
@@ -125,6 +137,7 @@ const pageCommands: Record<Page, string[]> = {
     "mail",
     "games",
     "lang <code>",
+    "log",
   ],
   help: ["menu", "back"],
   users: ["list", "enter <number>", "addfriend <number>", "menu", "back"],
@@ -137,28 +150,49 @@ const pageCommands: Record<Page, string[]> = {
   "discussion-detail": ["write", "discussions", "menu", "back"],
   mail: ["list", "enter <number>", "write", "menu", "back"],
   "mail-detail": ["mail", "menu", "back"],
-  games: ["list", "enter <number>", "menu", "back"],
+  games: ["list", "enter <number>", "upload", "menu", "back"],
   "game-play": ["back"],
 };
 
+// commands for guests (not logged in)
+export const GUEST_COMMANDS = ["login", "register", "lang", "help", "back"];
+
+// the bare command inside a label, "lang <code>" -> "lang"
+export function baseCommand(label: string): string {
+  return label.split(/\s+/)[0]?.toLowerCase() ?? "";
+}
+
+// works on a parsed name or a display label
+export function isGuestCommand(command: string): boolean {
+  return GUEST_COMMANDS.includes(baseCommand(command));
+}
+
+// commands the given page shows, filtered by whether there's a session
 export function getAvailableCommands(page: Page, isLoggedIn = false): string[] {
   const commands = pageCommands[page];
 
-  if (page === "home") {
-    if (isLoggedIn) {
-      return commands.filter((command) => command !== "login" && command !== "register");
-    }
-
-    return commands.filter((command) => command !== "logout");
-  }
-
-  if (isLoggedIn) {
+  // these two screens list escape keys rather than commands
+  if (page === "login" || page === "register") {
     return commands;
   }
 
-  return commands.filter(
-    (command) => !command.startsWith("addfriend") && !command.startsWith("removefriend"),
-  );
+  // don't advertise commands the guest gate would refuse
+  if (!isLoggedIn) {
+    return commands.filter(isGuestCommand);
+  }
+
+  if (page === "welcome") {
+    // members have already been through login/register
+    return commands.filter((command) => !isGuestCommand(command));
+  }
+
+  if (page === "home") {
+    return commands.filter(
+      (command) => command !== "login" && command !== "register",
+    );
+  }
+
+  return commands;
 }
 
 export function parseCommand(input: string): { name: string; args: string[] } {

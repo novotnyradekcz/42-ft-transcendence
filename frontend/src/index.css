@@ -23,19 +23,26 @@ textarea {
   font: inherit;
 }
 
+/* fixed viewport-high column, only .terminal-body scrolls */
+/* dvh tracks the mobile keyboard, vh is the fallback */
 .terminal-page {
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   padding: clamp(0.75rem, 2vw, 1.5rem);
   background: #000;
+  overflow: hidden;
 }
 
 .terminal-window {
+  display: flex;
+  flex-direction: column;
   width: min(100%, 78ch);
-  min-height: calc(100vh - clamp(1.5rem, 4vw, 3rem));
+  height: 100%;
   background: #000;
 }
 
 .terminal-header {
+  flex-shrink: 0;
   margin-bottom: 1rem;
 }
 
@@ -63,21 +70,14 @@ textarea {
   overflow: hidden;
 }
 
-.terminal-kicker,
-.terminal-session,
 .terminal-output,
 .terminal-footer,
 small {
   color: #c8c8c8;
 }
 
-.terminal-kicker,
-.terminal-session {
-  margin: 0;
-}
-
 .terminal-output {
-  margin-bottom: 1rem;
+  margin-top: 1rem;
 }
 
 .terminal-output p {
@@ -86,7 +86,9 @@ small {
 }
 
 .terminal-body {
-  min-height: 20rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
 }
 
 .terminal-section {
@@ -145,6 +147,28 @@ code {
 .terminal-list small {
   display: block;
   margin-left: 3.3rem;
+}
+
+/* login/register step checklist */
+.auth-steps {
+  margin: 0 0 0.75rem;
+}
+
+.auth-steps li[data-state="done"]::before {
+  content: "[x] ";
+}
+
+.auth-steps li[data-state="current"]::before {
+  content: "[>] ";
+  color: #fff;
+}
+
+.auth-steps li[data-state="pending"]::before {
+  content: "[ ] ";
+}
+
+.auth-steps li[data-state="pending"] span {
+  color: #8a8a8a;
 }
 
 .terminal-facts {
@@ -289,6 +313,37 @@ code {
   outline: none;
 }
 
+/* progress line while a command waits on the network */
+.terminal-status.busy {
+  color: #fff;
+}
+
+.terminal-status.busy::after {
+  content: "";
+  animation: terminal-ellipsis 1.2s steps(4, end) infinite;
+}
+
+@keyframes terminal-ellipsis {
+  0% {
+    content: "";
+  }
+  25% {
+    content: ".";
+  }
+  50% {
+    content: "..";
+  }
+  75% {
+    content: "...";
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-status.busy::after {
+    animation: none;
+  }
+}
+
 .terminal-error {
   margin: 0;
   color: #fff;
@@ -325,12 +380,20 @@ code {
 }
 
 .terminal-footer {
+  flex-shrink: 0;
   margin-top: 1rem;
 }
 
 .terminal-footer p {
   margin: 0 0 0.35rem;
   overflow-wrap: anywhere;
+}
+
+/* one line only, so a long message can't push the prompt off-screen */
+.terminal-status {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .terminal-footer span {
@@ -491,7 +554,7 @@ code {
   overflow: hidden;
 }
 
-/* CRT Screen reflection effect */
+/* crt screen reflection */
 .terminal-grid-wrapper::after {
   content: " ";
   display: block;
@@ -521,7 +584,7 @@ code {
   cursor: pointer;
   user-select: none;
   white-space: pre;
-  /* Phosphor glow effect */
+  /* phosphor glow */
   text-shadow: 0 0 3px currentColor;
   transition: background-color 0.1s;
 }

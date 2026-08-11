@@ -5,7 +5,8 @@ use actix_security::http::security::{AuthorizationManager, RequestMatcherAuthori
 use actix_security::prelude::{Argon2PasswordEncoder, Authenticator, PasswordEncoder, User};
 use actix_web::dev::ServiceRequest;
 use actix_web::web::Data;
-use diesel::row::NamedRow;
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt::Error;
@@ -58,7 +59,7 @@ pub fn register_user(user: User) {
 
 pub fn get_user_from_store(name: &str) -> Result<User, Error> {
     if let Some(store) = USER_STORE.get() {
-        match store.write().expect("USER_STORE RwLock poisoned").get(name) {
+        match store.read().expect("USER_STORE RwLock poisoned").get(name) {
             Some(user) => Ok(user.clone()),
             None => Err(Error),
         }
@@ -83,7 +84,6 @@ impl AuthMiddleware {
 }
 
 impl Authenticator for AuthMiddleware {
-    #[allow(deprecated)]
     fn get_user(&self, req: &ServiceRequest) -> Option<User> {
         let state = req.app_data::<Data<Arc<AppState>>>().unwrap();
         let auth_header = req
@@ -93,15 +93,9 @@ impl Authenticator for AuthMiddleware {
         let store = self.store.read().expect("USER_STORE RwLock poisoned");
         match auth_header {
             Some(h) if h.starts_with("Bearer ") => {
-                let result = authenticate_jwt(&h[7..], store, state.get_ref());
-                println!("We authenticate with Bearer token {:?}", result);
-                result
-            },
-            Some(h) if h.starts_with("Basic ") => {
-                let result = authenticate_basic(&h[6..], store);
-                println!("We authenticate with Basic {:?}", result);
-                result
-            },
+                authenticate_jwt(&h[7..], store, state.get_ref())
+            }
+            Some(h) if h.starts_with("Basic ") => authenticate_basic(&h[6..], store),
             _ => None,
         }
     }
@@ -112,8 +106,8 @@ pub fn authenticate_jwt(
     store: RwLockReadGuard<HashMap<String, User>>,
     app_state: &Arc<AppState>,
 ) -> Option<User> {
-    let decoded = base64::decode(jwt_bearer).ok()?;
-    let creds = std::str::from_utf8(&decoded.as_slice()).ok()?;
+    let decoded = STANDARD.decode(jwt_bearer).ok()?;
+    let creds = std::str::from_utf8(decoded.as_slice()).ok()?;
     match app_state.jwt_authenticator.validate_token(creds) {
         Ok(token_data) => {
             // Reject tokens that have been explicitly invalidated via logout.
@@ -143,15 +137,13 @@ pub fn authenticate_jwt(
 fn authenticate_basic(b64: &str, store: RwLockReadGuard<HashMap<String, User>>) -> Option<User> {
     let encoder = Argon2PasswordEncoder::new();
 
-    let decoded = base64::decode(b64).ok()?;
-    let creds = std::str::from_utf8(&decoded.as_slice()).ok()?;
+    let decoded = STANDARD.decode(b64).ok()?;
+    let creds = std::str::from_utf8(decoded.as_slice()).ok()?;
 
     // Split at first ':' only — passwords may themselves contain ':'
     let (username, raw_password) = creds.split_once(':')?;
-    //println!("User request: {:#?} {:?}", &username, &raw_password);
 
     let user = store.get(username)?;
-    //println!("User db: {:#?}", &user);
     if encoder.matches(raw_password, user.get_password()) {
         Some(user.clone())
     } else {
@@ -159,18 +151,23 @@ fn authenticate_basic(b64: &str, store: RwLockReadGuard<HashMap<String, User>>) 
     }
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq)]
-struct LoginFromMiddleware {
-    username: String,
-    password: String,
-}
-
 pub fn create_authenticator() -> AuthMiddleware {
     AuthMiddleware::new()
 }
 
 // Factory function: URL-based authorization rules
+//
+// `.http_basic()` does NOT enable Basic parsing — that happens in
+// `AuthMiddleware::get_user` above, and would keep working without this call.
+// What it selects is the response to an *unauthenticated* request: with it, a
+// 401 carrying `WWW-Authenticate: Basic realm="Restricted"`; without it, a 302
+// redirect to `login_url`. Dropping it as part of "removing Basic auth" would
+// turn every unauthenticated API call into a redirect, so it stays.
+//
+// The cost is that header: browsers read it as a challenge and pop their own
+// credentials dialog, which is why `api.ts` sends `credentials: "omit"`.
+// Suppressing it needs a custom Authorizer — HttpBasicConfig only exposes the
+// realm string.
 pub fn create_authorizer() -> RequestMatcherAuthorizer {
     AuthorizationManager::request_matcher()
         .login_url("/register") // public — no auth required for registration

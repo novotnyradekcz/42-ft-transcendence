@@ -3,6 +3,7 @@ import { addFriend, removeFriend } from "../api";
 import AvatarImage from "./AvatarImage";
 import TerminalSection from "./TerminalSection";
 import { useData } from "../context/data/useData";
+import { useStatus } from "../context/status/useStatus";
 import { useSession } from "../context/session/useSession";
 import { useTerminal } from "../context/terminal/useTerminal";
 import { useTranslation } from "../context/language/i18n";
@@ -10,6 +11,7 @@ import { useTranslation } from "../context/language/i18n";
 export default function UserDetail() {
   const { selectedUser: user } = useData();
   const { sessionUser, updateSessionUser, refreshUsers } = useSession();
+  const { statusOf } = useStatus();
   const { addLine } = useTerminal();
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
@@ -63,7 +65,7 @@ export default function UserDetail() {
             <dt>{t("Email")}</dt>
             <dd>{user.email}</dd>
             <dt>{t("Status")}</dt>
-            <dd>{t(user.status)}</dd>
+            <dd>{t(statusOf(user.id))}</dd>
             <dt>{t("Bio")}</dt>
             <dd>{user.bio}</dd>
           </dl>

@@ -1,11 +1,11 @@
 import { useEffect, useRef, type MouseEvent } from "react";
-import { Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useData } from "../context/data/useData";
 import { useSession } from "../context/session/useSession";
 import { useTerminal } from "../context/terminal/useTerminal";
 import { useTranslation } from "../context/language/i18n";
 import { pageFromPath } from "../router";
-import GamePlayPage from "../GamePlayPage";
+import GamePlayPage from "../pages/GamePlayPage";
 import DiscussionDetailPage from "../pages/DiscussionDetailPage";
 import DiscussionsPage from "../pages/DiscussionsPage";
 import FriendsPage from "../pages/FriendsPage";
@@ -22,7 +22,7 @@ import UsersPage from "../pages/UsersPage";
 import WelcomePage from "../pages/WelcomePage";
 export default function Terminal() {
   const commandInputRef = useRef<HTMLInputElement>(null);
-  const outputRef = useRef<HTMLElement>(null);
+  const bodyRef = useRef<HTMLElement>(null);
 
   const location = useLocation();
   const page = pageFromPath(location.pathname);
@@ -37,35 +37,37 @@ export default function Terminal() {
     setCommandInput,
     terminalLines,
     focusInputSignal,
+    logVisible,
     authFlow,
     writeFlow,
     commandHelpOpen,
     setCommandHelpOpen,
     availableCommands,
+    isBusy,
     handleCommandSubmit,
     handleCommandKeyDown,
     handleCommandHelpClick,
     getPromptLabel,
   } = useTerminal();
 
-  // Focus the input whenever the page, auth mode, or write mode changes.
+  // focus the input whenever the page or an input mode changes
   useEffect(() => {
     commandInputRef.current?.focus();
   }, [page, authFlow, writeFlow]);
 
-  // Focus when TerminalContext explicitly requests it (e.g. command-help fill).
+  // focus when the terminal context asks for it
   useEffect(() => {
     if (focusInputSignal > 0) {
       commandInputRef.current?.focus();
     }
   }, [focusInputSignal]);
 
-  // Scroll the output panel to the bottom whenever new lines arrive.
+  // the log sits at the bottom of the body, so scroll it to keep it in view
   useEffect(() => {
-    if (outputRef.current) {
-      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    if (logVisible && bodyRef.current) {
+      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
     }
-  }, [terminalLines]);
+  }, [terminalLines, logVisible]);
 
   function handleCommandAreaClick(event: MouseEvent<HTMLElement>) {
     const target = event.target as HTMLElement;
@@ -80,65 +82,91 @@ export default function Terminal() {
         className="terminal-window"
         aria-label="ft_transcendence terminal"
       >
-        {/* ── Header ─────────────────────────────────────────────────────── */}
+        {/* ── Header (pinned) ────────────────────────────────────────────── */}
         <header className="terminal-header">
           <pre className="bbs-banner" aria-label="ft_transcendence banner">
             {String.raw`+--------------------------------------------------+
 |              FT_TRANSCENDENCE BBS               |
 +--------------------------------------------------+`}
           </pre>
-          <p className="terminal-kicker">bbs://ft_transcendence</p>
-          <p className="terminal-session">
-            {page === "welcome"
-              ? t("connection waiting")
-              : t("connected as {name}", {
-                  name: sessionUser ? sessionUser.name : t("guest"),
-                })}
-          </p>
         </header>
 
-        {/* ── Output log ─────────────────────────────────────────────────── */}
-        <section className="terminal-output" aria-live="polite" ref={outputRef}>
-          {terminalLines.map((line, index) => (
-            <p key={`${line}-${index}`}>{line}</p>
-          ))}
+        {/* ── Page content (routed) — the only scrolling region ───────────── */}
+        <section className="terminal-body" ref={bodyRef}>
+          {/*
+            Two route tables, not one guarded table: without a session the
+            board pages are never mounted at all, so a typed URL, a bookmark
+            or the browser Back button cannot reach them. Anything else a
+            guest asks for falls through to the front page.
+          */}
+          {sessionUser ? (
+            <Routes>
+              <Route path="/" element={<WelcomePage />} />
+              <Route path="/menu" element={<HomePage />} />
+              <Route path="/help" element={<HelpPage />} />
+              <Route path="/users/show" element={<UsersPage />} />
+              <Route path="/users/show/:id" element={<UserDetailPage />} />
+              <Route path="/friends/show" element={<FriendsPage />} />
+              <Route path="/users/login" element={<LoginPage />} />
+              <Route path="/users/create" element={<RegisterPage />} />
+              <Route
+                path="/users/me"
+                element={<ProfilePage key={sessionUser.id} />}
+              />
+              <Route path="/discussions/show" element={<DiscussionsPage />} />
+              <Route
+                path="/discussions/show/:id"
+                element={<DiscussionDetailPage />}
+              />
+              <Route path="/mail/show" element={<MailPage />} />
+              <Route path="/mail/show/:id" element={<MailDetailPage />} />
+              <Route path="/games/show" element={<GamesPage />} />
+              <Route
+                path="/games/play/:id"
+                element={<GamePlayPage game={selectedGame} />}
+              />
+              {/* Members get the board root for anything unrecognised. Without
+                  this the table simply matched nothing and rendered an empty
+                  body under a working prompt. */}
+              <Route path="*" element={<Navigate to="/menu" replace />} />
+            </Routes>
+          ) : (
+            <Routes>
+              <Route path="/" element={<WelcomePage />} />
+              <Route path="/help" element={<HelpPage />} />
+              <Route path="/users/login" element={<LoginPage />} />
+              <Route path="/users/create" element={<RegisterPage />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          )}
+
+          {/* Activity log — hidden by default, toggled by the `log` command. */}
+          {logVisible && (
+            <section className="terminal-output" aria-live="polite">
+              <pre className="ascii-rule" aria-hidden="true">
+----------------------------------------------------
+              </pre>
+              {terminalLines.map((line, index) => (
+                <p key={`${line}-${index}`}>{line}</p>
+              ))}
+            </section>
+          )}
         </section>
 
-        {/* ── Page content (routed) ───────────────────────────────────────── */}
-        <section className="terminal-body">
-          <Routes>
-            <Route path="/" element={<WelcomePage />} />
-            <Route path="/menu" element={<HomePage />} />
-            <Route path="/help" element={<HelpPage />} />
-            <Route path="/users/show" element={<UsersPage />} />
-            <Route path="/users/show/:id" element={<UserDetailPage />} />
-            <Route path="/friends/show" element={<FriendsPage />} />
-            <Route path="/users/login" element={<LoginPage />} />
-            <Route path="/users/create" element={<RegisterPage />} />
-            <Route
-              path="/users/me"
-              element={<ProfilePage key={sessionUser?.id ?? "guest"} />}
-            />
-            <Route path="/discussions/show" element={<DiscussionsPage />} />
-            <Route
-              path="/discussions/show/:id"
-              element={<DiscussionDetailPage />}
-            />
-            <Route path="/mail/show" element={<MailPage />} />
-            <Route path="/mail/show/:id" element={<MailDetailPage />} />
-            <Route path="/games/show" element={<GamesPage />} />
-            <Route
-              path="/games/play/:id"
-              element={<GamePlayPage game={selectedGame} />}
-            />
-          </Routes>
-        </section>
-
-        {/* ── Footer / command input ──────────────────────────────────────── */}
+        {/* ── Footer / command input (pinned) ─────────────────────────────── */}
         <footer className="terminal-footer">
           <pre className="ascii-rule" aria-hidden="true">
             ----------------------------------------------------
           </pre>
+          {/* Newest log line, so commands still report back while the log is
+              hidden — replaced by a progress line while a request is running,
+              so a slow login does not read as a frozen prompt. */}
+          <p
+            className={`terminal-status ${isBusy ? "busy" : ""}`}
+            aria-live="polite"
+          >
+            {isBusy ? t("loading...") : terminalLines[terminalLines.length - 1]}
+          </p>
           <p>
             {t("available:")} <span>{availableCommands.join(" | ")}</span>
           </p>
@@ -148,13 +176,23 @@ export default function Terminal() {
             onClick={handleCommandAreaClick}
           >
             <label htmlFor="command-input">{getPromptLabel()}</label>
+            {/* readOnly rather than disabled: it blocks typing mid-request
+                without dropping focus, so the caret is still there when the
+                answer lands. Ctrl+C and Esc keep working. */}
+            {/* Masked on the password step of both login and register — the
+                flows name that step identically, so one check covers both. */}
             <input
               id="command-input"
               value={commandInput}
               ref={commandInputRef}
               onChange={(e) => setCommandInput(e.target.value)}
               onKeyDown={handleCommandKeyDown}
-              autoComplete="off"
+              type={authFlow?.step === "password" ? "password" : "text"}
+              readOnly={isBusy}
+              aria-busy={isBusy}
+              autoComplete={
+                authFlow?.step === "password" ? "current-password" : "off"
+              }
               autoFocus
             />
           </form>

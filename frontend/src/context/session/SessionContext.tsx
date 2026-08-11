@@ -12,14 +12,12 @@ import {
 import { SessionContext } from "./useSession";
 
 export function SessionProvider({ children }: { children: ReactNode }) {
-  // Restore synchronously so the first render already has the user — avoids a
-  // setState call inside useEffect which can trigger cascading renders.
+  // restored synchronously so the first render already has the user
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(
     () => restoreSession(), // also arms currentCredentials in api.ts
   );
   const [knownUsers, setKnownUsers] = useState<UserProfile[]>([]);
-  // isRestoring = true when we have a persisted session but haven't yet
-  // re-fetched the full user list from the server.
+  // true when a saved session exists but the user list isn't fetched yet
   const [isRestoring, setIsRestoring] = useState<boolean>(() =>
     Boolean(
       sessionStorage.getItem(CREDENTIALS_KEY) &&
@@ -27,7 +25,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     ),
   );
 
-  // ─── Rebuild knownUsers after a page refresh (async, non-blocking) ─────────
+  // rebuilds knownUsers after a page refresh, without blocking
   useEffect(() => {
     if (!isRestoring) return;
     listUsers()
@@ -36,8 +34,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       .finally(() => setIsRestoring(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // ─── Internal helpers ──────────────────────────────────────────────────────
 
   function persistSession(user: SessionUser): void {
     const credentials = getCredentials();
@@ -51,8 +47,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     sessionStorage.removeItem(CREDENTIALS_KEY);
     sessionStorage.removeItem(SESSION_USER_KEY);
   }
-
-  // ─── Public API ───────────────────────────────────────────────────────────
 
   async function login(name: string, password: string): Promise<SessionUser> {
     const user = await apiLogin(name, password);
@@ -77,12 +71,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }
 
   async function logout(): Promise<void> {
-    if (await apiLogout()) // clears currentCredentials + knownUsers in api module
-    {
-      clearSession();
-      setSessionUser(null);
-      setKnownUsers([]);
-    }
+    // local session goes first, an unreachable server can't keep anyone signed in
+    clearSession();
+    setSessionUser(null);
+    setKnownUsers([]);
+    await apiLogout();
   }
 
   function updateSessionUser(user: SessionUser): void {

@@ -1,13 +1,14 @@
 import AvatarImage from "../components/AvatarImage";
 import TerminalSection from "../components/TerminalSection";
-import { useSession } from "../context/session/useSession";
+import { useData } from "../context/data/useData";
+import { useStatus } from "../context/status/useStatus";
 import { useTranslation } from "../context/language/i18n";
 
 export default function FriendsPage() {
-  const { sessionUser, knownUsers } = useSession();
+  // derived once in DataProvider so the page and the `friends` command agree
+  const { friends } = useData();
+  const { statusOf } = useStatus();
   const { t } = useTranslation();
-  const friendIds = sessionUser?.friends ?? [];
-  const friends = knownUsers.filter((u) => friendIds.includes(u.id));
 
   return (
     <TerminalSection title={t("Friends")}>
@@ -20,7 +21,7 @@ export default function FriendsPage() {
               <AvatarImage user={friend} />
               <span>{friend.name}</span>
               <small>
-                {friend.email} / {t(friend.status)}
+                {friend.email} / {t(statusOf(friend.id))}
               </small>
             </li>
           ))}

@@ -8,33 +8,33 @@ mod model;
 mod router;
 mod schema;
 mod session;
+mod status;
 mod users;
+mod websocket;
 
-use crate::authenticator::{
-    create_authenticator, create_authorizer, init_user_store, register_user,
-};
+use crate::authenticator::{create_authenticator, create_authorizer, init_user_store};
 use crate::games::{play_game_ws, Lobby};
 use crate::model::users::get_all_users_from_db;
 use crate::model::DatabaseInitializer;
 use crate::router::*;
 use crate::session::load_valid_blacklisted_tokens;
-use model::database_initializer::inittialize_db;
-//{index, show_users, login_user, user_detail, create_user, show_games, game_detail, show_discussions, discussion_detail, create_discussion, create_discussion_post, show_mail, mail_detail, create_mail};
+use crate::status::{status_ws, StatusRegistry};
+use model::database_initializer::initialize_db;
 
 use actix_security::http::security::middleware::SecurityTransform;
-use actix_security::http::security::{Argon2PasswordEncoder, SessionFixationStrategy};
-use actix_security::prelude::{JwtAuthenticator, JwtConfig, JwtTokenService, SessionConfig, User};
+use actix_security::http::security::Argon2PasswordEncoder;
+use actix_security::prelude::{JwtAuthenticator, JwtConfig, JwtTokenService, User};
 use actix_web::web::Data;
-use actix_web::{cookie, web, App, HttpServer};
+use actix_web::{web, App, HttpServer};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex, RwLock};
 
 #[allow(dead_code)]
 struct AppState {
     database: Mutex<DatabaseInitializer>,
-    lobby: Lobby,
+    lobby: Mutex<Lobby>,
+    status: Mutex<StatusRegistry>,
     encoder: Argon2PasswordEncoder,
-    session_config: SessionConfig,
     jwt_authenticator: JwtAuthenticator,
     jwt_token_service: JwtTokenService,
     /// In-memory blacklist of invalidated token JTIs (or raw tokens when jti is absent).
@@ -45,7 +45,7 @@ struct AppState {
 async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::default().default_filter_or("debug"));
 
-    let mut db = inittialize_db();
+    let mut db = initialize_db();
     let lobby = Lobby::new();
     let encoder = Argon2PasswordEncoder::new();
     let dbusers = get_all_users_from_db(&mut db).expect("Users from DB failed.");
@@ -62,17 +62,14 @@ async fn main() -> std::io::Result<()> {
         .expiration_secs(10 * 60);
     let jwt_token_service = JwtTokenService::new(jwt_config.clone()).refresh_expiration_days(1);
     let jwt_authenticator = JwtAuthenticator::new(jwt_config);
-    let session_config = SessionConfig::new()
-        .user_key("user")
-        .fixation_strategy(SessionFixationStrategy::MigrateSession);
     // Load non-expired blacklisted tokens from the database so the in-memory
     // set is consistent with the DB after a restart.
     let token_blacklist = RwLock::new(load_valid_blacklisted_tokens(&mut db));
     let state = Arc::new(AppState {
         database: Mutex::new(db),
-        lobby,
+        lobby: Mutex::new(lobby),
+        status: Mutex::new(StatusRegistry::new()),
         encoder,
-        session_config,
         jwt_authenticator,
         jwt_token_service,
         token_blacklist,
@@ -83,40 +80,59 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(Data::new(state.clone()))
+            // Public: registration must be reachable without credentials.
             .service(create_user)
-            .wrap(
-                SecurityTransform::new()
-                    .config_authenticator(create_authenticator)
-                    .config_authorizer(create_authorizer),
-            )
-            .route("/", web::get().to(index))
+            // Also public, and for the same shape of reason: a client refreshes
+            // precisely because its access token expired, so requiring one here
+            // would make the endpoint unreachable exactly when it is needed.
+            // The refresh token in the body is the credential, and the handler
+            // validates and revocation-checks it before minting anything.
+            // (`#[permit_all]` is documentation only — it expands to the
+            // unchanged function. Sitting outside the scope below is what
+            // actually keeps SecurityTransform off this route.)
+            .service(refresh_token)
+            // WebSocket scopes sit outside SecurityTransform: a browser cannot set an
+            // Authorization header on a WS handshake, so the middleware would redirect
+            // them. Both handlers authenticate themselves via the auth subprotocol.
+            .service(web::scope("/games/play").service(play_game_ws))
+            .service(web::scope("/status").service(status_ws))
+            // Everything else is authenticated. SessionMiddleware/CookieSessionStore
+            // intentionally dropped: this branch is stateless JWT.
             .service(
-                web::scope("/users")
-                    .service(login_user)
-                    .service(get_user)
-                    .service(logout)
-                    .service(show_users)
-                    .service(user_detail)
-                    .service(refresh_token),
-            )
-            .service(
-                web::scope("/games")
-                    .service(show_games)
-                    .service(game_detail)
-                    .service(play_game_ws),
-            )
-            .service(
-                web::scope("/discussions")
-                    .service(show_discussions)
-                    .service(discussion_detail)
-                    .service(create_discussion)
-                    .service(create_discussion_post),
-            )
-            .service(
-                web::scope("/mail")
-                    .service(show_mail)
-                    .service(mail_detail)
-                    .service(create_mail),
+                web::scope("")
+                    .wrap(
+                        SecurityTransform::new()
+                            .config_authenticator(create_authenticator)
+                            .config_authorizer(create_authorizer),
+                    )
+                    .route("/", web::get().to(index))
+                    .service(
+                        web::scope("/users")
+                            .service(login_user)
+                            .service(get_user)
+                            .service(logout)
+                            .service(show_users)
+                            .service(user_detail),
+                    )
+                    .service(
+                        web::scope("/games")
+                            .service(show_games)
+                            .service(game_detail)
+                            .service(create_game),
+                    )
+                    .service(
+                        web::scope("/discussions")
+                            .service(show_discussions)
+                            .service(discussion_detail)
+                            .service(create_discussion)
+                            .service(create_discussion_post),
+                    )
+                    .service(
+                        web::scope("/mail")
+                            .service(show_mail)
+                            .service(mail_detail)
+                            .service(create_mail),
+                    ),
             )
     })
     .bind(("0.0.0.0", 8080))?

@@ -1,19 +1,30 @@
 import { PAGE_PATHS } from "../../router";
 import type { TerminalDeps } from "./deps";
-import { errMsg } from "./helpers";
+import { errMsg } from "../../errors";
 
 export function createAuthFlowHandlers(deps: TerminalDeps) {
   const {
     authFlow,
     setAuthFlow,
     setAuthError,
+    flowEpoch,
     login,
     register,
+    contextLogout,
     refreshBoardForUser,
     navigate,
     addLine,
     t,
   } = deps;
+
+  // true if the user cancelled while epoch was in flight
+  // the request may have succeeded, so drop the session it opened
+  function cancelledDuring(epoch: number): boolean {
+    if (flowEpoch.current === epoch) return false;
+    contextLogout();
+    addLine(t("login/register cancelled."));
+    return true;
+  }
 
   async function handleAuthFlowInput(rawInput: string) {
     if (!authFlow) return;
@@ -24,14 +35,17 @@ export function createAuthFlowHandlers(deps: TerminalDeps) {
         addLine(t("name accepted. enter password."));
         return;
       }
+      const loginEpoch = flowEpoch.current;
       try {
         const nextUser = await login(authFlow.name, rawInput);
+        if (cancelledDuring(loginEpoch)) return;
         setAuthFlow(null);
         setAuthError("");
         (await refreshBoardForUser(nextUser)).forEach(addLine);
         navigate(PAGE_PATHS.home);
         addLine(t("logged in as {name}.", { name: nextUser.name }));
       } catch (error) {
+        if (flowEpoch.current !== loginEpoch) return;
         setAuthError(errMsg(error, t("Login failed.")));
         addLine(
           t("login failed. press Ctrl+C or Esc to quit, or enter name again."),
@@ -52,14 +66,18 @@ export function createAuthFlowHandlers(deps: TerminalDeps) {
       addLine(t("email accepted. enter password."));
       return;
     }
+    const registerEpoch = flowEpoch.current;
     try {
       const nextUser = await register(authFlow.name, authFlow.email, rawInput);
+      // The account itself stays — only the session it opened is dropped.
+      if (cancelledDuring(registerEpoch)) return;
       setAuthFlow(null);
       setAuthError("");
       (await refreshBoardForUser(nextUser)).forEach(addLine);
       navigate(PAGE_PATHS.home);
       addLine(t("registered and logged in as {name}.", { name: nextUser.name }));
     } catch (error) {
+      if (flowEpoch.current !== registerEpoch) return;
       setAuthError(errMsg(error, t("Registration failed.")));
       addLine(
         t("registration failed. press Ctrl+C or Esc to quit, or enter name again."),

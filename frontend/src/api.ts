@@ -9,25 +9,19 @@ import {CREDENTIALS_KEY, PH_USER_IMAGE, SESSION_USER_KEY} from "./constants";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 
+// basic_auth stays as an always-null field so it's clear no password is held here
 type userCredentials = {
-  basic_auth: string | null,
+  basic_auth: null,
   jwt_token: JwtObject | null,
 }
 
 let currentCredentials: userCredentials | null = null;
 
-/**
- * In-memory cache of all known users, populated by listUsers().
- * Used by findUserName() and getUserByName() for fast lookups.
- */
+// cache of all known users, filled by listUsers()
 let knownUsers: UserProfile[] = [];
 
-type JwtPayload = {
-  access_token?: string;
-  expires_in?: number;
-  refresh_token?: string;
-  token_type?: string;
-}
+// token pair as it arrives from the server, nothing checked yet
+type JwtPayload = Partial<JwtObject>;
 
 type UserPayload = {
   id?: number | string;
@@ -48,64 +42,51 @@ type UserPayload = {
 export class ApiRequestError extends Error {
   status: number;
 
-  constructor(status: number, statusText: string) {
-    super(`${status} ${statusText}`);
+  constructor(status: number, statusText: string, detail?: string) {
+    // prefer the server's message over the bare status line
+    super(detail || `${status} ${statusText}`);
     this.status = status;
   }
 }
 
-// ─── Credential helpers ───────────────────────────────────────────────────────
+// pulls the message field out of a json error body
+async function errorDetail(response: Response): Promise<string> {
+  try {
+    const body: unknown = await response.json();
+    if (body && typeof body === "object") {
+      const message = (body as { message?: unknown }).message;
+      if (typeof message === "string" && message.trim()) return message;
+    }
+  } catch {
+    // empty or non-json body, fall back to the status line
+  }
+  return "";
+}
 
-/**
- * Encodes a username and password as an HTTP Basic Auth header value.
- */
+// encodes name and password as a basic auth header, only used by login
 export function buildBasicAuthHeader(name: string, password: string): string {
-  if (name === "Bearer") {
-    return "Bearer " + btoa(`${password}`)
-  } else {
-    return "Basic " + btoa(`${name}:${password}`);
-  }
+  return "Basic " + btoa(`${name}:${password}`);
 }
 
-/** Called by SessionContext after login / session restore to arm requests. */
-
-export function setCredentialsBasic(creds: string | null): void {
-  if (currentCredentials) {
-    currentCredentials.basic_auth = creds;
-  } else {
-    currentCredentials = { basic_auth: creds, jwt_token: null };
-  }
-}
-
-export function setCredentialsJwt(creds: JwtObject | null): void {
-  if (currentCredentials) {
-    currentCredentials.jwt_token = creds;
-  } else {
-    currentCredentials = { basic_auth: null, jwt_token: creds };
-  }
-}
-
-/** Called by SessionContext to persist credentials after login. */
+// current credentials, read by SessionContext to persist them after login
 export function getCredentials(): userCredentials | null {
   return currentCredentials;
 }
 
-// ─── Session restore (reads sessionStorage, arms credentials) ─────────────────
-
-/**
- * Reads credentials and user data from sessionStorage.
- * Sets currentCredentials so subsequent requests are authenticated.
- * Returns the stored SessionUser or null if no valid session exists.
- */
+// restores credentials and user from sessionStorage, null if there's no session
 export function restoreSession(): SessionUser | null {
   try {
     const sessionCreds = sessionStorage.getItem(CREDENTIALS_KEY);
     if (sessionCreds) {
-      const credentials = JSON.parse(sessionCreds);
+      const credentials = JSON.parse(sessionCreds) as Partial<userCredentials>;
       const userJson = sessionStorage.getItem(SESSION_USER_KEY);
       if (!credentials || !userJson) return null;
       const user = JSON.parse(userJson) as SessionUser;
-      currentCredentials = credentials;
+      // rebuilt field by field so an old stored basic_auth can't come back
+      currentCredentials = {
+        basic_auth: null,
+        jwt_token: credentials.jwt_token ?? null,
+      };
       return user;
     } else {
       return null;
@@ -115,33 +96,114 @@ export function restoreSession(): SessionUser | null {
   }
 }
 
-// ─── Core request helper ──────────────────────────────────────────────────────
+// auth header for the given credentials, null when there are none
+// the jwt is base64 wrapped because that's what the server decodes
+function authHeaderFor(credentials: userCredentials | null): string | null {
+  if (credentials?.jwt_token) {
+    return "Bearer " + btoa(`${credentials.jwt_token.access_token}`);
+  }
+  return null;
+}
 
-async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+// auth header for the current session, for callers outside requestJson
+// like the websocket handshake, which can't set headers
+export function authHeader(): string | null {
+  return authHeaderFor(currentCredentials);
+}
+
+// the refresh in progress, if any. shared so several requests failing at once
+// refresh once between them: the server retires a refresh token as it's spent,
+// so a second concurrent attempt would be rejected as reuse and end the session
+let refreshing: Promise<boolean> | null = null;
+
+// swap the stored pair for a fresh one, returning whether it worked
+async function runRefresh(): Promise<boolean> {
+  const refresh_token = currentCredentials?.jwt_token?.refresh_token;
+  if (!refresh_token) return false;
+
+  try {
+    const response = await fetch(`${apiBaseUrl}/users/refresh_token`, {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token }),
+      credentials: "omit",
+    });
+    if (!response.ok) return false;
+
+    const jwt_token = normalizeJwt(await response.json());
+    if (!jwt_token.access_token) return false;
+
+    currentCredentials = { basic_auth: null, jwt_token };
+    // keep the stored copy in step, or a reload would restore the token that
+    // was just retired and the session would end on the next request
+    sessionStorage.setItem(CREDENTIALS_KEY, JSON.stringify(currentCredentials));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function refreshSession(): Promise<boolean> {
+  if (!refreshing) {
+    refreshing = runRefresh().finally(() => {
+      refreshing = null;
+    });
+  }
+  return refreshing;
+}
+
+// `retry` is false on the second attempt, so a still-401 reply gives up
+// instead of refreshing forever
+async function requestJson<T>(
+  path: string,
+  init?: RequestInit,
+  retry = true,
+): Promise<T> {
   const headers: Record<string, string> = {
     Accept: "application/json",
     "Content-Type": "application/json",
     ...(init?.headers as Record<string, string>),
   };
 
-  if (currentCredentials?.jwt_token) {
-    headers["Authorization"] = "Bearer " + btoa(`${currentCredentials.jwt_token.access_token}`);
-  } else if (currentCredentials?.basic_auth && !headers["Authorization"]) {
-    headers["Authorization"] = currentCredentials.basic_auth;
+  // an explicit header wins, otherwise the session token fills in
+  const auth = authHeaderFor(currentCredentials);
+  if (auth && !headers["Authorization"]) {
+    headers["Authorization"] = auth;
   }
 
-  //console.log("apiBaseUrl: ", apiBaseUrl);
-  const response = await fetch(`${apiBaseUrl}${path}`, { ...init, headers });
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    ...init,
+    headers,
+    // omitted so the browser doesn't pop its own login dialog on a 401
+    credentials: "omit",
+  });
+
+  // access tokens last 10 minutes, so a 401 mid-session usually just means
+  // this one expired. refresh and replay once; the retry rebuilds the header
+  // from the new token. skipped when the caller set its own Authorization,
+  // since that request isn't using the session token.
+  if (
+    response.status === 401 &&
+    retry &&
+    !(init?.headers as Record<string, string>)?.["Authorization"] &&
+    currentCredentials?.jwt_token &&
+    (await refreshSession())
+  ) {
+    return requestJson<T>(path, init, false);
+  }
 
   if (!response.ok) {
-    throw new ApiRequestError(response.status, response.statusText);
+    throw new ApiRequestError(
+      response.status,
+      response.statusText,
+      await errorDetail(response),
+    );
   }
 
   return await response.json() as Promise<T>;
 }
 
-// ─── Normalisation helpers ────────────────────────────────────────────────────
-
+// turn raw server payloads into the shapes the app uses
 function textValue(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
@@ -160,12 +222,12 @@ function normalizedStatus(status: unknown): UserProfile["status"] {
   return status === "online" ? "online" : "offline";
 }
 
-export function normalizeJwt(payload: JwtPayload): JwtObject | Error {
+export function normalizeJwt(payload: JwtPayload): JwtObject {
   return {
     access_token: payload.access_token || "",
     expires_in: payload.expires_in || 0,
     refresh_token: payload.refresh_token || "",
-    token_type: payload.access_token || "Bearer",
+    token_type: payload.token_type || "Bearer",
   }
 }
 
@@ -204,14 +266,12 @@ export function normalizeUsers(payload: unknown): UserProfile[] {
   return payload.map(normalizeUser);
 }
 
-// ─── User name lookup (uses in-memory cache) ──────────────────────────────────
-
-export function findUserName(id: number): string {
-  return knownUsers.find((u) => u.id === id)?.name ?? `user#${id}`;
+// display name for a user id, falls back to user#<id>
+export function displayName(id: number, users: UserProfile[]): string {
+  return users.find((u) => u.id === id)?.name ?? `user#${id}`;
 }
 
-// ─── Auth ─────────────────────────────────────────────────────────────────────
-
+// swaps name and password for a token pair and the user profile
 export async function login(
   name: string,
   password: string,
@@ -229,7 +289,7 @@ export async function login(
         headers: { Authorization: credentials },
       }),
   );
-  if (jwt_token instanceof Error || jwt_token.expires_in === 0) {
+  if (!jwt_token.access_token || jwt_token.expires_in === 0) {
     throw new Error("Login failed: server returned an invalid token.");
   }
   const user: UserProfile = {...normalizeUser(
@@ -238,10 +298,8 @@ export async function login(
         headers: { Authorization: credentials },
       }),
   )};
-  currentCredentials = {
-    basic_auth: credentials,
-    jwt_token: jwt_token instanceof Error ? null : jwt_token,
-  };
+  // credentials go no further than the two requests above
+  currentCredentials = { basic_auth: null, jwt_token };
   return { ...user, status: "online" };
 }
 
@@ -257,35 +315,45 @@ export async function register(
     throw new Error("Name, email, and password are required.");
   }
 
-  const user = normalizeUser(
-    await requestJson<unknown>("/register", {
-      method: "POST",
-      body: JSON.stringify({ name: cleanName, email: cleanEmail, password }),
-    }),
-  );
-
-  currentCredentials = { basic_auth: buildBasicAuthHeader(cleanName, password), jwt_token: null };
-  return { ...user, status: "online" };
-}
-
-/** Clears the in-memory credentials. SessionContext handles sessionStorage. */
-export async function logout(): Promise<boolean> {
-  const body = currentCredentials?.jwt_token ? JSON.stringify({ refresh_token: currentCredentials.jwt_token.refresh_token }) : null;
-  const result = await requestJson<{ message: string }>("/users/logout", {
+  // register only answers with a receipt, so log in after to get the profile
+  await requestJson<unknown>("/register", {
     method: "POST",
-    body: body
-  })
-  if (result && typeof (result) === "object" && result.message === "Logged out successfully") {
-    currentCredentials = null;
-    knownUsers = [];
-    return true;
-  } else {
-    return false
-  }
+    body: JSON.stringify({ name: cleanName, email: cleanEmail, password }),
+  });
 
+  return login(cleanName, password);
 }
 
-// ─── Users ───────────────────────────────────────────────────────────────────
+// clears the in-memory credentials, SessionContext handles sessionStorage
+// blacklisting the token on the server is best-effort, the local session goes either way
+// returns only whether the server confirmed
+export async function logout(): Promise<boolean> {
+  // dropped before awaiting so a racing request can't slip out with the old token
+  const credentials = currentCredentials;
+  currentCredentials = null;
+  knownUsers = [];
+
+  const auth = authHeaderFor(credentials);
+  try {
+    const result = await requestJson<{ message: string }>("/users/logout", {
+      method: "POST",
+      body: credentials?.jwt_token
+        ? JSON.stringify({
+            refresh_token: credentials.jwt_token.refresh_token,
+          })
+        : null,
+      // credentials are already dropped, so carry the token explicitly
+      ...(auth ? { headers: { Authorization: auth } } : {}),
+    });
+    return (
+      !!result &&
+      typeof result === "object" &&
+      result.message === "Logged out successfully"
+    );
+  } catch {
+    return false;
+  }
+}
 
 export async function listUsers(): Promise<UserProfile[]> {
   const users = normalizeUsers(await requestJson<unknown>("/users/show"));
@@ -344,46 +412,7 @@ export async function updateCurrentUserProfile(
   return { ...user, status: "online" };
 }
 
-export async function uploadAvatar(file: File): Promise<string> {
-  if (!file.type.startsWith("image/")) {
-    throw new Error("Avatar must be an image file.");
-  }
-
-  const params = new URLSearchParams({ filename: file.name || "avatar" });
-  const uploadHeaders: Record<string, string> = {
-    "Content-Type": file.type,
-  };
-
-  if (currentCredentials) {
-    if (currentCredentials.basic_auth) {
-      uploadHeaders["Authorization"] = currentCredentials.basic_auth;
-    }
-  }
-
-  const response = await fetch(`/avatar-upload?${params.toString()}`, {
-    method: "POST",
-    headers: uploadHeaders,
-    body: file,
-  });
-
-  if (!response.ok) {
-    throw new Error(`Avatar upload failed with status ${response.status}.`);
-  }
-
-  const payload = (await response.json()) as { avatarUrl?: string };
-  if (!payload.avatarUrl) {
-    throw new Error("Avatar upload did not return an image path.");
-  }
-
-  return payload.avatarUrl;
-}
-
-// ─── Friends ─────────────────────────────────────────────────────────────────
-
-/**
- * Pure helper — resolves a list of friend IDs to full UserProfile objects
- * using the provided user pool. No network request.
- */
+// resolves friend ids to profiles from the given pool
 export function listFriends(
   friendIds: number[],
   allUsers: UserProfile[],
@@ -412,8 +441,6 @@ export async function removeFriend(
     { method: "DELETE" },
   );
 }
-
-// ─── Discussions ──────────────────────────────────────────────────────────────
 
 export async function listDiscussions(): Promise<DiscussionThread[]> {
   return requestJson<DiscussionThread[]>("/discussions/show");
@@ -445,8 +472,6 @@ export async function createPost(
   });
 }
 
-// ─── Mail ─────────────────────────────────────────────────────────────────────
-
 export async function listMail(userId: number): Promise<MailMessage[]> {
   const params = new URLSearchParams({ userId: String(userId) });
   return requestJson<MailMessage[]>(`/mail/show?${params.toString()}`);
@@ -477,8 +502,16 @@ export async function sendMail(
   });
 }
 
-// ─── Games ───────────────────────────────────────────────────────────────────
-
 export async function listGames(): Promise<GameSummary[]> {
   return requestJson<GameSummary[]>("/games/show");
+}
+
+export async function createGame(
+  name: string,
+  body: string,
+): Promise<GameSummary> {
+  return requestJson<GameSummary>("/games/create", {
+    method: "POST",
+    body: JSON.stringify({ name, body }),
+  });
 }

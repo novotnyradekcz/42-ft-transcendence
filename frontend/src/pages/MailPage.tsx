@@ -1,5 +1,6 @@
 import TerminalSection from "../components/TerminalSection";
 import WriteStatus from "../components/WriteStatus";
+import { displayName } from "../api";
 import { useData } from "../context/data/useData";
 import { useSession } from "../context/session/useSession";
 import { useTerminal } from "../context/terminal/useTerminal";
@@ -10,9 +11,6 @@ export default function MailPage() {
   const { sessionUser, knownUsers } = useSession();
   const { writeFlow, writeError } = useTerminal();
   const { t } = useTranslation();
-
-  const userName = (id: number) =>
-    knownUsers.find((u) => u.id === id)?.name ?? `user#${id}`;
 
   return (
     <TerminalSection title={t("Personal Mail")}>
@@ -27,8 +25,12 @@ export default function MailPage() {
               <span>{message.title}</span>
               <small>
                 {message.sender === sessionUser?.id
-                  ? t("sent to {name}", { name: userName(message.recipient) })
-                  : t("from {name}", { name: userName(message.sender) })}
+                  ? t("sent to {name}", {
+                      name: displayName(message.recipient, knownUsers),
+                    })
+                  : t("from {name}", {
+                      name: displayName(message.sender, knownUsers),
+                    })}
               </small>
             </li>
           ))}

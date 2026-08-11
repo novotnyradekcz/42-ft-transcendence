@@ -2,17 +2,9 @@
 
 use diesel::prelude::*;
 
-#[derive(Queryable, Selectable)]
-#[diesel(table_name = crate::schema::ftt_token_blacklist)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
-struct BlacklistedToken {
-    #[allow(dead_code)]
-    id: i32,
-    token_key: String,
-    #[allow(dead_code)]
-    expires_at: i64,
-}
-
+// Reads of the blacklist table go through `session::load_valid_blacklisted_tokens`,
+// which selects `token_key` directly into a `String` — so there is no Queryable
+// row struct here, only the insert shape.
 #[derive(Insertable)]
 #[diesel(table_name = crate::schema::ftt_token_blacklist)]
 pub struct NewBlacklistedToken {

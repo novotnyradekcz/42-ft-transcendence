@@ -2,43 +2,27 @@
 
 use crate::authenticator::{get_user_from_store, register_user, TokenResponse};
 use crate::discussions::{CreateDiscussion, CreatePost};
-use crate::games::GameInfo;
+use crate::games::CreateGame;
 use crate::mails::{CreateMail, MailQuery};
-use crate::model::database_initializer::{connection, DatabaseInitializer};
+use crate::model::games::{create_game_in_db, get_game_in_db, list_games_in_db};
 use crate::model::users::{create_user_in_db, get_user_in_db, list_users_in_db};
-use crate::model::users::{CreateUserError, DbUser, login_user_in_db};
+use crate::model::users::{CreateUserError, find_user_by_name_in_db};
+use crate::session::{
+    LogoutRequest, extract_access_claims, invalidate_claim, is_revoked, revoke_refresh_token,
+};
 use crate::users::CreateUser;
-use crate::session::{LogoutRequest, extract_access_claims, invalidate_claim};
 use crate::model::{discussions, mails, users};
 use crate::AppState;
-use actix_security::http::security::{Argon2PasswordEncoder, PasswordEncoder, User};
+use actix_security::http::security::{PasswordEncoder, User};
 use actix_security::permit_all;
-use actix_security::prelude::{AuthenticatedUser, SessionAuthenticator, SessionConfig};
-use actix_web::dev::ServiceRequest;
-use actix_web::guard::Guard;
-use actix_web::web::{Data, ReqData};
+use actix_security::prelude::AuthenticatedUser;
 use actix_web::{get, HttpRequest, HttpResponse, post, Responder, web};
-use diesel::prelude::*;
-use diesel::row::NamedRow;
 use serde_json;
 use std::sync::Arc;
-use diesel::dsl::now;
 
 pub async fn index() -> HttpResponse {
     HttpResponse::Ok().body("Welcome")
 }
-
-/*#[secured("ADMIN")]
-#[get("/admin")]
-async fn admin(user: AuthenticatedUser) -> impl Responder {
-    HttpResponse::Ok().body(format!("Welcome, Admin {}!", user.get_username()))
-}
-
-#[pre_authorize("hasRole('USER') AND hasAuthority('posts:write')")]
-#[post("/posts")]
-async fn create_post(user: AuthenticatedUser) -> impl Responder {
-    HttpResponse::Created().body("Post created")
-}*/
 
 #[get("/show")]
 pub async fn show_users(pool: web::Data<Arc<AppState>>) -> impl Responder {
@@ -65,35 +49,32 @@ pub async fn login_user(
         .get("Authorization")
         .and_then(|h| h.to_str().ok());
 
-    match auth_header {
-        Some(h) if h.starts_with("Bearer ") => {
-            return HttpResponse::Ok().json(serde_json::json!([]))
-        }
-        Some(_) => println!("auth_header not contains Bearer"),
-        None => println!("auth_header not present"),
+    // A Bearer request already holds a token, so there is nothing to mint here.
+    if auth_header.is_some_and(|h| h.starts_with("Bearer ")) {
+        return HttpResponse::Ok().json(serde_json::json!([]));
+    }
+
+    // The middleware already verified the credentials to build `AuthenticatedUser`,
+    // so this only resolves the profile row behind the authenticated name.
+    let name = user.into_inner().get_username().to_string();
+    let found_in_db = {
+        let mut db = pool
+            .database
+            .lock()
+            .expect("login_user expect DatabaseInitializer");
+        find_user_by_name_in_db(&mut db, &name)
     };
-    let name = user.clone().into_inner().get_username().to_string();
-    let pwd = user.into_inner().get_password().to_string();
-    let mut db = pool
-        .database
-        .lock()
-        .expect("create_user expect DatabaseInitializer");
-    let logged_from_db = login_user_in_db(
-        &mut db,
-        &DbUser::new(
-            0,
-            name,
-            "".to_string(),
-            pwd,
-            "".to_string(),
-            "".to_string(),
-            vec![],
-        ),
-    );
-    match logged_from_db {
-        Ok(Some(dbUser)) => {
-            let user = get_user_from_store(&dbUser.name).unwrap();
-            match pool.jwt_token_service.generate_token_pair(&user) {
+    match found_in_db {
+        Ok(Some(db_user)) => {
+            let store_user = match get_user_from_store(&db_user.name) {
+                Ok(store_user) => store_user,
+                Err(_) => {
+                    return HttpResponse::Unauthorized().json(serde_json::json!({
+                        "message": "Unexisting user",
+                    }))
+                }
+            };
+            match pool.jwt_token_service.generate_token_pair(&store_user) {
                 Ok(pair) => HttpResponse::Ok().json(TokenResponse::new(
                     pair.access_token,
                     pair.refresh_token,
@@ -102,37 +83,29 @@ pub async fn login_user(
                 )),
                 Err(e) => HttpResponse::InternalServerError().body(format!("Token error: {}", e)),
             }
-            //HttpResponse::Ok().json(serde_json::json!(dbUser))
         }
         Ok(None) => HttpResponse::Unauthorized().json(serde_json::json!({
             "message": "Unexisting user",
         })),
-        Err(_) => todo!("Error is not handled"),
+        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "message": format!("Could not load user: {}", err),
+        })),
     }
 }
 
 #[get("/me")]
 pub async fn get_user(pool: web::Data<Arc<AppState>>, user: AuthenticatedUser) -> impl Responder {
-    let name = user.clone().into_inner().get_username().to_string();
-    let pwd = user.into_inner().get_password().to_string();
-    let mut db = pool
-        .database
-        .lock()
-        .expect("create_user expect DatabaseInitializer");
-    let logged_from_db = login_user_in_db(
-        &mut db,
-        &DbUser::new(
-            0,
-            name,
-            "".to_string(),
-            pwd,
-            "".to_string(),
-            "".to_string(),
-            vec![],
-        ),
-    );
-    match logged_from_db {
-        Ok(Some(dbUser)) => HttpResponse::Ok().json(serde_json::json!(dbUser)),
+    // Same as /login: authentication happened in the middleware, this is a lookup.
+    let name = user.into_inner().get_username().to_string();
+    let found_in_db = {
+        let mut db = pool
+            .database
+            .lock()
+            .expect("get_user expect DatabaseInitializer");
+        find_user_by_name_in_db(&mut db, &name)
+    };
+    match found_in_db {
+        Ok(Some(db_user)) => HttpResponse::Ok().json(serde_json::json!(db_user)),
         _ => HttpResponse::Unauthorized().json(serde_json::json!({
             "message": "Unexisting user",
         })),
@@ -145,8 +118,6 @@ pub async fn logout(
     req: HttpRequest,
     body: Option<web::Json<LogoutRequest>>,
 ) -> HttpResponse {
-    // let Some((access_claims, raw_token)) = extract_access_claims(pool, req);
-
     match extract_access_claims(&pool, req) {
         Err(e) => {
             let message = format!("{}", e);
@@ -166,20 +137,60 @@ pub async fn logout(
     }
 }
 
+/// Exchange a refresh token for a new access/refresh pair.
+///
+/// The refresh token in the body is the *only* credential: this route is
+/// registered outside the authenticated scope in `main.rs`, because the access
+/// token an `Authorization` header would carry is precisely the thing that has
+/// expired by the time a client needs to refresh. Requiring one made the
+/// endpoint unreachable exactly when it was needed.
+///
+/// Being reachable without a header is safe only because the token is fully
+/// validated here — signature, issuer, audience and expiry via
+/// `validate_token`, then revocation via the blacklist. An attacker without a
+/// valid refresh token gets 401; forging one needs the signing secret, and
+/// anyone holding that could mint access tokens directly.
+///
+/// The full path is spelled out rather than nested under `web::scope("/users")`
+/// so it can live outside the guarded scope without a second `/users` scope
+/// shadowing the authenticated routes.
+#[permit_all]
 #[post("/users/refresh_token")]
 pub async fn refresh_token(
     pool: web::Data<Arc<AppState>>,
     body: web::Json<serde_json::Value>,
 ) -> impl Responder {
-    let refresh_token = match body.get("refresh_token").and_then(|v| v.as_str()) {
+    let raw_refresh = match body.get("refresh_token").and_then(|v| v.as_str()) {
         Some(t) => t,
         None => return HttpResponse::BadRequest().json(serde_json::json!({
             "error": "refresh_token is missing"
         }))
     };
 
-    match pool.jwt_token_service.refresh_tokens(refresh_token) {
+    let claims = match pool.jwt_token_service.validate_token(raw_refresh) {
+        Ok(claims) => claims,
+        Err(e) => return HttpResponse::Unauthorized().json(serde_json::json!({
+            "error": format!("Invalid refresh token: {}", e)
+        }))
+    };
+
+    // Refuse a token logout revoked, or that an earlier refresh already spent.
+    // A second use means two parties hold it, so honouring it would hand a
+    // stolen token a fresh pair — and without this check logout did not end a
+    // session at all: the access token died but the refresh token kept minting
+    // replacements for the rest of its life.
+    if is_revoked(&pool, claims.jti.as_deref(), raw_refresh) {
+        return HttpResponse::Unauthorized().json(serde_json::json!({
+            "error": "Refresh token has been revoked"
+        }));
+    }
+
+    match pool.jwt_token_service.refresh_tokens(raw_refresh) {
         Ok(pair) => {
+            // Rotation: the replacement pair is live, so retire the one just
+            // spent. Only after a successful mint — revoking first would strand
+            // the client with nothing if generation failed.
+            revoke_refresh_token(&pool, raw_refresh, &claims);
             HttpResponse::Ok().json(TokenResponse::new(
                 pair.access_token,
                 pair.refresh_token,
@@ -199,29 +210,30 @@ pub async fn create_user(
     pool: web::Data<Arc<AppState>>,
     body: web::Json<CreateUser>,
 ) -> impl Responder {
-    // validate first — no DB needed
-    if body.name.trim().is_empty()
-        || body.email.trim().is_empty()
-        || body.password.trim().is_empty()
-    {
+    // validate first — no DB needed. The rules live on CreateUser so they are
+    // stated (and unit-tested) once, rather than restated here.
+    if let Err(message) = body.validate() {
         return HttpResponse::BadRequest().json(serde_json::json!({
             "success": false,
-            "message": "Name, email, and password are required.",
+            "message": message,
         }));
     }
 
-    // scope the lock so it is released before encoding
+    // Hash once, outside the lock — Argon2 is deliberately slow and the DB mutex is
+    // shared by every request. The same hash is then persisted *and* put in the auth
+    // store, so both sides agree without waiting for a restart to resynchronise.
+    let encoded = pool.encoder.encode(&body.password);
+
     let result = {
         let mut db = pool
             .database
             .lock()
             .expect("create_user: DatabaseInitializer");
-        create_user_in_db(&mut db, &body, &pool.encoder)
+        create_user_in_db(&mut db, &body, &encoded)
     };
 
     match result {
         Ok(_) => {
-            let encoded = pool.encoder.encode(&body.password);
             let auth_user =
                 User::with_encoded_password(&body.name, encoded).roles(&["USER".into()]);
             register_user(auth_user);
@@ -466,31 +478,6 @@ pub async fn create_mail(
     }
 }
 
-pub fn list_games_in_db(
-    db: &mut DatabaseInitializer,
-) -> Result<Vec<GameInfo>, diesel::result::Error> {
-    use crate::schema::ftt_games::dsl as games;
-
-    let conn = connection(db);
-    games::ftt_games
-        .order(games::id.asc())
-        .select(GameInfo::as_select())
-        .load::<GameInfo>(conn)
-}
-
-pub fn get_game_in_db(
-    db: &mut DatabaseInitializer,
-    game_id: i32,
-) -> Result<Option<GameInfo>, diesel::result::Error> {
-    use crate::schema::ftt_games::dsl as games;
-
-    let conn = connection(db);
-    games::ftt_games
-        .filter(games::id.eq(game_id))
-        .select(GameInfo::as_select())
-        .first::<GameInfo>(conn)
-        .optional()
-}
 
 #[get("/show")]
 pub async fn show_games(pool: web::Data<Arc<AppState>>) -> impl Responder {
@@ -528,22 +515,84 @@ pub async fn game_detail(
     }
 }
 
+#[post("/create")]
+pub async fn create_game(
+    pool: web::Data<Arc<AppState>>,
+    user: AuthenticatedUser,
+    body: web::Json<CreateGame>,
+) -> impl Responder {
+    let name = body.name.trim();
+    let script_body = body.body.as_str();
+    let script_body_trimmed = script_body.trim();
+
+    if name.is_empty() || name.len() > 100 {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "message": "Game name must be between 1 and 100 characters.",
+        }));
+    }
+
+    if script_body_trimmed.is_empty() {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "message": "Game script body cannot be empty.",
+        }));
+    }
+
+    if script_body.len() > 100 * 1024 {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "message": "Game script body exceeds maximum allowed size of 100 KB.",
+        }));
+    }
+
+    let username = user.into_inner().get_username().to_string();
+
+    let mut db = match pool.database.lock() {
+        Ok(db) => db,
+        Err(_) => {
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Database lock poisoned.",
+            }));
+        }
+    };
+
+    let author_id = match users::find_user_id_by_name(&mut db, &username) {
+        Ok(Some(id)) => id,
+        Ok(None) => {
+            return HttpResponse::Unauthorized().json(serde_json::json!({
+                "message": "Authenticated user not found in database.",
+            }))
+        }
+        Err(err) => {
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": format!("Could not lookup user: {}", err),
+            }))
+        }
+    };
+
+    match create_game_in_db(&mut db, author_id, name, script_body) {
+        Ok(game) => HttpResponse::Created().json(game),
+        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "message": format!("Could not create game: {}", err),
+        })),
+    }
+}
+
 #[cfg(test)]
 mod router_tests {
     use super::*;
     use crate::games::Lobby;
-    use crate::model::database_initializer::inittialize_db;
-    use actix_security::http::security::{Argon2PasswordEncoder, SessionFixationStrategy};
-    use actix_security::prelude::{
-        JwtAuthenticator, JwtConfig, JwtTokenService, SessionConfig, User,
-    };
+    use crate::model::database_initializer::initialize_db;
+    use crate::status::StatusRegistry;
+    use actix_security::http::security::Argon2PasswordEncoder;
+    use actix_security::prelude::{JwtAuthenticator, JwtConfig, JwtTokenService, User};
     use actix_web::http::StatusCode;
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine;
     use actix_web::{App, test};
     use std::collections::HashSet;
     use std::sync::{Arc, Mutex, RwLock};
 
     fn make_state() -> Arc<AppState> {
-        let db = inittialize_db();
+        let db = initialize_db();
         let jwt_config = JwtConfig::new(&db.server_environment.get_jwt_hash())
             .issuer("fttranscendence")
             .audience("api-users")
@@ -552,11 +601,9 @@ mod router_tests {
         let jwt_authenticator = JwtAuthenticator::new(jwt_config);
         Arc::new(AppState {
             database: Mutex::new(db),
-            lobby: Lobby::new(),
+            lobby: Mutex::new(Lobby::new()),
+            status: Mutex::new(StatusRegistry::new()),
             encoder: Argon2PasswordEncoder::new(),
-            session_config: SessionConfig::new()
-                .user_key("user")
-                .fixation_strategy(SessionFixationStrategy::MigrateSession),
             jwt_authenticator,
             jwt_token_service,
             token_blacklist: RwLock::new(HashSet::new()),
@@ -573,6 +620,16 @@ mod router_tests {
         (pair.access_token, refresh)
     }
 
+    /// The Authorization value a real client sends: the JWT base64-wrapped
+    /// inside the Bearer value, matching `authHeaderFor` in `api.ts` and what
+    /// `extract_access_claims` decodes.
+    ///
+    /// A raw JWT is *not* valid base64 — the `.` separators are rejected — so
+    /// sending one here makes every request 401 before it reaches the handler.
+    fn bearer(access_token: &str) -> String {
+        format!("Bearer {}", STANDARD.encode(access_token))
+    }
+
     #[actix_web::test]
     async fn refresh_token_works() {
         let state = make_state();
@@ -586,7 +643,7 @@ mod router_tests {
 
         let req = test::TestRequest::post()
             .uri("/users/refresh_token")
-            .insert_header(("Authorization", format!("Bearer {}", access)))
+            .insert_header(("Authorization", bearer(&access)))
             .insert_header(("Content-Type", "application/json"))
             .set_payload(format!(r#"{{"refresh_token":"{}"}}"#, refresh))
             .to_request();
@@ -594,7 +651,9 @@ mod router_tests {
         let resp = test::call_service(&app, req).await;
 
         assert_eq!(resp.status(), StatusCode::OK);
-        assert_eq!(state.token_blacklist.read().unwrap().len(), 0);
+        // Rotation: the refresh token just spent is retired, so it cannot be
+        // exchanged a second time.
+        assert_eq!(state.token_blacklist.read().unwrap().len(), 1);
         let body = test::read_body(resp).await;
         let json: serde_json::Value =
             serde_json::from_slice(&body).expect("Response is not valid JSON");
@@ -605,6 +664,118 @@ mod router_tests {
         assert!(obj.contains_key("expires_in"),    "Missing field: expires_in");
         assert!(obj.contains_key("token_type"),    "Missing field: token_type");
 
+    }
+
+    /// The endpoint is public on purpose: a client refreshes because its access
+    /// token expired, so it has no Authorization header left to send. The
+    /// refresh token in the body is the whole credential.
+    #[actix_web::test]
+    async fn refresh_token_works_without_auth_header() {
+        let state = make_state();
+        let (_access, refresh) = make_token_pair(&state);
+        let app = test::init_service(
+            App::new()
+                .app_data(actix_web::web::Data::new(state.clone()))
+                .service(refresh_token),
+        )
+        .await;
+
+        let req = test::TestRequest::post()
+            .uri("/users/refresh_token")
+            .insert_header(("Content-Type", "application/json"))
+            .set_payload(format!(r#"{{"refresh_token":"{}"}}"#, refresh))
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    /// Public does not mean unprotected: without a valid refresh token there is
+    /// nothing to exchange, so an anonymous caller gets 401 rather than a pair.
+    #[actix_web::test]
+    async fn refresh_token_with_garbage_is_rejected() {
+        let state = make_state();
+        let app = test::init_service(
+            App::new()
+                .app_data(actix_web::web::Data::new(state.clone()))
+                .service(refresh_token),
+        )
+        .await;
+
+        let req = test::TestRequest::post()
+            .uri("/users/refresh_token")
+            .insert_header(("Content-Type", "application/json"))
+            .set_payload(r#"{"refresh_token":"not.a.real.jwt"}"#)
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(state.token_blacklist.read().unwrap().len(), 0);
+    }
+
+    /// Reuse detection: a refresh token is single-use, so presenting it twice
+    /// means two parties hold it. The second attempt is refused instead of
+    /// handing a possibly-stolen token a fresh pair.
+    #[actix_web::test]
+    async fn refresh_token_reuse_is_rejected() {
+        let state = make_state();
+        let (_access, refresh) = make_token_pair(&state);
+        let app = test::init_service(
+            App::new()
+                .app_data(actix_web::web::Data::new(state.clone()))
+                .service(refresh_token),
+        )
+        .await;
+
+        let send = || {
+            test::TestRequest::post()
+                .uri("/users/refresh_token")
+                .insert_header(("Content-Type", "application/json"))
+                .set_payload(format!(r#"{{"refresh_token":"{}"}}"#, refresh))
+                .to_request()
+        };
+
+        let first = test::call_service(&app, send()).await;
+        assert_eq!(first.status(), StatusCode::OK);
+
+        let second = test::call_service(&app, send()).await;
+        assert_eq!(second.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    /// Logging out must actually end the session. Before the blacklist check
+    /// the access token died but the refresh token kept minting replacements
+    /// for the rest of its life, so logout revoked nothing that mattered.
+    #[actix_web::test]
+    async fn refresh_token_revoked_by_logout_is_rejected() {
+        let state = make_state();
+        let (access, refresh) = make_token_pair(&state);
+        let app = test::init_service(
+            App::new()
+                .app_data(actix_web::web::Data::new(state.clone()))
+                .service(logout)
+                .service(refresh_token),
+        )
+        .await;
+
+        let logout_req = test::TestRequest::post()
+            .uri("/logout")
+            .insert_header(("Authorization", bearer(&access)))
+            .insert_header(("Content-Type", "application/json"))
+            .set_payload(format!(r#"{{"refresh_token":"{}"}}"#, refresh))
+            .to_request();
+        assert_eq!(
+            test::call_service(&app, logout_req).await.status(),
+            StatusCode::OK
+        );
+
+        let refresh_req = test::TestRequest::post()
+            .uri("/users/refresh_token")
+            .insert_header(("Content-Type", "application/json"))
+            .set_payload(format!(r#"{{"refresh_token":"{}"}}"#, refresh))
+            .to_request();
+
+        let resp = test::call_service(&app, refresh_req).await;
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     }
 
     // ── Happy paths ────────────────────────────────────────────────────────
@@ -623,12 +794,22 @@ mod router_tests {
 
         let req = test::TestRequest::post()
             .uri("/logout")
-            .insert_header(("Authorization", format!("Bearer {}", access)))
+            .insert_header(("Authorization", bearer(&access)))
             .to_request();
 
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), StatusCode::OK);
         assert_eq!(state.token_blacklist.read().unwrap().len(), 1);
+
+        // Not just "something was blacklisted" — the *key* has to be the one
+        // `authenticator::authenticate_jwt` looks up, which is the decoded JWT
+        // (this library never populates `jti`, so the fallback is the only
+        // path). Logout used to store the base64 wrapper instead, so the two
+        // never matched and revocation silently did nothing.
+        assert!(
+            state.token_blacklist.read().unwrap().contains(&access),
+            "blacklist must be keyed by the decoded JWT, not the base64 wrapper",
+        );
     }
 
     /// Both tokens provided: exactly two entries appear in the blacklist.
@@ -645,7 +826,7 @@ mod router_tests {
 
         let req = test::TestRequest::post()
             .uri("/logout")
-            .insert_header(("Authorization", format!("Bearer {}", access)))
+            .insert_header(("Authorization", bearer(&access)))
             .insert_header(("Content-Type", "application/json"))
             .set_payload(format!(r#"{{"refresh_token":"{}"}}"#, refresh))
             .to_request();
@@ -671,7 +852,7 @@ mod router_tests {
         for _ in 0..2 {
             let req = test::TestRequest::post()
                 .uri("/logout")
-                .insert_header(("Authorization", format!("Bearer {}", access)))
+                .insert_header(("Authorization", bearer(&access)))
                 .to_request();
             let resp = test::call_service(&app, req).await;
             assert_eq!(resp.status(), StatusCode::OK);
@@ -733,7 +914,7 @@ mod router_tests {
 
         let req = test::TestRequest::post()
             .uri("/logout")
-            .insert_header(("Authorization", format!("Bearer {}", access)))
+            .insert_header(("Authorization", bearer(&access)))
             .insert_header(("Content-Type", "application/json"))
             .set_payload(r#"{"refresh_token":"not.a.valid.jwt"}"#)
             .to_request();
