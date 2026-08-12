@@ -188,15 +188,19 @@ export function createCommandHandlers(
       discussions: PAGE_PATHS.discussions,
       mail: PAGE_PATHS.mail,
       games: PAGE_PATHS.games,
+      history: PAGE_PATHS["game-history"],
+      leaderboard: PAGE_PATHS["game-leaderboard"],
     };
 
     const nextPath = directPaths[command];
 
-    if ((command === "profile" || command === "friends") && !sessionUser) {
+    if ((command === "profile" || command === "friends" || command === "history") && !sessionUser) {
       addLine(
         command === "profile"
           ? t("login first to view your profile.")
-          : t("login first to view friends."),
+          : command === "history"
+            ? t("login first to view your match history.")
+            : t("login first to view friends."),
       );
       setAuthFlow({ mode: "login", step: "name", name: "" });
       setAuthError("");

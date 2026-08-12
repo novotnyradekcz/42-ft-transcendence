@@ -1,6 +1,8 @@
 import type {
   DiscussionThread,
+  GameHistoryItem,
   GameSummary,
+  LeaderboardItem,
   MailMessage,
   SessionUser,
   UserProfile,
@@ -391,3 +393,13 @@ export async function createGame(
     body: JSON.stringify({ name, body }),
   });
 }
+
+export async function getGameHistory(userId: number): Promise<GameHistoryItem[]> {
+  const params = new URLSearchParams({ user_id: String(userId) });
+  return requestJson<GameHistoryItem[]>(`/games/history?${params.toString()}`);
+}
+
+export async function getLeaderboard(): Promise<LeaderboardItem[]> {
+  return requestJson<LeaderboardItem[]>("/games/leaderboard");
+}
+

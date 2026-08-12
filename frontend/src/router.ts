@@ -22,6 +22,8 @@ export const PAGE_PATHS: Record<Page, string> = {
   "mail-detail": "/mail/show",
   games: "/games/show",
   "game-play": "/games/play",
+  "game-history": "/games/history",
+  "game-leaderboard": "/games/leaderboard",
 };
 
 export function pageFromPath(pathname: string): Page {
@@ -35,6 +37,8 @@ export function pageFromPath(pathname: string): Page {
   if (pathname.startsWith("/mail/show/")) return "mail-detail";
   if (pathname === "/mail/show") return "mail";
   if (pathname.startsWith("/games/play")) return "game-play";
+  if (pathname === "/games/history") return "game-history";
+  if (pathname === "/games/leaderboard") return "game-leaderboard";
   if (pathname === "/games/show") return "games";
   if (pathname === "/help") return "help";
   if (pathname === "/users/me") return "profile";

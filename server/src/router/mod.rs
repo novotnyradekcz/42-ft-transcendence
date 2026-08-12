@@ -392,3 +392,59 @@ pub async fn create_game(
         })),
     }
 }
+
+#[derive(serde::Deserialize)]
+pub struct HistoryQuery {
+    pub user_id: Option<i32>,
+}
+
+#[get("/history")]
+pub async fn get_game_history(
+    pool: web::Data<Arc<AppState>>,
+    query: web::Query<HistoryQuery>,
+) -> impl Responder {
+    let user_id = match query.user_id {
+        Some(id) => id,
+        None => {
+            return HttpResponse::BadRequest().json(serde_json::json!({
+                "message": "user_id query parameter is required",
+            }))
+        }
+    };
+
+    let mut db = match pool.database.lock() {
+        Ok(db) => db,
+        Err(_) => {
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Database lock poisoned.",
+            }))
+        }
+    };
+
+    match crate::model::games::get_game_history_for_user_in_db(&mut db, user_id) {
+        Ok(history) => HttpResponse::Ok().json(history),
+        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "message": format!("Could not load game history: {}", err),
+        })),
+    }
+}
+
+#[get("/leaderboard")]
+pub async fn get_leaderboard(pool: web::Data<Arc<AppState>>) -> impl Responder {
+    let mut db = match pool.database.lock() {
+        Ok(db) => db,
+        Err(_) => {
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Database lock poisoned.",
+            }))
+        }
+    };
+
+    match crate::model::games::get_leaderboard_in_db(&mut db) {
+        Ok(leaderboard) => HttpResponse::Ok().json(leaderboard),
+        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "message": format!("Could not load leaderboard: {}", err),
+        })),
+    }
+}
+

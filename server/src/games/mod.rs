@@ -33,8 +33,10 @@ pub struct Player {
 pub struct Room {
     pub id: String,
     pub game_id: i32,
+    pub game_name: String,
     pub player1: Player,
     pub player2: Option<Player>,
+    pub is_finished: bool,
 }
 
 pub struct Lobby {
@@ -196,8 +198,10 @@ pub async fn play_game_ws(
         let new_room = Room {
             id: room_id.clone(),
             game_id,
+            game_name: String::new(),
             player1: p1,
             player2: None,
+            is_finished: false,
         };
         lobby_lock.rooms.insert(room_id.clone(), new_room);
         lobby_lock.waiting_rooms.insert(game_id, room_id.clone());
@@ -227,6 +231,14 @@ pub async fn play_game_ws(
             };
 
             if let Some(g) = game {
+                // Save game_name into the room
+                {
+                    let mut lobby_lock = pool_task.lobby.lock().unwrap();
+                    if let Some(room) = lobby_lock.rooms.get_mut(&room_id_task) {
+                        room.game_name = g.name.clone();
+                    }
+                }
+
                 // Send match start to Player 1
                 let start_p1 = serde_json::to_string(&WsServerMessage::MatchStart {
                     player_index: 1,
@@ -265,8 +277,8 @@ pub async fn play_game_ws(
                         match client_msg {
                             WsClientMessage::GameAction { data } => {
                                 // Relay to the other player
-                                let lobby_lock = pool_task.lobby.lock().unwrap();
-                                if let Some(room) = lobby_lock.rooms.get(&room_id_task) {
+                                let mut lobby_lock = pool_task.lobby.lock().unwrap();
+                                if let Some(room) = lobby_lock.rooms.get_mut(&room_id_task) {
                                     let recipient = if player_index == 1 {
                                         room.player2.as_ref()
                                     } else {
@@ -274,9 +286,35 @@ pub async fn play_game_ws(
                                     };
 
                                     if let Some(opp) = recipient {
-                                        let relay_msg = serde_json::to_string(&WsServerMessage::GameAction { data }).unwrap();
+                                        let relay_msg = serde_json::to_string(&WsServerMessage::GameAction { data: data.clone() }).unwrap();
                                         let mut opp_session = opp.session.clone();
                                         let _ = opp_session.text(relay_msg).await;
+                                    }
+
+                                    // Check if this action triggers game completion
+                                    if data.starts_with("game_over:") && !room.is_finished {
+                                        room.is_finished = true;
+                                        let val = &data["game_over:".len()..];
+                                        let winner_id = match val {
+                                            "1" => Some(room.player1.user_id),
+                                            "2" => room.player2.as_ref().map(|p| p.user_id),
+                                            _ => None,
+                                        };
+                                        let game_name = if room.game_name.is_empty() { "Game".to_string() } else { room.game_name.clone() };
+                                        let p1_id = room.player1.user_id;
+                                        if let Some(ref p2) = room.player2 {
+                                            let p2_id = p2.user_id;
+                                            if let Ok(mut db) = pool_task.database.lock() {
+                                                let _ = crate::model::games::save_game_history_in_db(
+                                                    &mut db,
+                                                    game_id,
+                                                    &game_name,
+                                                    p1_id,
+                                                    p2_id,
+                                                    winner_id,
+                                                );
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -306,6 +344,26 @@ pub async fn play_game_ws(
                 if let Some(waiting_id) = lobby_lock.waiting_rooms.get(&game_id) {
                     if waiting_id == &room_id_task {
                         lobby_lock.waiting_rooms.remove(&game_id);
+                    }
+                }
+
+                // If game was active and not finished, remaining player wins by forfeit
+                if !room.is_finished && room.player2.is_some() {
+                    let p1_id = room.player1.user_id;
+                    let p2 = room.player2.as_ref().unwrap();
+                    let p2_id = p2.user_id;
+                    let winner_id = if player_index == 1 { Some(p2_id) } else { Some(p1_id) };
+                    let game_name = if room.game_name.is_empty() { "Game".to_string() } else { room.game_name.clone() };
+
+                    if let Ok(mut db) = pool_task.database.lock() {
+                        let _ = crate::model::games::save_game_history_in_db(
+                            &mut db,
+                            game_id,
+                            &game_name,
+                            p1_id,
+                            p2_id,
+                            winner_id,
+                        );
                     }
                 }
 

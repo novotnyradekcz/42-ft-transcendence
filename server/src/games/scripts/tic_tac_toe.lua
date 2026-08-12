@@ -104,8 +104,10 @@ local function check_game_over()
     draw_board()
     if win == "draw" then
       draw_cell(8, 19, "GAME OVER - IT'S A DRAW!", "yellow")
+      send_message("game_over:0")
     elseif win == my_symbol then
       draw_cell(8, 19, "GAME OVER - YOU WON!", "green")
+      send_message("game_over:" .. player_index)
     else
       draw_cell(8, 19, "GAME OVER - YOU LOST!", "red")
     end
@@ -113,6 +115,7 @@ local function check_game_over()
   end
   return false
 end
+
 
 function on_click(x, y)
   if check_winner() then return end

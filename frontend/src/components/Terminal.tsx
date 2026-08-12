@@ -9,6 +9,8 @@ import GamePlayPage from "../pages/GamePlayPage";
 import DiscussionDetailPage from "../pages/DiscussionDetailPage";
 import DiscussionsPage from "../pages/DiscussionsPage";
 import FriendsPage from "../pages/FriendsPage";
+import GameHistoryPage from "../pages/GameHistoryPage";
+import GameLeaderboardPage from "../pages/GameLeaderboardPage";
 import GamesPage from "../pages/GamesPage";
 import HelpPage from "../pages/HelpPage";
 import HomePage from "../pages/HomePage";
@@ -114,6 +116,8 @@ export default function Terminal() {
             <Route path="/mail/show" element={<MailPage />} />
             <Route path="/mail/show/:id" element={<MailDetailPage />} />
             <Route path="/games/show" element={<GamesPage />} />
+            <Route path="/games/history" element={<GameHistoryPage />} />
+            <Route path="/games/leaderboard" element={<GameLeaderboardPage />} />
             <Route
               path="/games/play/:id"
               element={<GamePlayPage game={selectedGame} />}

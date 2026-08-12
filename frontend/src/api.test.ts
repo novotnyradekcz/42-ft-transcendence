@@ -10,6 +10,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildBasicAuthHeader,
   createGame,
+  getGameHistory,
+  getLeaderboard,
   listFriends,
   listUsers,
   login,
@@ -512,3 +514,65 @@ describe("createGame", () => {
     expect(result).toEqual(mockGame);
   });
 });
+
+// ─── getGameHistory & getLeaderboard ──────────────────────────────────────────
+
+describe("getGameHistory", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("happy path: fetches game history for a specific user_id", async () => {
+    const mockHistory = [
+      {
+        id: 1,
+        game_id: 1,
+        game_name: "Tic-Tac-Toe",
+        player1_id: 1,
+        player1_name: "alice",
+        player2_id: 2,
+        player2_name: "bob",
+        winner_id: 1,
+        winner_name: "alice",
+        played_at: "2026-08-12 09:00",
+      },
+    ];
+    const mockFetch = stubFetch(200, mockHistory);
+
+    const result = await getGameHistory(1);
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/games/history?user_id=1");
+    expect(result).toEqual(mockHistory);
+  });
+});
+
+describe("getLeaderboard", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("happy path: fetches top 10 players leaderboard", async () => {
+    const mockLeaderboard = [
+      {
+        rank: 1,
+        user_id: 1,
+        user_name: "alice",
+        wins: 5,
+        losses: 1,
+        draws: 0,
+        win_loss_ratio: 5.0,
+      },
+    ];
+    const mockFetch = stubFetch(200, mockLeaderboard);
+
+    const result = await getLeaderboard();
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/games/leaderboard");
+    expect(result).toEqual(mockLeaderboard);
+  });
+});
+
