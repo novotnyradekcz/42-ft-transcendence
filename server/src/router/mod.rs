@@ -60,54 +60,16 @@ pub async fn login_user(
     user: AuthenticatedUser,
     req: HttpRequest,
 ) -> impl Responder {
-    let auth_header = req
-        .headers()
-        .get("Authorization")
-        .and_then(|h| h.to_str().ok());
-
-    match auth_header {
-        Some(h) if h.starts_with("Bearer ") => {
-            return HttpResponse::Ok().json(serde_json::json!([]))
-        }
-        Some(_) => println!("auth_header not contains Bearer"),
-        None => println!("auth_header not present"),
-    };
     let name = user.clone().into_inner().get_username().to_string();
-    let pwd = user.into_inner().get_password().to_string();
-    let mut db = pool
-        .database
-        .lock()
-        .expect("create_user expect DatabaseInitializer");
-    let logged_from_db = login_user_in_db(
-        &mut db,
-        &DbUser::new(
-            0,
-            name,
-            "".to_string(),
-            pwd,
-            "".to_string(),
-            "".to_string(),
-            vec![],
-        ),
-    );
-    match logged_from_db {
-        Ok(Some(dbUser)) => {
-            let user = get_user_from_store(&dbUser.name).unwrap();
-            match pool.jwt_token_service.generate_token_pair(&user) {
-                Ok(pair) => HttpResponse::Ok().json(TokenResponse::new(
-                    pair.access_token,
-                    pair.refresh_token,
-                    pair.token_type,
-                    pair.expires_in,
-                )),
-                Err(e) => HttpResponse::InternalServerError().body(format!("Token error: {}", e)),
-            }
-            //HttpResponse::Ok().json(serde_json::json!(dbUser))
-        }
-        Ok(None) => HttpResponse::Unauthorized().json(serde_json::json!({
-            "message": "Unexisting user",
-        })),
-        Err(_) => todo!("Error is not handled"),
+    let user = get_user_from_store(&name).unwrap();
+    match pool.jwt_token_service.generate_token_pair(&user) {
+        Ok(pair) => HttpResponse::Ok().json(TokenResponse::new(
+            pair.access_token,
+            pair.refresh_token,
+            pair.token_type,
+            pair.expires_in,
+        )),
+        Err(e) => HttpResponse::InternalServerError().body(format!("Token error: {}", e)),
     }
 }
 
@@ -125,7 +87,7 @@ pub async fn get_user(pool: web::Data<Arc<AppState>>, user: AuthenticatedUser) -
             0,
             name,
             "".to_string(),
-            pwd,
+            "".to_string(),
             "".to_string(),
             "".to_string(),
             vec![],

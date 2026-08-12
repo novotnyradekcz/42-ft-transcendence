@@ -53,6 +53,7 @@ pub fn register_user(user: User) {
             .write()
             .expect("USER_STORE RwLock poisoned")
             .insert(user.get_username().to_string(), user);
+        println!("ADD USER to user store: {:#?}", store);
     }
 }
 

@@ -36,7 +36,7 @@ impl ToSql<Text, diesel::pg::Pg> for FriendList {
     }
 }
 
-#[derive(Queryable, Selectable, Clone)]
+#[derive(Queryable, Selectable, Clone, Debug)]
 #[diesel(table_name = crate::schema::ftt_users)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct DbUser {
@@ -222,11 +222,15 @@ pub fn login_user_in_db(
 ) -> Result<Option<UserInfo>, diesel::result::Error> {
     use crate::schema::ftt_users::dsl::*;
 
+    println!("login_user_in_db username: {}, pwd: {} ", &login.name, &login.password);
+
     let user = ftt_users
-        .filter(name.eq(&login.name).and(password.eq(&login.password)))
+        .filter(name.eq(&login.name)) //.and(password.eq(&login.password))
         .select(DbUser::as_select())
         .first::<DbUser>(connection(db))
         .optional()?;
+
+    println!("login_user_in_db user {:#?}", user);
 
     Ok(UserConversion::try_into(user))
 }
