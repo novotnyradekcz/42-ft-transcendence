@@ -1,4 +1,4 @@
-/** Full snapshot of who is online — sent on connect and in reply to a ping. */
+// full snapshot of who is online, sent on connect and after every ping
 export type StatusInit = {
   type: "status_init";
   online: number[];
@@ -6,18 +6,13 @@ export type StatusInit = {
 
 export type StatusServerMessage = StatusInit;
 
-/** Keepalive; the server answers with a fresh `status_init`. */
+// keepalive, the server answers with a fresh status_init
 export type StatusClientMessage = {
   type: "ping";
 };
 
+// shape of the status context
 export interface StatusContextValue {
-  /** Ids of every user with at least one open status connection. */
-  onlineIds: Set<number>;
-  /** True once the status socket is open. False for guests. */
-  connected: boolean;
-  /** True if the given user has an open status connection. */
-  isOnline(userId: number): boolean;
-  /** `isOnline` as the string the UI renders. */
+  // whether the user has an open status connection, as the string the ui renders
   statusOf(userId: number): "online" | "offline";
 }

@@ -43,6 +43,14 @@ diesel::table! {
 }
 
 diesel::table! {
+    ftt_token_blacklist (id) {
+        id -> Int4,
+        token_key -> Text,
+        expires_at -> Int8,
+    }
+}
+
+diesel::table! {
     ftt_users (id) {
         id -> Int4,
         name -> Text,
@@ -63,5 +71,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     ftt_games,
     ftt_mail,
     ftt_posts,
+    ftt_token_blacklist,
     ftt_users,
 );

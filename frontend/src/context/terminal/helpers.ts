@@ -1,8 +1,15 @@
 import type { AuthFlow, WriteFlow } from "../../terminalTypes";
 import type { SessionUser } from "../../types";
+import { PAGE_PATHS } from "../../router";
+import type { TerminalDeps } from "./deps";
 
-export function errMsg(e: unknown, fallback: string): string {
-  return e instanceof Error ? e.message : fallback;
+// sends the user to the login screen with a fresh prompt
+export function startLoginFlow(
+  deps: Pick<TerminalDeps, "setAuthFlow" | "setAuthError" | "goTo">,
+): void {
+  deps.setAuthFlow({ mode: "login", step: "name", name: "" });
+  deps.setAuthError("");
+  deps.goTo(PAGE_PATHS.login);
 }
 
 export function getPromptLabel(

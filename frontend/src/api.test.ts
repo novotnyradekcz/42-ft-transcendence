@@ -1,12 +1,6 @@
-/**
- * Tests for api.ts — Basic Auth management, session restore,
- * user normalisation, and pure helpers.
- *
- * Run with:  npm test
- * Requires:  vitest, jsdom
- */
+// tests for api.ts, run with `npm test`
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildBasicAuthHeader,
   createGame,
@@ -17,11 +11,8 @@ import {
   normalizeUser,
   register,
   restoreSession,
-  setCredentials,
 } from "./api";
 import { CREDENTIALS_KEY, PH_USER_IMAGE, SESSION_USER_KEY } from "./constants";
-
-// ─── helpers ──────────────────────────────────────────────────────────────────
 
 const BASE_USER = {
   id: 1,
@@ -32,6 +23,26 @@ const BASE_USER = {
   status: "online",
   friends: [2, 3],
 };
+
+// what POST /register answers with, a receipt rather than a user
+const REGISTER_RECEIPT = {
+  success: true,
+  message: "Created user: alice",
+  email: "alice@example.com",
+};
+
+const BASE_JWT_TOKEN = {
+  "access_token": "s3cr3ts3cr3ts3cr3ts3cr3t",
+  "refresh_token": "s3cr3ts3cr3ts3cr3t",
+  "token_type": "Bearer",
+  "expires_in": 600
+}
+
+// sessionStorage payload a current build writes, token only
+const STORED_CREDENTIALS = JSON.stringify({
+  basic_auth: null,
+  jwt_token: BASE_JWT_TOKEN,
+});
 
 function stubFetch(status: number, body: unknown) {
   const mock = vi.fn().mockResolvedValue({
@@ -50,8 +61,6 @@ function stubFetch(status: number, body: unknown) {
   vi.stubGlobal("fetch", mock);
   return mock;
 }
-
-// ─── buildBasicAuthHeader ─────────────────────────────────────────────────────
 
 describe("buildBasicAuthHeader", () => {
   it("happy path: produces a valid Basic Auth header value", () => {
@@ -72,8 +81,6 @@ describe("buildBasicAuthHeader", () => {
     expect(decoded).toBe("user name:p@$$w0rd!");
   });
 });
-
-// ─── normalizeUser ────────────────────────────────────────────────────────────
 
 describe("normalizeUser", () => {
   it("happy path: maps all fields correctly", () => {
@@ -161,8 +168,6 @@ describe("normalizeUser", () => {
   });
 });
 
-// ─── listFriends (pure helper) ────────────────────────────────────────────────
-
 describe("listFriends", () => {
   const allUsers = [
     {
@@ -214,8 +219,6 @@ describe("listFriends", () => {
   });
 });
 
-// ─── login ────────────────────────────────────────────────────────────────────
-
 describe("login", () => {
   afterEach(() => {
     logout();
@@ -224,7 +227,16 @@ describe("login", () => {
   });
 
   it("happy path: sends Authorization header (no JSON body) and returns the user", async () => {
-    const fetch = stubFetch(200, BASE_USER);
+    const makeResponse = (body: unknown) => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: () => Promise.resolve(body),
+    });
+    const fetch = vi.fn()
+        .mockResolvedValueOnce(makeResponse(BASE_JWT_TOKEN))
+        .mockResolvedValueOnce(makeResponse(BASE_USER));
+    vi.stubGlobal("fetch", fetch);
 
     const user = await login("alice", "s3cr3t");
 
@@ -241,7 +253,16 @@ describe("login", () => {
   });
 
   it("happy path: trims leading/trailing whitespace from the name", async () => {
-    const fetch = stubFetch(200, BASE_USER);
+    const makeResponse = (body: unknown) => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: () => Promise.resolve(body),
+    });
+    const fetch = vi.fn()
+        .mockResolvedValueOnce(makeResponse(BASE_JWT_TOKEN))
+        .mockResolvedValueOnce(makeResponse(BASE_USER));
+    vi.stubGlobal("fetch", fetch);
 
     await login("  alice  ", "s3cr3t");
 
@@ -250,8 +271,38 @@ describe("login", () => {
     expect(headers["Authorization"]).toBe("Basic " + btoa("alice:s3cr3t"));
   });
 
+  it("edge case: a user literally named `Bearer` still logs in with Basic", async () => {
+    // the header builder used to special-case the name "Bearer" and send
+    // the password as a bearer token
+    const makeResponse = (body: unknown) => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: () => Promise.resolve(body),
+    });
+    const fetch = vi.fn()
+        .mockResolvedValueOnce(makeResponse(BASE_JWT_TOKEN))
+        .mockResolvedValueOnce(makeResponse(BASE_USER));
+    vi.stubGlobal("fetch", fetch);
+
+    await login("Bearer", "s3cr3t");
+
+    const [, init] = fetch.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers["Authorization"]).toBe("Basic " + btoa("Bearer:s3cr3t"));
+  });
+
   it("happy path: returned user has status online", async () => {
-    stubFetch(200, { ...BASE_USER, status: "offline" });
+    const makeResponse = (body: unknown) => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: () => Promise.resolve(body),
+    });
+    const fetch = vi.fn()
+        .mockResolvedValueOnce(makeResponse(BASE_JWT_TOKEN))
+        .mockResolvedValueOnce(makeResponse({...BASE_USER, status: "offline"}));
+    vi.stubGlobal("fetch", fetch);
     const user = await login("alice", "s3cr3t");
     expect(user.status).toBe("online");
   });
@@ -285,8 +336,6 @@ describe("login", () => {
   });
 });
 
-// ─── logout ───────────────────────────────────────────────────────────────────
-
 describe("logout", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -294,7 +343,16 @@ describe("logout", () => {
   });
 
   it("happy path: clears credentials — subsequent requests carry no Authorization header", async () => {
-    stubFetch(200, BASE_USER);
+    const makeResponse = (body: unknown) => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: () => Promise.resolve(body),
+    });
+    const fetch = vi.fn()
+        .mockResolvedValueOnce(makeResponse(BASE_JWT_TOKEN))
+        .mockResolvedValueOnce(makeResponse(BASE_USER));
+    vi.stubGlobal("fetch", fetch);
     await login("alice", "s3cr3t");
     logout();
 
@@ -307,8 +365,6 @@ describe("logout", () => {
   });
 });
 
-// ─── authenticated requests after login ──────────────────────────────────────
-
 describe("authenticated requests after login", () => {
   afterEach(() => {
     logout();
@@ -316,8 +372,17 @@ describe("authenticated requests after login", () => {
     sessionStorage.clear();
   });
 
-  it("attaches stored credentials to every subsequent request", async () => {
-    stubFetch(200, BASE_USER);
+  it("attaches the bearer token — never the password — to every subsequent request", async () => {
+    const makeResponse = (body: unknown) => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: () => Promise.resolve(body),
+    });
+    const fetch = vi.fn()
+        .mockResolvedValueOnce(makeResponse(BASE_JWT_TOKEN))
+        .mockResolvedValueOnce(makeResponse(BASE_USER));
+    vi.stubGlobal("fetch", fetch);
     await login("alice", "s3cr3t");
 
     const listFetch = stubFetch(200, [BASE_USER]);
@@ -325,7 +390,11 @@ describe("authenticated requests after login", () => {
 
     const [, init] = listFetch.mock.calls[0] as [string, RequestInit];
     const headers = init.headers as Record<string, string>;
-    expect(headers["Authorization"]).toBe("Basic " + btoa("alice:s3cr3t"));
+    // the basic header is only for the login handshake, after that it's the token
+    expect(headers["Authorization"]).toBe(
+      "Bearer " + btoa(BASE_JWT_TOKEN.access_token),
+    );
+    expect(headers["Authorization"]).not.toContain(btoa("alice:s3cr3t"));
   });
 
   it("does not attach an Authorization header before any login", async () => {
@@ -338,8 +407,6 @@ describe("authenticated requests after login", () => {
   });
 });
 
-// ─── restoreSession ───────────────────────────────────────────────────────────
-
 describe("restoreSession", () => {
   afterEach(() => {
     logout();
@@ -348,7 +415,7 @@ describe("restoreSession", () => {
   });
 
   it("happy path: restores user from sessionStorage (simulated page refresh)", async () => {
-    sessionStorage.setItem(CREDENTIALS_KEY, "Basic " + btoa("alice:s3cr3t"));
+    sessionStorage.setItem(CREDENTIALS_KEY, STORED_CREDENTIALS);
     sessionStorage.setItem(
       SESSION_USER_KEY,
       JSON.stringify({ ...BASE_USER, avatarUrl: "/img.png" }),
@@ -360,7 +427,7 @@ describe("restoreSession", () => {
   });
 
   it("happy path: restored credentials are sent on subsequent requests", async () => {
-    sessionStorage.setItem(CREDENTIALS_KEY, "Basic " + btoa("alice:s3cr3t"));
+    sessionStorage.setItem(CREDENTIALS_KEY, STORED_CREDENTIALS);
     sessionStorage.setItem(
       SESSION_USER_KEY,
       JSON.stringify({ ...BASE_USER, avatarUrl: "/img.png" }),
@@ -372,7 +439,32 @@ describe("restoreSession", () => {
 
     const [, init] = listFetch.mock.calls[0] as [string, RequestInit];
     const headers = init.headers as Record<string, string>;
-    expect(headers["Authorization"]).toBe("Basic " + btoa("alice:s3cr3t"));
+    expect(headers["Authorization"]).toBe(
+      "Bearer " + btoa(BASE_JWT_TOKEN.access_token),
+    );
+  });
+
+  it("regression: a stored blob from an older build cannot revive a password", async () => {
+    // builds before the jwt switch stored basic_auth next to the token
+    sessionStorage.setItem(
+      CREDENTIALS_KEY,
+      JSON.stringify({
+        basic_auth: "Basic " + btoa("alice:s3cr3t"),
+        jwt_token: BASE_JWT_TOKEN,
+      }),
+    );
+    sessionStorage.setItem(
+      SESSION_USER_KEY,
+      JSON.stringify({ ...BASE_USER, avatarUrl: "/img.png" }),
+    );
+    restoreSession();
+
+    const listFetch = stubFetch(200, [BASE_USER]);
+    await listUsers();
+
+    const [, init] = listFetch.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers["Authorization"]).not.toContain(btoa("alice:s3cr3t"));
   });
 
   it("edge case: returns null when sessionStorage is empty (no prior session)", () => {
@@ -394,61 +486,53 @@ describe("restoreSession", () => {
   });
 });
 
-// ─── setCredentials ───────────────────────────────────────────────────────────
-
-describe("setCredentials", () => {
-  afterEach(() => {
-    logout();
-    vi.unstubAllGlobals();
-  });
-
-  it("happy path: credentials set externally are used on the next request", async () => {
-    setCredentials("Basic " + btoa("bob:pass"));
-
-    const listFetch = stubFetch(200, [BASE_USER]);
-    await listUsers();
-
-    const [, init] = listFetch.mock.calls[0] as [string, RequestInit];
-    const headers = init.headers as Record<string, string>;
-    expect(headers["Authorization"]).toBe("Basic " + btoa("bob:pass"));
-  });
-
-  it("edge case: passing null removes credentials from subsequent requests", async () => {
-    setCredentials("Basic " + btoa("bob:pass"));
-    setCredentials(null);
-
-    const listFetch = stubFetch(200, [BASE_USER]);
-    await listUsers();
-
-    const [, init] = listFetch.mock.calls[0] as [string, RequestInit];
-    const headers = init.headers as Record<string, string>;
-    expect(headers["Authorization"]).toBeUndefined();
-  });
-});
-
-// ─── register ─────────────────────────────────────────────────────────────────
-
 describe("register", () => {
+  // cleared up front too, so a token from an earlier describe can't ride along
+  beforeEach(() => {
+    logout();
+  });
+
   afterEach(() => {
     logout();
     vi.unstubAllGlobals();
     sessionStorage.clear();
   });
 
-  it("happy path: registers without an Authorization header (new user has no credentials yet)", async () => {
-    const fetch = stubFetch(200, BASE_USER);
+  // register posts, then signs in: receipt, token pair, profile, in that order
+  function stubRegisterThenLogin() {
+    const makeResponse = (body: unknown) => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: () => Promise.resolve(body),
+    });
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(makeResponse(REGISTER_RECEIPT))
+      .mockResolvedValueOnce(makeResponse(BASE_JWT_TOKEN))
+      .mockResolvedValueOnce(makeResponse(BASE_USER));
+    vi.stubGlobal("fetch", fetch);
+    return fetch;
+  }
 
-    await register("alice", "alice@example.com", "s3cr3t");
+  it("happy path: registers without an Authorization header (new user has no credentials yet)", async () => {
+    const fetch = stubRegisterThenLogin();
+
+    const user = await register("alice", "alice@example.com", "s3cr3t");
 
     const [url, init] = fetch.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("/users/create");
+    expect(url).toContain("/register");
 
     const headers = init.headers as Record<string, string>;
     expect(headers["Authorization"]).toBeUndefined();
+
+    // the receipt has no id or name, so the profile comes from the sign-in after
+    expect(user.id).toBe(1);
+    expect(user.name).toBe("alice");
   });
 
-  it("happy path: stores credentials after registration so subsequent requests are authenticated", async () => {
-    stubFetch(200, BASE_USER);
+  it("happy path: registration ends signed in, so later requests carry the token", async () => {
+    stubRegisterThenLogin();
     await register("alice", "alice@example.com", "s3cr3t");
 
     const listFetch = stubFetch(200, [BASE_USER]);
@@ -456,7 +540,9 @@ describe("register", () => {
 
     const [, init] = listFetch.mock.calls[0] as [string, RequestInit];
     const headers = init.headers as Record<string, string>;
-    expect(headers["Authorization"]).toBe("Basic " + btoa("alice:s3cr3t"));
+    expect(headers["Authorization"]).toBe(
+      "Bearer " + btoa(BASE_JWT_TOKEN.access_token),
+    );
   });
 
   it("edge case: throws when name is empty", async () => {
@@ -482,6 +568,149 @@ describe("register", () => {
     await expect(
       register("alice", "alice@example.com", "s3cr3t"),
     ).rejects.toThrow("400");
+  });
+});
+
+describe("createGame", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("happy path: sends POST request to /games/create and returns created game", async () => {
+    const mockGame = {
+      id: 5,
+      author: 2,
+      name: "Custom Pong",
+      body: "print('pong')",
+    };
+    const mockFetch = stubFetch(201, mockGame);
+
+    const result = await createGame("Custom Pong", "print('pong')");
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/games/create");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({
+      name: "Custom Pong",
+      body: "print('pong')",
+    });
+    expect(result).toEqual(mockGame);
+  });
+});
+
+// ── Token refresh ────────────────────────────────────────────────────────────
+
+// queues one reply per call, so a 401 can be followed by the refresh and replay
+function stubFetchSequence(replies: { status: number; body: unknown }[]) {
+  const mock = vi.fn();
+  for (const { status, body } of replies) {
+    mock.mockResolvedValueOnce({
+      ok: status >= 200 && status < 300,
+      status,
+      statusText: status === 200 ? "OK" : "Unauthorized",
+      json: () => Promise.resolve(body),
+    });
+  }
+  vi.stubGlobal("fetch", mock);
+  return mock;
+}
+
+const REFRESHED_JWT_TOKEN = {
+  access_token: "fr3sh-access",
+  refresh_token: "fr3sh-refresh",
+  token_type: "Bearer",
+  expires_in: 600,
+};
+
+describe("token refresh", () => {
+  beforeEach(() => {
+    sessionStorage.setItem(CREDENTIALS_KEY, STORED_CREDENTIALS);
+    sessionStorage.setItem(
+      SESSION_USER_KEY,
+      JSON.stringify({ ...BASE_USER, avatarUrl: "" }),
+    );
+    restoreSession(); // arms currentCredentials with the stored pair
+  });
+
+  afterEach(() => {
+    logout();
+    vi.unstubAllGlobals();
+    sessionStorage.clear();
+  });
+
+  it("happy path: an expired access token is refreshed and the request replayed", async () => {
+    const mock = stubFetchSequence([
+      { status: 401, body: { message: "expired" } }, // original request
+      { status: 200, body: REFRESHED_JWT_TOKEN }, // refresh
+      { status: 200, body: [BASE_USER] }, // replay
+    ]);
+
+    const users = await listUsers();
+
+    expect(mock).toHaveBeenCalledTimes(3);
+    expect(String(mock.mock.calls[1][0])).toContain("/users/refresh_token");
+    // the replay carries the new token, not the expired one
+    const [, replayInit] = mock.mock.calls[2] as [string, RequestInit];
+    expect((replayInit.headers as Record<string, string>)["Authorization"]).toBe(
+      "Bearer " + btoa(REFRESHED_JWT_TOKEN.access_token),
+    );
+    expect(users).toHaveLength(1);
+  });
+
+  it("happy path: the refreshed pair is persisted for the next page load", async () => {
+    stubFetchSequence([
+      { status: 401, body: {} },
+      { status: 200, body: REFRESHED_JWT_TOKEN },
+      { status: 200, body: [BASE_USER] },
+    ]);
+
+    await listUsers();
+
+    const stored = JSON.parse(sessionStorage.getItem(CREDENTIALS_KEY) ?? "{}");
+    // a reload must not restore the token the server just retired
+    expect(stored.jwt_token.refresh_token).toBe(
+      REFRESHED_JWT_TOKEN.refresh_token,
+    );
+    expect(stored.basic_auth).toBeNull();
+  });
+
+  it("regression: overlapping 401s refresh once, not once each", async () => {
+    // the server retires a refresh token as it is spent, so a second
+    // concurrent refresh would be refused as reuse and drop the session
+    const mock = stubFetchSequence([
+      { status: 401, body: {} }, // request A
+      { status: 401, body: {} }, // request B
+      { status: 200, body: REFRESHED_JWT_TOKEN }, // single refresh
+      { status: 200, body: [BASE_USER] }, // replay A
+      { status: 200, body: [BASE_USER] }, // replay B
+    ]);
+
+    await Promise.all([listUsers(), listUsers()]);
+
+    const refreshCalls = mock.mock.calls.filter((call) =>
+      String(call[0]).includes("/users/refresh_token"),
+    );
+    expect(refreshCalls).toHaveLength(1);
+  });
+
+  it("edge case: a failed refresh surfaces the 401 instead of looping", async () => {
+    const mock = stubFetchSequence([
+      { status: 401, body: {} }, // original request
+      { status: 401, body: { error: "Refresh token has been revoked" } },
+    ]);
+
+    await expect(listUsers()).rejects.toThrow();
+    // one attempt, one refusal — no retry storm
+    expect(mock).toHaveBeenCalledTimes(2);
+  });
+
+  it("edge case: login's own 401 does not trigger a refresh", async () => {
+    logout(); // no session token to refresh with
+    const mock = stubFetchSequence([{ status: 401, body: {} }]);
+
+    await expect(login("alice", "wrong")).rejects.toThrow();
+    expect(mock).toHaveBeenCalledTimes(1);
   });
 });
 

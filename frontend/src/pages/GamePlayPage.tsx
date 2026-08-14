@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { LuaFactory } from "wasmoon";
+import { LuaFactory, type LuaEngine } from "wasmoon";
 import { useSession } from "../context/session/useSession";
 import { useTranslation } from "../context/language/i18n";
 import { PAGE_PATHS } from "../router";
@@ -20,33 +20,54 @@ const createEmptyGrid = () =>
     })),
   );
 
+// flattens the grid into the single array the dom renders
+const flattenGrid = (rows: Cell[][]): Cell[] => {
+  const flat: Cell[] = [];
+  for (let r = 0; r < GRID_ROWS; r++) {
+    for (let c = 0; c < GRID_COLS; c++) {
+      flat.push({ ...rows[r][c] });
+    }
+  }
+  return flat;
+};
+
 type Cell = {
   char: string;
   color: string;
 };
+
+// frames the server sends over /games/play/ws
+type GameServerMessage =
+  | { type: "match_waiting" }
+  | {
+      type: "match_start";
+      opponent_name: string;
+      player_index: number;
+      script: string;
+    }
+  | { type: "game_action"; data: string }
+  | { type: "opponent_disconnected" };
 
 export default function GamePlayPage({ game }: { game: GameSummary | null }) {
   const { sessionUser } = useSession();
   const { t } = useTranslation();
   const navigate = useNavigate();
 
-  const [grid, setGrid] = useState<Cell[]>(() => {
-    const flat: Cell[] = [];
-    const empty = createEmptyGrid();
-    for (let r = 0; r < GRID_ROWS; r++) {
-      for (let c = 0; c < GRID_COLS; c++) {
-        flat.push({ ...empty[r][c] });
-      }
-    }
-    return flat;
-  });
+  const [grid, setGrid] = useState<Cell[]>(() => flattenGrid(createEmptyGrid()));
+
+  // reset during render instead of in an effect, so the dom is never touched twice
+  const [renderedGameId, setRenderedGameId] = useState(game?.id);
+  if (game?.id !== renderedGameId) {
+    setRenderedGameId(game?.id);
+    setGrid(flattenGrid(createEmptyGrid()));
+  }
 
   const [status, setStatus] = useState<
     "connecting" | "waiting" | "playing" | "disconnected" | "error"
   >("connecting");
   const [statusMessage, setStatusMessage] = useState(t("Connecting to server..."));
 
-  const luaEngineRef = useRef<any>(null);
+  const luaEngineRef = useRef<LuaEngine | null>(null);
   const gridRef = useRef<Cell[][]>(createEmptyGrid());
   const statusRef = useRef(status);
   const tRef = useRef(t);
@@ -60,13 +81,7 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
   }, [t]);
 
   const forceUpdate = () => {
-    const flat: Cell[] = [];
-    for (let r = 0; r < GRID_ROWS; r++) {
-      for (let c = 0; c < GRID_COLS; c++) {
-        flat.push({ ...gridRef.current[r][c] });
-      }
-    }
-    setGrid(flat);
+    setGrid(flattenGrid(gridRef.current));
   };
 
   const cleanupLua = () => {
@@ -104,7 +119,7 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
     ? { game_id: game.id, user_id: sessionUser.id }
     : {};
 
-  const { sendMessage } = useWebSocket(
+  const { sendMessage } = useWebSocket<GameServerMessage>(
     game && sessionUser ? "/games/play/ws" : null,
     queryParams,
     {
@@ -228,26 +243,30 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
     }
   );
 
-  useEffect(() => {
-    if (!game || !sessionUser) {
-      setStatus("error");
-      setStatusMessage(tRef.current("Game or session details missing."));
-      return;
-    }
+  // derived from props, not state
+  const missingContext = !game || !sessionUser;
 
+  useEffect(() => {
+    if (missingContext) return;
+
+    // keeps the ref the lua callbacks draw into in step with the reset above
     gridRef.current = createEmptyGrid();
-    forceUpdate();
 
     return () => {
       cleanupLua();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game, sessionUser]);
 
   return (
     <div className="game-play-container">
       <div className="game-status-bar">
         <span className="game-title">{game?.name}</span>
-        <span className="game-msg">{statusMessage}</span>
+        <span className="game-msg">
+          {missingContext
+            ? t("Game or session details missing.")
+            : statusMessage}
+        </span>
         <button
           type="button"
           className="terminal-button back-btn"

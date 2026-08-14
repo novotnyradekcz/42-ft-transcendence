@@ -9,56 +9,109 @@ use crate::AppState;
 use crate::model::database_initializer::connection;
 use crate::model::users::DbUser;
 
-/// Validates query-based credentials against the database.
-/// Expects `auth` to be a Basic Auth formatted string ("Basic base64(username:password)").
+/// What the client proved before we touch the database.
+enum WsAuth {
+    /// A verified, non-blacklisted JWT. `username` is the token subject.
+    Jwt { username: String },
+    /// Basic Auth; the password still has to be checked against the stored hash.
+    Basic { username: String, password: String },
+}
+
+/// Verifies a `Bearer base64(<jwt>)` value.
+///
+/// Mirrors `authenticator::authenticate_jwt`: the Bearer payload is the JWT
+/// base64-encoded (the convention `api.ts` uses on the HTTP side), and a token
+/// that logout has blacklisted is rejected even though it is still unexpired.
+fn verify_jwt(pool: &Arc<AppState>, b64_jwt: &str) -> Option<WsAuth> {
+    let decoded = STANDARD.decode(b64_jwt).ok()?;
+    let raw_jwt = std::str::from_utf8(&decoded).ok()?;
+    let token_data = pool.jwt_authenticator.validate_token(raw_jwt).ok()?;
+
+    let blacklist_key = token_data
+        .claims
+        .jti
+        .clone()
+        .unwrap_or_else(|| raw_jwt.to_string());
+    if pool
+        .token_blacklist
+        .read()
+        .expect("token_blacklist RwLock poisoned")
+        .contains(&blacklist_key)
+    {
+        return None;
+    }
+
+    Some(WsAuth::Jwt {
+        username: token_data.claims.sub,
+    })
+}
+
+/// Validates credentials supplied over the WebSocket auth subprotocol.
+///
+/// Accepts either scheme the HTTP API uses:
+///   * `Bearer base64(<jwt>)` — preferred, and the only one that avoids putting
+///     the password on the wire at every handshake.
+///   * `Basic base64(username:password)` — retained for sessions with no token
+///     yet (a freshly registered user).
+///
+/// Whichever scheme is used, the resolved identity must match `user_id`.
 pub fn validate_credentials(
     pool: &Arc<AppState>,
     user_id: i32,
     auth: &str,
 ) -> Result<DbUser, Error> {
-    let validated = if let Some(b64) = auth.strip_prefix("Basic ") {
-        if let Ok(decoded) = STANDARD.decode(b64) {
-            if let Ok(creds) = std::str::from_utf8(&decoded) {
-                if let Some((username, raw_password)) = creds.split_once(':') {
-                    let user_match = {
-                        let mut db_lock = pool.database.lock().map_err(|_| ErrorInternalServerError("Database lock poisoned"))?;
-                        let conn = connection(&mut db_lock);
-                        
-                        use crate::schema::ftt_users::dsl::*;
-                        use diesel::prelude::*;
-                        
-                        ftt_users
-                            .filter(id.eq(user_id))
-                            .select(DbUser::as_select())
-                            .first::<DbUser>(conn)
-                            .optional()
-                            .map_err(ErrorInternalServerError)?
-                    };
-                    if let Some(user_info) = user_match {
-                        if user_info.name == username {
-                            let encoder = Argon2PasswordEncoder::new();
-                            if encoder.matches(raw_password, &user_info.password) {
-                                Some(user_info)
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
+    // Resolve the claimed identity first — no DB work for a malformed header.
+    let claimed = if let Some(b64_jwt) = auth.strip_prefix("Bearer ") {
+        verify_jwt(pool, b64_jwt)
+    } else if let Some(b64) = auth.strip_prefix("Basic ") {
+        STANDARD
+            .decode(b64)
+            .ok()
+            .and_then(|d| String::from_utf8(d).ok())
+            .and_then(|creds| {
+                creds
+                    .split_once(':')
+                    .map(|(username, password)| WsAuth::Basic {
+                        username: username.to_string(),
+                        password: password.to_string(),
+                    })
+            })
+    } else {
+        None
+    };
+
+    let claimed = claimed.ok_or_else(|| actix_web::error::ErrorUnauthorized("Invalid credentials"))?;
+
+    let user_match = {
+        let mut db_lock = pool
+            .database
+            .lock()
+            .map_err(|_| ErrorInternalServerError("Database lock poisoned"))?;
+        let conn = connection(&mut db_lock);
+
+        use crate::schema::ftt_users::dsl::*;
+        use diesel::prelude::*;
+
+        ftt_users
+            .filter(id.eq(user_id))
+            .select(DbUser::as_select())
+            .first::<DbUser>(conn)
+            .optional()
+            .map_err(ErrorInternalServerError)?
+    };
+
+    let validated = match (user_match, claimed) {
+        // The socket may only act as the user it authenticated as.
+        (Some(user_info), WsAuth::Jwt { username }) if user_info.name == username => Some(user_info),
+        (Some(user_info), WsAuth::Basic { username, password }) if user_info.name == username => {
+            let encoder = Argon2PasswordEncoder::new();
+            if encoder.matches(&password, &user_info.password) {
+                Some(user_info)
             } else {
                 None
             }
-        } else {
-            None
         }
-    } else {
-        None
+        _ => None,
     };
 
     match validated {

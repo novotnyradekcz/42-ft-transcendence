@@ -1,11 +1,8 @@
-/**
- * URL ↔ Page mapping shared across the application.
- * Kept in a standalone file so context providers and components can import
- * routing helpers without triggering the react-refresh/only-export-components
- * lint rule (that rule requires component files to export only components).
- */
+// url to page mapping, in its own file so providers can import it
+// without tripping the only-export-components lint rule
 import type { Page } from "./types";
 
+// path for every page
 export const PAGE_PATHS: Record<Page, string> = {
   welcome: "/",
   home: "/menu",
@@ -23,6 +20,30 @@ export const PAGE_PATHS: Record<Page, string> = {
   games: "/games/show",
   "game-play": "/games/play",
 };
+
+// the page one level up from each page, `back` walks this instead of history
+// pages missing here are roots
+export const PAGE_PARENTS: Partial<Record<Page, Page>> = {
+  help: "home",
+  users: "home",
+  "user-detail": "users",
+  friends: "home",
+  profile: "home",
+  discussions: "home",
+  "discussion-detail": "discussions",
+  mail: "home",
+  "mail-detail": "mail",
+  games: "home",
+  "game-play": "games",
+};
+
+// where `back` lands from a page, null when there's nowhere to go
+export function parentPath(page: Page, isLoggedIn: boolean): string | null {
+  const parent = PAGE_PARENTS[page];
+  if (!parent) return null;
+  if (!isLoggedIn) return PAGE_PATHS.welcome;
+  return PAGE_PATHS[parent];
+}
 
 export function pageFromPath(pathname: string): Page {
   if (pathname === "/" || pathname === "") return "welcome";

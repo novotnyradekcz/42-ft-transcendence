@@ -2,26 +2,54 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { listDiscussions, listGames, listMail } from "../../api";
+import { errMsg } from "../../errors";
 import { useSession } from "../session/useSession";
 import type {
   DiscussionThread,
   GameSummary,
   MailMessage,
+  Page,
   SessionUser,
   UserProfile,
 } from "../../types";
+import type { DataResource } from "./types";
 import { DataContext } from "./useData";
 
-function errMsg(e: unknown, fallback: string): string {
-  return e instanceof Error ? e.message : fallback;
-}
+// what each page actually renders, so nothing is fetched before a page that
+// needs it is open — the menu, help and the auth screens cost no requests
+const PAGE_RESOURCES: Record<Page, DataResource[]> = {
+  welcome: [],
+  home: [],
+  help: [],
+  login: [],
+  register: [],
+  discussions: ["discussions"],
+  "discussion-detail": ["discussions"],
+  // mail and games show sender / author names, which come from the user list
+  mail: ["mail", "users"],
+  "mail-detail": ["mail", "users"],
+  games: ["games", "users"],
+  "game-play": ["games", "users"],
+  users: ["users"],
+  "user-detail": ["users"],
+  friends: ["users"],
+  profile: ["users"],
+};
+
+const LOAD_FAILURE: Record<DataResource, string> = {
+  discussions: "could not load discussions.",
+  games: "could not load games.",
+  mail: "could not load mail.",
+  users: "could not refresh users.",
+};
 
 export function DataProvider({ children }: { children: ReactNode }) {
-  const { sessionUser, isRestoring, refreshUsers } = useSession();
+  const { sessionUser, isRestoring, refreshUsers, knownUsers } = useSession();
 
   const [discussions, setDiscussions] = useState<DiscussionThread[]>([]);
   const [selectedDiscussion, setSelectedDiscussion] =
@@ -32,58 +60,126 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [selectedGame, setSelectedGame] = useState<GameSummary | null>(null);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
 
-  // Friends are derived from the session user's friend ID list + the full user pool.
-  const { knownUsers } = useSession();
+  // friends come from the session user's id list plus the full user pool
   const friends = useMemo(
     () => knownUsers.filter((u) => sessionUser?.friends.includes(u.id) ?? false),
     [knownUsers, sessionUser?.friends],
   );
 
-  const refreshBoardForUser = useCallback(
-    async (user: SessionUser | null): Promise<string[]> => {
-      const errors: string[] = [];
+  // the user list is reference data — names and avatars — so it's fetched once
+  // a session and kept current by the refreshUsers() calls elsewhere (friend
+  // add/remove, profile edits) and the status socket. discussions, games and
+  // mail are content: every visit refetches them, so a post written in another
+  // tab shows up next time the page is opened rather than only after `list`.
+  const usersLoaded = useRef(false);
+  // requests already on the wire, so overlapping callers share one fetch. this
+  // is what stops StrictMode's double mount in dev, and a fast there-and-back
+  // between pages, from firing the same request twice.
+  const inFlight = useRef<Map<DataResource, Promise<void>>>(new Map());
 
-      try {
-        setDiscussions(await listDiscussions());
-      } catch (e) {
-        errors.push(errMsg(e, "could not load discussions."));
+  const invalidate = useCallback(() => {
+    usersLoaded.current = false;
+    setMail([]);
+    setSelectedMail(null);
+  }, []);
+
+  // logging in or out changes who the rows belong to, so drop them; the
+  // page-driven load then refetches whatever is on screen for the new identity
+  const lastUserId = useRef<number | null>(sessionUser?.id ?? null);
+  useEffect(() => {
+    const id = sessionUser?.id ?? null;
+    if (id === lastUserId.current) return;
+    lastUserId.current = id;
+    invalidate();
+  }, [sessionUser?.id, invalidate]);
+
+  const loadResource = useCallback(
+    async (resource: DataResource, user: SessionUser | null): Promise<void> => {
+      switch (resource) {
+        case "discussions":
+          setDiscussions(await listDiscussions());
+          return;
+        case "games":
+          setGames(await listGames());
+          return;
+        case "mail":
+          setMail(user ? await listMail(user.id) : []);
+          return;
+        case "users":
+          await refreshUsers();
+          return;
       }
-
-      try {
-        setGames(await listGames());
-      } catch (e) {
-        errors.push(errMsg(e, "could not load games."));
-      }
-
-      if (user) {
-        try {
-          setMail(await listMail(user.id));
-        } catch (e) {
-          errors.push(errMsg(e, "could not load mail."));
-        }
-        await refreshUsers().catch((e: unknown) => {
-          errors.push(errMsg(e, "could not refresh users."));
-        });
-      }
-
-      return errors;
     },
     [refreshUsers],
   );
 
-  const refreshBoard = useCallback(
-    () => refreshBoardForUser(sessionUser),
-    [refreshBoardForUser, sessionUser],
+  // starts a fetch, or joins the one already running for that resource. a
+  // forced refresh always issues a new request, since the point of forcing is
+  // to pick up a change an in-flight request may predate.
+  const startLoad = useCallback(
+    (resource: DataResource, user: SessionUser | null, force: boolean) => {
+      const existing = force ? undefined : inFlight.current.get(resource);
+      if (existing) return existing;
+
+      const request = loadResource(resource, user).finally(() => {
+        inFlight.current.delete(resource);
+      });
+      inFlight.current.set(resource, request);
+      return request;
+    },
+    [loadResource],
   );
 
-  // Initial data load — wait for session restore so mail is fetched when
-  // a persisted session exists.
-  useEffect(() => {
-    if (!isRestoring) {
-      void refreshBoard();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRestoring]);
+  const load = useCallback(
+    async (page: Page, force: boolean): Promise<string[]> => {
+      // the whole board is behind login now, so a guest has nothing to load
+      if (!sessionUser) return [];
+
+      const pending = PAGE_RESOURCES[page].filter((resource) => {
+        if (resource !== "users") return true; // content: always fetch fresh
+        if (force) return true;
+        if (usersLoaded.current) return false;
+        // SessionContext fetches the user list itself while restoring a saved
+        // session, and again on login. skip until that settles, otherwise a
+        // refresh on a user-facing page asks for /users/show twice.
+        if (isRestoring || knownUsers.length > 0) return false;
+        return true;
+      });
+      if (pending.length === 0) return [];
+
+      // independent of one another, so they go out together instead of one
+      // finishing before the next one starts
+      const results = await Promise.allSettled(
+        pending.map((resource) => startLoad(resource, sessionUser, force)),
+      );
+
+      const errors: string[] = [];
+      results.forEach((result, index) => {
+        const resource = pending[index];
+        if (result.status === "fulfilled") {
+          if (resource === "users") usersLoaded.current = true;
+        } else {
+          errors.push(errMsg(result.reason, LOAD_FAILURE[resource]));
+        }
+      });
+      return errors;
+    },
+    [startLoad, sessionUser, knownUsers.length, isRestoring],
+  );
+
+  const ensureForPage = useCallback((page: Page) => load(page, false), [load]);
+
+  const refreshForPage = useCallback((page: Page) => load(page, true), [load]);
+
+  const refreshBoardForUser = useCallback(
+    async (user: SessionUser | null): Promise<string[]> => {
+      // signing in as somebody else invalidates the cache; signing back in as
+      // the same user leaves it valid, so only drop it when the identity moved
+      if ((user?.id ?? null) !== lastUserId.current) invalidate();
+      return [];
+    },
+    [invalidate],
+  );
 
   return (
     <DataContext.Provider
@@ -100,7 +196,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setSelectedMail,
         setSelectedGame,
         setSelectedUser,
-        refreshBoard,
+        ensureForPage,
+        refreshForPage,
         refreshBoardForUser,
       }}
     >

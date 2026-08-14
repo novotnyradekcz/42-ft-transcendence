@@ -5,9 +5,9 @@ import {
   sendMail,
 } from "../../api";
 import { censor } from "../../components/moderation";
-import { PAGE_PATHS } from "../../router";
 import type { TerminalDeps } from "./deps";
-import { errMsg } from "./helpers";
+import { errMsg } from "../../errors";
+import { startLoginFlow } from "./helpers";
 
 export function createWriteFlowHandlers(deps: TerminalDeps) {
   const {
@@ -19,13 +19,10 @@ export function createWriteFlowHandlers(deps: TerminalDeps) {
     setWriteError,
     clearWriteModes,
     setSelectedDiscussion,
-    refreshBoard,
+    refreshForPage,
     navigate,
     addLine,
     t,
-    setAuthFlow,
-    setAuthError,
-    goTo,
   } = deps;
 
   async function handleWriteFlowInput(rawInput: string) {
@@ -70,7 +67,7 @@ export function createWriteFlowHandlers(deps: TerminalDeps) {
         );
         const recipientName = writeFlow.recipient;
         clearWriteModes();
-        (await refreshBoard()).forEach(addLine);
+        (await refreshForPage("mail")).forEach(addLine);
         addLine(t("mail sent to {name}.", { name: recipientName }));
       } catch (error) {
         setWriteError(errMsg(error, t("Could not send mail.")));
@@ -95,7 +92,7 @@ export function createWriteFlowHandlers(deps: TerminalDeps) {
         );
         setSelectedDiscussion(discussion);
         clearWriteModes();
-        (await refreshBoard()).forEach(addLine);
+        (await refreshForPage("discussions")).forEach(addLine);
         navigate(`/discussions/show/${discussion.id}`);
         addLine(t("discussion posted."));
       } catch (error) {
@@ -116,7 +113,7 @@ export function createWriteFlowHandlers(deps: TerminalDeps) {
       );
       setSelectedDiscussion(discussion);
       clearWriteModes();
-      (await refreshBoard()).forEach(addLine);
+      (await refreshForPage("discussions")).forEach(addLine);
       addLine(t("reply posted."));
     } catch (error) {
       setWriteError(errMsg(error, t("Could not post reply.")));
@@ -129,9 +126,7 @@ export function createWriteFlowHandlers(deps: TerminalDeps) {
   function handleWriteCommand() {
     if (!sessionUser) {
       addLine(t("login first to write."));
-      setAuthFlow({ mode: "login", step: "name", name: "" });
-      setAuthError("");
-      goTo(PAGE_PATHS.login);
+      startLoginFlow(deps);
       return;
     }
 
