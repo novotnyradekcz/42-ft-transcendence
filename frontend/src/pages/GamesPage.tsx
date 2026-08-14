@@ -103,7 +103,7 @@ export default function GamesPage() {
 
       <div style={{ marginTop: "1.5rem", paddingTop: "0.75rem", borderTop: "1px dashed #fff" }}>
         <p className="terminal-copy" style={{ marginBottom: "0.5rem" }}>
-          {t("Enter `history` for your games history or `leaderboard` for top 10 players:")}
+          {t("Enter `history` for your game history or `leaderboard` for top 10 players:")}
         </p>
         <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
           <button
