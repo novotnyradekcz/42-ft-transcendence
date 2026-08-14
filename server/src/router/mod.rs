@@ -58,7 +58,10 @@ pub async fn login_user(pool: web::Data<Arc<AppState>>, user: AuthenticatedUser)
             pwd,
             "".to_string(),
             "".to_string(),
-            vec![]));
+            vec![],
+            "".to_string(),
+            "".to_string(),
+        ));
     match logged_from_db {
         Ok(Some(db_user)) => HttpResponse::Ok().json(serde_json::json!(db_user)),
         Ok(None) => HttpResponse::Ok().json(serde_json::json!([])),

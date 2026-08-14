@@ -47,6 +47,8 @@ pub struct DbUser {
     pub bio: String,
     pub avatar_url: String,
     pub friends: FriendList,
+    pub provider: String,
+    pub provider_user_id: String,
 }
 
 impl DbUser {
@@ -60,6 +62,8 @@ impl DbUser {
         bio: String,
         avatar_url: String,
         friends: Vec<i32>,
+        provider: String,
+        provider_user_id: String,
     ) -> Self {
         DbUser {
             id,
@@ -69,6 +73,8 @@ impl DbUser {
             bio,
             avatar_url,
             friends: FriendList(friends),
+            provider,
+            provider_user_id,
         }
     }
 }
