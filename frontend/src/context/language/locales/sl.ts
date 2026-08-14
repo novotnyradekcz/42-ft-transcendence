@@ -30,7 +30,7 @@ export const sl: Record<string, string> = {
   "No game history found.": "Zgodovina iger ni bila najdena.",
   "Loading leaderboard...": "Nalaganje lestvice...",
   "No leaderboard data available.": "Podatki za lestvico niso na voljo.",
-  "Enter `history` for your games history or `leaderboard` for top 10 players:": "Vnesite `history` za zgodovino iger ali `leaderboard` za lestvico 10 najboljših igralcev:",
+  "Enter `history` for your game history or `leaderboard` for top 10 players:": "Vnesite `history` za zgodovino iger ali `leaderboard` za lestvico 10 najboljših igralcev:",
   "[ history ]": "[ zgodovina ]",
   "[ leaderboard ]": "[ lestvica ]",
   "Type `menu` to enter the board.": "Vnesite `menu` za vstop na tablo.",
