@@ -1,5 +1,5 @@
 import { useEffect, useRef, type MouseEvent } from "react";
-import { Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useData } from "../context/data/useData";
 import { useSession } from "../context/session/useSession";
 import { useTerminal } from "../context/terminal/useTerminal";
@@ -43,26 +43,26 @@ export default function Terminal() {
     commandHelpOpen,
     setCommandHelpOpen,
     availableCommands,
+    isBusy,
     handleCommandSubmit,
     handleCommandKeyDown,
     handleCommandHelpClick,
     getPromptLabel,
   } = useTerminal();
 
-  // Focus the input whenever the page, auth mode, or write mode changes.
+  // focus the input whenever the page or an input mode changes
   useEffect(() => {
     commandInputRef.current?.focus();
   }, [page, authFlow, writeFlow]);
 
-  // Focus when TerminalContext explicitly requests it (e.g. command-help fill).
+  // focus when the terminal context asks for it
   useEffect(() => {
     if (focusInputSignal > 0) {
       commandInputRef.current?.focus();
     }
   }, [focusInputSignal]);
 
-  // The log now sits at the bottom of the scrolling body, so keep the newest
-  // lines in view by scrolling the body rather than a dedicated output pane.
+  // the log sits at the bottom of the body, so scroll it to keep it in view
   useEffect(() => {
     if (logVisible && bodyRef.current) {
       bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
@@ -93,32 +93,52 @@ export default function Terminal() {
 
         {/* ── Page content (routed) — the only scrolling region ───────────── */}
         <section className="terminal-body" ref={bodyRef}>
-          <Routes>
-            <Route path="/" element={<WelcomePage />} />
-            <Route path="/menu" element={<HomePage />} />
-            <Route path="/help" element={<HelpPage />} />
-            <Route path="/users/show" element={<UsersPage />} />
-            <Route path="/users/show/:id" element={<UserDetailPage />} />
-            <Route path="/friends/show" element={<FriendsPage />} />
-            <Route path="/users/login" element={<LoginPage />} />
-            <Route path="/users/create" element={<RegisterPage />} />
-            <Route
-              path="/users/me"
-              element={<ProfilePage key={sessionUser?.id ?? "guest"} />}
-            />
-            <Route path="/discussions/show" element={<DiscussionsPage />} />
-            <Route
-              path="/discussions/show/:id"
-              element={<DiscussionDetailPage />}
-            />
-            <Route path="/mail/show" element={<MailPage />} />
-            <Route path="/mail/show/:id" element={<MailDetailPage />} />
-            <Route path="/games/show" element={<GamesPage />} />
-            <Route
-              path="/games/play/:id"
-              element={<GamePlayPage game={selectedGame} />}
-            />
-          </Routes>
+          {/*
+            Two route tables, not one guarded table: without a session the
+            board pages are never mounted at all, so a typed URL, a bookmark
+            or the browser Back button cannot reach them. Anything else a
+            guest asks for falls through to the front page.
+          */}
+          {sessionUser ? (
+            <Routes>
+              <Route path="/" element={<WelcomePage />} />
+              <Route path="/menu" element={<HomePage />} />
+              <Route path="/help" element={<HelpPage />} />
+              <Route path="/users/show" element={<UsersPage />} />
+              <Route path="/users/show/:id" element={<UserDetailPage />} />
+              <Route path="/friends/show" element={<FriendsPage />} />
+              <Route path="/users/login" element={<LoginPage />} />
+              <Route path="/users/create" element={<RegisterPage />} />
+              <Route
+                path="/users/me"
+                element={<ProfilePage key={sessionUser.id} />}
+              />
+              <Route path="/discussions/show" element={<DiscussionsPage />} />
+              <Route
+                path="/discussions/show/:id"
+                element={<DiscussionDetailPage />}
+              />
+              <Route path="/mail/show" element={<MailPage />} />
+              <Route path="/mail/show/:id" element={<MailDetailPage />} />
+              <Route path="/games/show" element={<GamesPage />} />
+              <Route
+                path="/games/play/:id"
+                element={<GamePlayPage game={selectedGame} />}
+              />
+              {/* Members get the board root for anything unrecognised. Without
+                  this the table simply matched nothing and rendered an empty
+                  body under a working prompt. */}
+              <Route path="*" element={<Navigate to="/menu" replace />} />
+            </Routes>
+          ) : (
+            <Routes>
+              <Route path="/" element={<WelcomePage />} />
+              <Route path="/help" element={<HelpPage />} />
+              <Route path="/users/login" element={<LoginPage />} />
+              <Route path="/users/create" element={<RegisterPage />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          )}
 
           {/* Activity log — hidden by default, toggled by the `log` command. */}
           {logVisible && (
@@ -138,9 +158,14 @@ export default function Terminal() {
           <pre className="ascii-rule" aria-hidden="true">
             ----------------------------------------------------
           </pre>
-          {/* Newest log line, so commands still report back while the log is hidden. */}
-          <p className="terminal-status" aria-live="polite">
-            {terminalLines[terminalLines.length - 1]}
+          {/* Newest log line, so commands still report back while the log is
+              hidden — replaced by a progress line while a request is running,
+              so a slow login does not read as a frozen prompt. */}
+          <p
+            className={`terminal-status ${isBusy ? "busy" : ""}`}
+            aria-live="polite"
+          >
+            {isBusy ? t("loading...") : terminalLines[terminalLines.length - 1]}
           </p>
           <p>
             {t("available:")} <span>{availableCommands.join(" | ")}</span>
@@ -151,13 +176,23 @@ export default function Terminal() {
             onClick={handleCommandAreaClick}
           >
             <label htmlFor="command-input">{getPromptLabel()}</label>
+            {/* readOnly rather than disabled: it blocks typing mid-request
+                without dropping focus, so the caret is still there when the
+                answer lands. Ctrl+C and Esc keep working. */}
+            {/* Masked on the password step of both login and register — the
+                flows name that step identically, so one check covers both. */}
             <input
               id="command-input"
               value={commandInput}
               ref={commandInputRef}
               onChange={(e) => setCommandInput(e.target.value)}
               onKeyDown={handleCommandKeyDown}
-              autoComplete="off"
+              type={authFlow?.step === "password" ? "password" : "text"}
+              readOnly={isBusy}
+              aria-busy={isBusy}
+              autoComplete={
+                authFlow?.step === "password" ? "current-password" : "off"
+              }
               autoFocus
             />
           </form>

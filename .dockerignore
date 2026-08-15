@@ -1,0 +1,18 @@
+# The `server` service builds with `context: .` (see docker-compose.yml), so
+# THIS file is the one Docker reads — server/.dockerignore is never consulted
+# for that build, because Docker only reads .dockerignore from the context root.
+#
+# server/Dockerfile COPYs nothing: the source arrives through the ./server:/app
+# bind mount, so none of this needs to be sent as build context anyway.
+#
+# server/target matters most. The container's `cargo build` runs as root
+# against that bind mount, so it leaves root-owned 0600 files on the host that
+# the context walker cannot read:
+#   checking context: no permission to read from '.../incremental/...lock'
+# It is also ~2 GB, which the daemon would otherwise scan on every build.
+
+server/target
+frontend/node_modules
+frontend/dist
+.git
+*.pdf

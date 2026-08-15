@@ -1,11 +1,9 @@
-// This has to be in a separate .tsx file from i18n.ts because:
-// - i18n.ts exports the useTranslation hook plus dictionaries/helpers (non-component exports)
-// - a file can't export both components and non-components for Fast Refresh
+// kept separate from i18n.ts because fast refresh needs components
+// and non-components in different files
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   I18nContext,
-  LANGUAGES,
   STORAGE_KEY,
   dictionaries,
   interpolate,
@@ -29,7 +27,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   const value = useMemo<I18nContextValue>(() => {
     const dict = dictionaries[lang];
     const t: TranslateFn = (key, vars) => interpolate(dict[key] ?? key, vars);
-    return { lang, setLang: setLangState, t, languages: LANGUAGES };
+    return { lang, setLang: setLangState, t };
   }, [lang]);
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;

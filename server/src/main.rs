@@ -7,26 +7,29 @@ mod mails;
 mod model;
 mod router;
 mod schema;
+mod session;
 mod status;
 mod users;
 mod websocket;
 mod oauth;
 
 use crate::authenticator::{create_authenticator, create_authorizer, init_user_store};
-use model::database_initializer::{initialize_db, OAuth42Config};
-use crate::games::{Lobby, play_game_ws};
-use crate::model::DatabaseInitializer;
+use crate::games::{play_game_ws, Lobby};
 use crate::model::users::get_all_users_from_db;
-use crate::status::{StatusRegistry, status_ws};
-use crate::router::{index, show_users, login_user, user_detail, create_user, show_games, game_detail, create_game, show_discussions, discussion_detail, create_discussion, create_discussion_post, show_mail, mail_detail, create_mail, health};
+use crate::model::DatabaseInitializer;
+use crate::router::*;
+use crate::session::load_valid_blacklisted_tokens;
+use crate::status::{status_ws, StatusRegistry};
+use model::database_initializer::{initialize_db, OAuth42Config};
 
-use actix_security::http::security::{Argon2PasswordEncoder, SessionFixationStrategy};
 use actix_security::http::security::middleware::SecurityTransform;
-use actix_security::prelude::{JwtAuthenticator, JwtTokenService, SessionConfig, User};
+use actix_security::http::security::Argon2PasswordEncoder;
+use actix_security::prelude::{JwtAuthenticator, JwtConfig, JwtTokenService, User};
 use actix_session::{storage::CookieSessionStore, SessionMiddleware};
-use actix_web::{web, App, HttpServer, cookie};
 use actix_web::web::Data;
-use std::sync::{Arc, Mutex};
+use actix_web::{cookie, web, App, HttpServer};
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex, RwLock};
 
 #[allow(dead_code)]
 struct AppState {
@@ -34,9 +37,10 @@ struct AppState {
     lobby: Mutex<Lobby>,
     status: Mutex<StatusRegistry>,
     encoder: Argon2PasswordEncoder,
-    session_config: SessionConfig,
-    jwt_authenticator: Option<JwtAuthenticator>,
-    jwt_token_service: Option<JwtTokenService>,
+    jwt_authenticator: JwtAuthenticator,
+    jwt_token_service: JwtTokenService,
+    /// In-memory blacklist of invalidated token JTIs (or raw tokens when jti is absent).
+    token_blacklist: RwLock<HashSet<String>>,
     oauth42: OAuth42Config,
 }
 
@@ -48,68 +52,86 @@ async fn main() -> std::io::Result<()> {
     let lobby = Lobby::new();
     let encoder = Argon2PasswordEncoder::new();
     let dbusers = get_all_users_from_db(&mut db).expect("Users from DB failed.");
-    let users: Vec<User> = dbusers.iter().map(|user| {
-        //TODO change later to plain password_hash from database, where passwords will be already encoded
-        User::with_encoded_password(user.name.as_str(), user.password.clone()).roles(&["USER".into()])
-    }).collect();
-    let session_config = SessionConfig::new().user_key("user").fixation_strategy(SessionFixationStrategy::MigrateSession);
+    let users: Vec<User> = dbusers
+        .iter()
+        .map(|user| {
+            User::with_encoded_password(user.name.as_str(), user.password.clone())
+                .roles(&["USER".into()])
+        })
+        .collect();
+    let jwt_config = JwtConfig::new(&db.server_environment.get_jwt_hash())
+        .issuer("fttranscendence")
+        .audience("api-users")
+        .expiration_secs(10 * 60);
+    let jwt_token_service = JwtTokenService::new(jwt_config.clone()).refresh_expiration_days(1);
+    let jwt_authenticator = JwtAuthenticator::new(jwt_config);
+    // Load non-expired blacklisted tokens from the database so the in-memory
+    // set is consistent with the DB after a restart.
+    let token_blacklist = RwLock::new(load_valid_blacklisted_tokens(&mut db));
+    // Signs the short-lived cookie that carries the OAuth `state` across the
+    // redirect to 42. Not Key::generate(): a fresh key each boot would void
+    // every in-flight handshake on restart. Key::from needs >= 64 bytes, and
+    // SECRET_HASH is already mandatory at startup.
+    let secret_key = cookie::Key::from(db.server_environment.get_pass_hash().as_bytes());
     let state = Arc::new(AppState {
         database: Mutex::new(db),
         lobby: Mutex::new(lobby),
         status: Mutex::new(StatusRegistry::new()),
         encoder,
-        session_config,
-        jwt_authenticator: None,
-        jwt_token_service: None,
+        jwt_authenticator,
+        jwt_token_service,
+        token_blacklist,
         oauth42: OAuth42Config::from_env(),
     });
-    // Not Key::generate(): a fresh key each boot invalidates every session
-    // cookie on restart, which in development is constant. SECRET_HASH is
-    // already required at startup; Key::from needs at least 64 bytes.
-    let secret_key = cookie::Key::from(
-        std::env::var("SECRET_HASH")
-            .expect("SECRET_HASH must be set")
-            .as_bytes(),
-    );
 
     init_user_store(users);
 
     HttpServer::new(move || {
         App::new()
             .app_data(Data::new(state.clone()))
+            // Public: registration must be reachable without credentials.
+            .service(create_user)
+            // Also public, and for the same shape of reason: a client refreshes
+            // precisely because its access token expired, so requiring one here
+            // would make the endpoint unreachable exactly when it is needed.
+            // The refresh token in the body is the credential, and the handler
+            // validates and revocation-checks it before minting anything.
+            // (`#[permit_all]` is documentation only — it expands to the
+            // unchanged function. Sitting outside the scope below is what
+            // actually keeps SecurityTransform off this route.)
+            .service(refresh_token)
             // WebSocket scopes sit outside SecurityTransform: a browser cannot set an
             // Authorization header on a WS handshake, so the middleware would redirect
             // them. Both handlers authenticate themselves via the auth subprotocol.
-            .service(
-                web::scope("/games/play")
-                    .service(play_game_ws),
-            )
-            .service(
-                web::scope("/status")
-                    .service(status_ws),
-            )
+            .service(web::scope("/games/play").service(play_game_ws))
+            .service(web::scope("/status").service(status_ws))
             // Unauthenticated liveness probe for the container healthcheck.
             // Registered outside SecurityTransform so it answers without an
             // Authorization header, and before scope("") whose empty prefix
             // would otherwise swallow it.
             .service(health)
+            // The OAuth handshake is the one place that still needs a cookie:
+            // `state` must be bound to the browser that started the flow, and
+            // a logged-out user has no Authorization header for
+            // SecurityTransform. SessionMiddleware is scoped to /auth only —
+            // everything under scope("") stays stateless JWT.
             .service(
                 web::scope("/auth")
                     .wrap(
-                        SessionMiddleware::builder(CookieSessionStore::default(),secret_key.clone())
+                        SessionMiddleware::builder(
+                            CookieSessionStore::default(),
+                            secret_key.clone(),
+                        )
                         .cookie_secure(false)
-                        .build()
+                        .build(),
                     )
                     .service(crate::oauth::auth_42)
                     .service(crate::oauth::auth_42_callback),
             )
+            // Everything else is authenticated. SessionMiddleware/CookieSessionStore
+            // intentionally dropped: this branch is stateless JWT.
             .service(
                 web::scope("")
-                    .wrap(
-                        SessionMiddleware::builder(CookieSessionStore::default(), secret_key.clone())
-                            .cookie_secure(false)
-                            .build(),
-                    )
                     .wrap(
                         SecurityTransform::new()
                             .config_authenticator(create_authenticator)
@@ -119,9 +141,10 @@ async fn main() -> std::io::Result<()> {
                     .service(
                         web::scope("/users")
                             .service(login_user)
+                            .service(get_user)
+                            .service(logout)
                             .service(show_users)
-                            .service(user_detail)
-                            .service(create_user),
+                            .service(user_detail),
                     )
                     .service(
                         web::scope("/games")
@@ -141,7 +164,7 @@ async fn main() -> std::io::Result<()> {
                             .service(show_mail)
                             .service(mail_detail)
                             .service(create_mail),
-                    )
+                    ),
             )
     })
     .bind(("0.0.0.0", 8080))?

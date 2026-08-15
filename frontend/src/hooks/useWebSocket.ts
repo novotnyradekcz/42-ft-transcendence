@@ -1,50 +1,44 @@
 import { useEffect, useRef, useState } from "react";
-import { getCredentials } from "../api";
+import { authHeader } from "../api";
 
 export interface UseWebSocketOptions<T> {
   onOpen?: () => void;
   onMessage?: (message: T) => void;
   onClose?: () => void;
   onError?: (error: Event) => void;
-  /**
-   * Opt in to automatic reconnection after an unexpected close, with exponential
-   * backoff starting at 500ms and capped at this many milliseconds.
-   *
-   * Omit it and the socket stays one-shot. That matters because the server
-   * compiles on container start and can be unreachable for minutes while the
-   * frontend is already serving — a socket opened in that window dies with a
-   * 502 and, without this, never retries. Left opt-in so a reconnect cannot
-   * silently re-enter game matchmaking mid-match.
-   */
+  // opt in to reconnecting after an unexpected close, backoff capped at this
+  // omit it and the socket stays one-shot
   reconnectMaxDelayMs?: number;
 }
 
 const RECONNECT_BASE_DELAY_MS = 500;
 
-/**
- * A custom React hook that abstracts and manages standard WebSocket connections.
- * Appends the provided `queryParams` to the URL query string, and (if present)
- * forwards the user's Basic Auth credentials via a WebSocket subprotocol.
- * Credentials are passed as a hex-encoded `auth-` subprotocol, since browsers
- * cannot set an Authorization header on a WebSocket handshake.
- */
-export function useWebSocket<IncomingMessage = any, OutgoingMessage = any>(
+// manages a websocket connection, null path keeps it closed
+export function useWebSocket<IncomingMessage = unknown, OutgoingMessage = unknown>(
   path: string | null,
   queryParams: Record<string, string | number>,
   options: UseWebSocketOptions<IncomingMessage> = {},
 ) {
   const wsRef = useRef<WebSocket | null>(null);
   const optionsRef = useRef(options);
-  optionsRef.current = options;
-  // Bumping this re-runs the effect, which is how a retry actually reconnects.
+  // written in an effect because writing a ref mid-render is unsafe
+  useEffect(() => {
+    optionsRef.current = options;
+  });
+  // bumping this re-runs the effect, which is how a retry reconnects
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const attemptRef = useRef(0);
+  // kept in state so consumers re-render on it, unlike ws.readyState
+  const [readyState, setReadyState] = useState<number>(
+    path ? WebSocket.CONNECTING : WebSocket.CLOSED,
+  );
 
   useEffect(() => {
     if (!path) return;
     const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const creds = getCredentials();
+    // same header the http path sends, built once in api.ts
+    const creds = authHeader();
 
     const params = new URLSearchParams();
     for (const [key, val] of Object.entries(queryParams)) {
@@ -53,7 +47,8 @@ export function useWebSocket<IncomingMessage = any, OutgoingMessage = any>(
 
     const wsUrl = `${wsProtocol}//${window.location.host}${apiBaseUrl}${path}?${params.toString()}`;
 
-    // Pass authentication token via Sec-WebSocket-Protocol (hex-encoded to satisfy RFC grammar constraints)
+    // browsers can't set headers on a handshake, so the token rides along
+    // as a hex-encoded subprotocol
     const subprotocols: string[] = [];
     if (creds) {
       const hex = Array.from(new TextEncoder().encode(creds))
@@ -65,8 +60,7 @@ export function useWebSocket<IncomingMessage = any, OutgoingMessage = any>(
     const ws = new WebSocket(wsUrl, subprotocols);
     wsRef.current = ws;
 
-    // Set by the cleanup below so a deliberate teardown (unmount, logout, param
-    // change) is never mistaken for a dropped connection worth retrying.
+    // set by the cleanup, so a deliberate teardown isn't retried
     let tornDown = false;
     let retryTimer: number | undefined;
 
@@ -86,6 +80,7 @@ export function useWebSocket<IncomingMessage = any, OutgoingMessage = any>(
 
     ws.onopen = () => {
       attemptRef.current = 0; // a good connection resets the backoff
+      setReadyState(WebSocket.OPEN);
       if (optionsRef.current.onOpen) {
         optionsRef.current.onOpen();
       }
@@ -102,9 +97,9 @@ export function useWebSocket<IncomingMessage = any, OutgoingMessage = any>(
       }
     };
 
-    // onerror is always followed by onclose, so retrying here covers both a
-    // failed handshake (server down, 401) and a mid-session drop.
+    // onerror is always followed by onclose, so retrying here covers both
     ws.onclose = () => {
+      setReadyState(WebSocket.CLOSED);
       if (optionsRef.current.onClose) {
         optionsRef.current.onClose();
       }
@@ -137,6 +132,6 @@ export function useWebSocket<IncomingMessage = any, OutgoingMessage = any>(
   return {
     sendMessage,
     close: () => wsRef.current?.close(),
-    readyState: wsRef.current?.readyState ?? WebSocket.CLOSED,
+    readyState,
   };
 }

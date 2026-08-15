@@ -20,6 +20,9 @@ downcast-rs = "2.0.2"
 actix-security = { version = "0.2.3", features = ["argon2", "http-basic", "session", "jwt"] }
 env_logger = "0.11.10"
 log = "0.4"
+# Retained after master dropped it: scope("") is stateless JWT, but the OAuth
+# handshake still needs a per-browser cookie to bind the `state` parameter to
+# the browser that started the flow. It is used only by the /auth scope.
 actix-session = { version = "0.11.0", features = ["cookie-session"] }
 base64 = { version="0.22.1" }
 

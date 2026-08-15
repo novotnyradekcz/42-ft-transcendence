@@ -9,17 +9,17 @@ import type { Page } from "../../types";
 
 export type { AuthFlow, WriteFlow };
 
+// shape of the terminal context
 export interface TerminalContextValue {
-  /** Current text in the command input. */
+  // current text in the command input
   commandInput: string;
   setCommandInput: Dispatch<SetStateAction<string>>;
-  /** Rendered lines in the terminal output panel. */
+  // lines rendered in the output panel
   terminalLines: string[];
-  /** Append a line to the terminal output. */
   addLine: (line: string) => void;
-  /** Incremented whenever the terminal context wants the input to be focused. */
+  // bumped whenever the input should take focus
   focusInputSignal: number;
-  /** Whether the activity log is rendered below the page content. Off by default. */
+  // whether the activity log is shown, off by default
   logVisible: boolean;
 
   authFlow: AuthFlow;
@@ -30,6 +30,8 @@ export interface TerminalContextValue {
   commandHelpOpen: boolean;
   setCommandHelpOpen: Dispatch<SetStateAction<boolean>>;
   availableCommands: string[];
+  // true while a command is waiting on the network
+  isBusy: boolean;
   page: Page;
 
   handleCommandSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
