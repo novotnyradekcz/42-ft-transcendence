@@ -5,6 +5,7 @@ import {
   getCredentials,
   listUsers,
   login as apiLogin,
+  loginWith42,
   logout as apiLogout,
   register as apiRegister,
   restoreSession,
@@ -25,6 +26,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     ),
   );
 
+  // True until the OAuth cookie exchange has been attempted. Distinct from
+  // isRestoring, which covers the synchronous sessionStorage path: this one
+  // resolves over the network, so a route table rendered before it settles
+  // would send an authenticated user to the guest pages. Only armed when
+  // storage was empty — a restored session needs no exchange.
+  const [isHydrating, setIsHydrating] = useState<boolean>(
+    () => sessionUser === null,
+  );
+
   // rebuilds knownUsers after a page refresh, without blocking
   useEffect(() => {
     if (!isRestoring) return;
@@ -32,6 +42,31 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       .then(setKnownUsers)
       .catch(() => {})
       .finally(() => setIsRestoring(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // A 42 login lands back here with empty sessionStorage: the only credential
+  // is the one-shot cookie the server set during the callback. Spend it before
+  // treating the visitor as anonymous. Separate from the effect above, which
+  // only runs when sessionStorage already held a session — the exact opposite
+  // condition.
+  useEffect(() => {
+    if (!isHydrating) return;
+    let cancelled = false;
+    loginWith42()
+      .then(async (user) => {
+        if (cancelled || !user) return;
+        persistSession(user);
+        setSessionUser(user);
+        setKnownUsers(await listUsers());
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setIsHydrating(false);
+      });
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -97,6 +132,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         sessionUser,
         knownUsers,
         isRestoring,
+        isHydrating,
         login,
         register,
         logout,

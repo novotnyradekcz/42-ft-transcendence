@@ -515,3 +515,31 @@ export async function createGame(
     body: JSON.stringify({ name, body }),
   });
 }
+
+export async function loginWith42(): Promise<SessionUser | null> {
+  let payload: JwtPayload;
+  try {
+    // Deliberately not requestJson: that helper sends credentials: "omit",
+    // which would drop the very cookie this endpoint exists to read.
+    const response = await fetch(`${apiBaseUrl}/auth/session`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      credentials: "same-origin",
+    });
+    if (!response.ok) return null;
+    payload = (await response.json()) as JwtPayload;
+  } catch {
+    return null;
+  }
+
+  const jwt_token = normalizeJwt(payload);
+  if (!jwt_token.access_token || jwt_token.expires_in === 0) return null;
+
+  // armed before /users/me so requestJson attaches the token automatically
+  currentCredentials = { basic_auth: null, jwt_token };
+
+  const user: UserProfile = normalizeUser(
+    await requestJson<unknown>("/users/me", { method: "GET" }),
+  );
+  return { ...user, status: "online" };
+}

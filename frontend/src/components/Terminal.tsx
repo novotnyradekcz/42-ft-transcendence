@@ -27,7 +27,7 @@ export default function Terminal() {
   const location = useLocation();
   const page = pageFromPath(location.pathname);
 
-  const { sessionUser } = useSession();
+  const { sessionUser, isHydrating } = useSession();
   // selectedGame needed by GamePlayPage route
   const { selectedGame } = useData();
   const { t } = useTranslation();
@@ -98,8 +98,13 @@ export default function Terminal() {
             board pages are never mounted at all, so a typed URL, a bookmark
             or the browser Back button cannot reach them. Anything else a
             guest asks for falls through to the front page.
+
+            Neither table renders while the session is still being hydrated.
+            The guest table's catch-all does `<Navigate to="/" replace />`, so
+            picking it before an in-flight OAuth exchange resolves would both
+            flash the guest UI and destroy the URL the user was sent to.
           */}
-          {sessionUser ? (
+          {isHydrating ? null : sessionUser ? (
             <Routes>
               <Route path="/" element={<WelcomePage />} />
               <Route path="/menu" element={<HomePage />} />
