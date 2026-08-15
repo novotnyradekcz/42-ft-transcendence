@@ -12,9 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use url::Url;
 
-/// One entry in the sign-in menu. `id` is the path segment: a provider listed
-/// as `"github"` is started at `/auth/github`, so the frontend never needs its
-/// own table of provider routes.
+/// `id` doubles as the path segment: "github" -> /auth/github.
 #[derive(Serialize)]
 struct ProviderInfo {
     id: &'static str,
@@ -33,10 +31,7 @@ struct AccessToken {
     access_token: String,
 }
 
-/// The providers this server can actually complete a login with.
-///
-/// Configured ones only: a deployment without GitHub credentials offers
-/// nothing for GitHub rather than an entry that fails when chosen.
+/// Only providers we have credentials for, so the menu never offers a dud.
 #[get("/providers")]
 pub async fn oauth_providers(pool: web::Data<Arc<AppState>>) -> impl Responder {
     let providers: Vec<ProviderInfo> = pool
@@ -51,9 +46,8 @@ pub async fn oauth_providers(pool: web::Data<Arc<AppState>>) -> impl Responder {
     HttpResponse::Ok().json(serde_json::json!({ "providers": providers }))
 }
 
-/// Steps 1-2 of the flow: mint a per-browser `state`, remember it, and hand the
-/// browser off to the provider. Nothing secret leaves the server — `client_id`
-/// is public by design; only `client_secret` stays behind.
+/// Mint a `state`, stash it, send the browser to the provider.
+/// Only `client_id` goes out; the secret stays here.
 #[get("/{provider}")]
 pub async fn oauth_start(
     pool: web::Data<Arc<AppState>>,
@@ -76,8 +70,7 @@ pub async fn oauth_start(
         .map(char::from)
         .collect();
 
-    // Keyed by provider so two tabs mid-handshake with different providers do
-    // not overwrite each other's state.
+    // keyed by provider so two tabs mid-login don't clobber each other
     if session
         .insert(state_key(&provider_id), &state)
         .is_err()
@@ -111,8 +104,7 @@ pub async fn oauth_start(
         .finish()
 }
 
-/// Steps 5-10: verify `state`, redeem the code over the back channel, fetch the
-/// profile, resolve it to a local user, and start a session.
+/// Check `state`, swap the code for a token, fetch the profile, log them in.
 #[get("/{provider}/callback")]
 pub async fn oauth_callback(
     pool: web::Data<Arc<AppState>>,
@@ -136,8 +128,7 @@ pub async fn oauth_callback(
         }));
     }
 
-    // Consume the stored state unconditionally: one flow, one use. Doing this
-    // before anything else means a replayed callback finds nothing to match.
+    // consumed no matter what, so a replayed callback finds nothing
     let expected = session
         .remove_as::<String>(&state_key(&provider_id))
         .and_then(|r| r.ok());
@@ -152,7 +143,7 @@ pub async fn oauth_callback(
         }
     }
 
-    // Only now is it safe to touch `code`.
+    // only now is it safe to touch `code`
     let code = match query.code.as_deref() {
         Some(c) if !c.is_empty() => c,
         _ => {
@@ -167,8 +158,7 @@ pub async fn oauth_callback(
     let token: AccessToken = match client
         .post(provider.spec.token_url)
         .insert_header(("User-Agent", "ft_transcendence"))
-        // GitHub answers the token endpoint in form-encoded by default and
-        // only returns JSON when asked. The others ignore this header.
+        // GitHub returns form-encoded unless asked for JSON; others ignore this
         .insert_header(("Accept", "application/json"))
         .send_form(&[
             ("grant_type", "authorization_code"),
@@ -205,9 +195,7 @@ pub async fn oauth_callback(
         }
     };
 
-    // Parsed as a Value because the three providers agree on nothing: 42 and
-    // GitHub give a numeric `id` and a `login`, Google a string `sub` and no
-    // username at all.
+    // a Value because the three providers agree on nothing
     let raw_profile: serde_json::Value = match client
         .get(provider.spec.profile_url)
         .insert_header(("Authorization", format!("Bearer {}", token.access_token)))
@@ -252,20 +240,15 @@ pub async fn oauth_callback(
         }
     };
 
-    // GitHub's /user only carries an email when the account has a *public*
-    // one, so most users arrive with none. The `user:email` scope we already
-    // request exists precisely for this: /user/emails has the real addresses.
-    // Worth the extra call — the frontend rejects a user payload with no
-    // email, so without this a GitHub login succeeds server-side and then
-    // silently drops back to guest.
+    // GitHub hides private emails from /user. The frontend rejects a user
+    // with no email, so go fetch the real one.
     if profile.email.is_empty() && provider.spec.id == "github" {
         if let Some(email) = github_primary_email(&client, &token.access_token).await {
             profile.email = email;
         }
     }
 
-    // Scoped so the mutex guard is dropped before the response is built, and so
-    // no `.await` ever happens while the database lock is held.
+    // scoped: never hold the db lock across an .await
     let db_user = {
         let mut db = pool
             .database
@@ -282,10 +265,7 @@ pub async fn oauth_callback(
         }
     };
 
-    // JWT minting reads from the in-memory user store, which is populated at
-    // boot from the database. A user created moments ago by the branch above is
-    // not in it yet, so register it here — the same thing /register does after
-    // creating a row.
+    // the store is filled at boot, so a brand new user isn't in it yet
     if get_user_from_store(&db_user.name).is_err() {
         register_user(
             User::with_encoded_password(&db_user.name, db_user.password.clone())
@@ -293,9 +273,8 @@ pub async fn oauth_callback(
         );
     }
 
-    // Only the user id goes in the cookie, and only until /auth/session spends
-    // it. The token pair itself is never put in a URL, where it would land in
-    // browser history, referrer headers and proxy logs.
+    // just the id, and only until /auth/session spends it. tokens in a URL
+    // end up in history, referrers and proxy logs
     if session.insert("user_id", db_user.id).is_err() {
         return HttpResponse::InternalServerError().json(serde_json::json!({
             "message": "Could not start your session",
@@ -307,13 +286,9 @@ pub async fn oauth_callback(
         .finish()
 }
 
-/// Trades the short-lived OAuth cookie for the same JWT pair `/users/login`
-/// issues, so an OAuth user is indistinguishable from a password user from
-/// here on: same Authorization header, same refresh rotation, same WebSocket
-/// auth. Nothing downstream needs to know how the login happened.
-///
-/// One-shot by construction — the id is removed from the session as it is read,
-/// so a replayed request finds nothing to spend.
+/// Swaps the OAuth cookie for the same JWT pair `/users/login` hands out, so
+/// nothing downstream cares how the login happened. One-shot: the id is
+/// removed as it's read.
 #[get("/session")]
 pub async fn oauth_session(pool: web::Data<Arc<AppState>>, session: Session) -> impl Responder {
     let user_id = match session.remove_as::<i32>("user_id").and_then(|r| r.ok()) {
@@ -373,13 +348,9 @@ fn state_key(provider_id: &str) -> String {
     format!("oauth_state_{provider_id}")
 }
 
-/// Normalises the three providers' wildly different profile payloads.
-///
-/// The only field that must be present is the provider's own stable id — it is
-/// what `(provider, provider_user_id)` is keyed on, and the one thing we refuse
-/// to guess at. Everything else degrades: a missing name falls back to the
-/// email's local part and then to the id, and a missing email to the empty
-/// string, which is what the column defaults to anyway.
+/// Flattens three very different profile payloads into one shape.
+/// The provider's id is the only thing we refuse to guess at — everything
+/// else falls back.
 fn parse_profile(provider: &OAuthProvider, raw: &serde_json::Value) -> Option<OAuthProfile> {
     let email = raw
         .get("email")
@@ -388,7 +359,7 @@ fn parse_profile(provider: &OAuthProvider, raw: &serde_json::Value) -> Option<OA
         .to_string();
 
     let (id, login) = match provider.spec.id {
-        // 42 and GitHub both expose a numeric id and a username.
+        // both give a numeric id and a username
         "42" | "github" => {
             let id = raw.get("id").and_then(json_id)?;
             let login = raw
@@ -398,8 +369,7 @@ fn parse_profile(provider: &OAuthProvider, raw: &serde_json::Value) -> Option<OA
                 .unwrap_or_else(|| id.clone());
             (id, login)
         }
-        // Google has no username: `sub` is the stable id, and the closest thing
-        // to a handle is the local part of the email.
+        // no username here: `sub` is the id, and the name is the best handle
         "google" => {
             let id = raw.get("sub").and_then(json_id)?;
             let login = raw
@@ -422,9 +392,7 @@ fn parse_profile(provider: &OAuthProvider, raw: &serde_json::Value) -> Option<OA
     })
 }
 
-/// Providers disagree on whether an id is a JSON number or a JSON string, and
-/// the same provider can change its mind between endpoints. Accept either, and
-/// store it as text.
+/// Ids come back as numbers or strings depending on who you ask. Take either.
 fn json_id(value: &serde_json::Value) -> Option<String> {
     match value {
         serde_json::Value::Number(n) => Some(n.to_string()),
@@ -435,13 +403,9 @@ fn json_id(value: &serde_json::Value) -> Option<String> {
 
 const GITHUB_EMAILS_URL: &str = "https://api.github.com/user/emails";
 
-/// GitHub keeps addresses off /user unless one is public. This asks for the
-/// list and picks the primary verified address.
-///
-/// Verified matters: an unverified address is one the account holder typed,
-/// not one they proved they control, so treating it as identity would let
-/// someone claim an address that is not theirs. Returns None rather than
-/// failing the login — a user with no email is degraded, not broken.
+/// Primary verified address from /user/emails.
+/// Verified only — an unverified one is just something they typed, so trusting
+/// it would let anyone claim an address. None is fine; no email isn't fatal.
 async fn github_primary_email(client: &awc::Client, access_token: &str) -> Option<String> {
     let mut response = client
         .get(GITHUB_EMAILS_URL)
@@ -477,7 +441,7 @@ async fn github_primary_email(client: &awc::Client, access_token: &str) -> Optio
         .find(|e| {
             verified(e) && e.get("primary").and_then(serde_json::Value::as_bool) == Some(true)
         })
-        // A verified non-primary address still beats no address at all.
+        // any verified one beats none
         .or_else(|| entries.iter().find(verified))
         .and_then(|e| e.get("email"))
         .and_then(serde_json::Value::as_str)

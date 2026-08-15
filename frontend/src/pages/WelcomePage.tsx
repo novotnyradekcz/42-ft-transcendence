@@ -7,9 +7,8 @@ import { fetchOAuthProviders, type OAuthProvider } from "../api";
 export default function WelcomePage() {
   const { sessionUser } = useSession();
   const { t } = useTranslation();
-  // Listed here rather than written to the terminal log: guests cannot run
-  // `log` (it is not a GUEST_COMMAND), so anything addLine writes is invisible
-  // to precisely the people who need to see the sign-in options.
+  // shown here, not in the terminal log — guests can't run `log`, so anything
+  // addLine writes is invisible to them
   const [providers, setProviders] = useState<OAuthProvider[]>([]);
 
   useEffect(() => {

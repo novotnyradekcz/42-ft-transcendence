@@ -68,10 +68,8 @@ async fn main() -> std::io::Result<()> {
     // Load non-expired blacklisted tokens from the database so the in-memory
     // set is consistent with the DB after a restart.
     let token_blacklist = RwLock::new(load_valid_blacklisted_tokens(&mut db));
-    // Signs the short-lived cookie that carries the OAuth `state` across the
-    // redirect to the provider. Not Key::generate(): a fresh key each boot would void
-    // every in-flight handshake on restart. Key::from needs >= 64 bytes, and
-    // SECRET_HASH is already mandatory at startup.
+    // signs the OAuth state cookie. not Key::generate() — a new key each boot
+    // kills every in-flight login. needs >= 64 bytes
     let secret_key = cookie::Key::from(db.server_environment.get_pass_hash().as_bytes());
     let state = Arc::new(AppState {
         database: Mutex::new(db),
@@ -105,16 +103,12 @@ async fn main() -> std::io::Result<()> {
             // them. Both handlers authenticate themselves via the auth subprotocol.
             .service(web::scope("/games/play").service(play_game_ws))
             .service(web::scope("/status").service(status_ws))
-            // Unauthenticated liveness probe for the container healthcheck.
-            // Registered outside SecurityTransform so it answers without an
-            // Authorization header, and before scope("") whose empty prefix
-            // would otherwise swallow it.
+            // liveness probe for the healthcheck. outside SecurityTransform so
+            // it answers without a header, and before scope("") swallows it
             .service(health)
-            // The OAuth handshake is the one place that still needs a cookie:
-            // `state` must be bound to the browser that started the flow, and
-            // a logged-out user has no Authorization header for
-            // SecurityTransform. SessionMiddleware is scoped to /auth only —
-            // everything under scope("") stays stateless JWT.
+            // the one place that still needs a cookie: `state` has to be tied
+            // to the browser that started the flow, and a logged-out user has
+            // no Authorization header. scoped to /auth; the rest stays JWT
             .service(
                 web::scope("/auth")
                     .wrap(
@@ -125,9 +119,7 @@ async fn main() -> std::io::Result<()> {
                         .cookie_secure(false)
                         .build(),
                     )
-                    // Order matters: the literal routes must be registered
-                    // before /{provider}, whose pattern would otherwise
-                    // swallow "providers" and "session" as provider ids.
+                    // literal routes first, or /{provider} eats them
                     .service(crate::oauth::oauth_providers)
                     .service(crate::oauth::oauth_session)
                     .service(crate::oauth::oauth_callback)

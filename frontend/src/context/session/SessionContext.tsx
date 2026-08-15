@@ -26,11 +26,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     ),
   );
 
-  // True until the OAuth cookie exchange has been attempted. Distinct from
-  // isRestoring, which covers the synchronous sessionStorage path: this one
-  // resolves over the network, so a route table rendered before it settles
-  // would send an authenticated user to the guest pages. Only armed when
-  // storage was empty — a restored session needs no exchange.
+  // true until the OAuth cookie exchange has been tried. unlike isRestoring
+  // this one waits on the network, so routing has to wait for it too
   const [isHydrating, setIsHydrating] = useState<boolean>(
     () => sessionUser === null,
   );
@@ -45,11 +42,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // A 42 login lands back here with empty sessionStorage: the only credential
-  // is the one-shot cookie the server set during the callback. Spend it before
-  // treating the visitor as anonymous. Separate from the effect above, which
-  // only runs when sessionStorage already held a session — the exact opposite
-  // condition.
+  // an OAuth login lands here with empty storage — the only credential is the
+  // one-shot cookie. spend it before deciding they're a guest
   useEffect(() => {
     if (!isHydrating) return;
     let cancelled = false;

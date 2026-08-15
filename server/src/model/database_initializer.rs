@@ -60,9 +60,8 @@ impl DatabaseInitializer {
     }
 }
 
-/// Everything about a provider that does not depend on deployment: the URLs
-/// and the scope. Adding a fourth provider is one more entry in PROVIDER_SPECS
-/// plus a branch in the profile parser — nothing else in the codebase changes.
+/// The parts of a provider that don't vary by deployment.
+/// A fourth one is an entry here plus a branch in parse_profile.
 pub struct ProviderSpec {
     pub id: &'static str,
     pub label: &'static str,
@@ -81,9 +80,7 @@ pub const PROVIDER_SPECS: &[ProviderSpec] = &[
         profile_url: "https://api.intra.42.fr/v2/me",
         scope: "public",
     },
-    // Google sends no username, and its stable id is the string `sub` rather
-    // than a number — both handled in parse_profile, and both the reason the
-    // id is stored as text.
+    // no username, and its id is the string `sub` — see parse_profile
     ProviderSpec {
         id: "google",
         label: "Google",
@@ -106,11 +103,9 @@ pub struct OAuthProvider {
     pub spec: &'static ProviderSpec,
     pub client_id: String,
     pub client_secret: String,
-    /// Derived from OAUTH_REDIRECT_BASE rather than configured per provider:
-    /// the path is fixed by the route, so the only free part is the origin.
-    /// One variable to get wrong instead of one per provider — and every
-    /// provider rejects the request outright if it does not match byte for
-    /// byte what was registered with them.
+    /// Built from OAUTH_REDIRECT_BASE — the path is fixed by the route, so
+    /// only the origin varies. Providers reject anything that isn't a byte-for
+    /// -byte match with what you registered, so one variable beats three.
     pub redirect_uri: String,
 }
 
@@ -129,9 +124,7 @@ impl OAuthConfig {
     pub fn from_env() -> Self {
         dotenv().ok();
 
-        // Where the browser comes back to. Defaults to the local HTTPS origin
-        // the compose stack serves, so a developer only sets this to deploy
-        // somewhere else.
+        // defaults to what the compose stack serves locally
         let redirect_base = env::var("OAUTH_REDIRECT_BASE")
             .ok()
             .filter(|value| !value.is_empty())
@@ -141,14 +134,12 @@ impl OAuthConfig {
         let providers = PROVIDER_SPECS
             .iter()
             .map(|spec| {
-                // 42 -> OAUTH_42_*, google -> OAUTH_GOOGLE_*, and so on.
+                // 42 -> OAUTH_42_*, google -> OAUTH_GOOGLE_*
                 let prefix = format!("OAUTH_{}", spec.id.to_uppercase());
                 OAuthProvider {
                     spec,
-                    // Never .expect(): a deployment configures the providers it
-                    // has credentials for, and the rest are simply not offered.
-                    // Panicking here would stop the server booting for everyone
-                    // who has not registered an app with all three.
+                    // never .expect() — an unconfigured provider is just not
+                    // offered, and shouldn't stop the server booting
                     client_id: env::var(format!("{prefix}_CLIENT_ID"))
                         .ok()
                         .unwrap_or_default(),
@@ -169,8 +160,7 @@ impl OAuthConfig {
         }
     }
 
-    /// Only returns a provider this deployment can actually complete a login
-    /// with, so callers never have to re-check `is_configured`.
+    /// Configured ones only, so callers needn't re-check.
     pub fn configured(&self, id: &str) -> Option<&OAuthProvider> {
         self.providers
             .iter()
@@ -181,8 +171,7 @@ impl OAuthConfig {
         self.providers.iter().filter(|p| p.is_configured())
     }
 
-    /// Where to send the browser once a session exists. Shares its origin with
-    /// the redirect URIs by construction, so the two cannot drift apart.
+    /// Same origin as the redirect URIs, so the two can't drift apart.
     pub fn after_login_url(&self) -> String {
         format!("{}/menu", self.redirect_base)
     }

@@ -519,8 +519,7 @@ export async function createGame(
 export async function loginWith42(): Promise<SessionUser | null> {
   let payload: JwtPayload;
   try {
-    // Deliberately not requestJson: that helper sends credentials: "omit",
-    // which would drop the very cookie this endpoint exists to read.
+    // not requestJson — it sends credentials: "omit" and would drop the cookie
     const response = await fetch(`${apiBaseUrl}/auth/session`, {
       method: "GET",
       headers: { Accept: "application/json" },
@@ -535,7 +534,7 @@ export async function loginWith42(): Promise<SessionUser | null> {
   const jwt_token = normalizeJwt(payload);
   if (!jwt_token.access_token || jwt_token.expires_in === 0) return null;
 
-  // armed before /users/me so requestJson attaches the token automatically
+  // set before /users/me so requestJson picks the token up
   currentCredentials = { basic_auth: null, jwt_token };
 
   const user: UserProfile = normalizeUser(
@@ -549,9 +548,7 @@ export interface OAuthProvider {
   label: string;
 }
 
-// The sign-in providers this server can actually complete a login with.
-// Asked rather than hardcoded: a deployment without credentials for a provider
-// simply doesn't list it, so the menu never offers an option that fails.
+// Asked, not hardcoded, so the menu never offers a provider that isn't set up.
 export async function fetchOAuthProviders(): Promise<OAuthProvider[]> {
   try {
     const { providers } = await requestJson<{ providers: OAuthProvider[] }>(

@@ -6,12 +6,9 @@ if [ "$ENVIRONMENT" = "production" ]; then
     cp /etc/nginx/templates/nginx.production.conf /etc/nginx/conf.d/default.conf
 else
     mkdir -p /etc/nginx/ssl
-    # Reuse an existing certificate. Browsers pin their "proceed anyway"
-    # exception to the certificate itself, so minting a new one on every
-    # container start made every developer re-accept the warning after every
-    # rebuild — and made a stale-certificate interstitial look exactly like a
-    # broken OAuth callback. The certificate is valid for a year; there is
-    # nothing to regenerate. Delete the volume to get a fresh one.
+    # Browsers pin the "proceed anyway" exception to the cert, so making a new
+    # one every boot meant re-accepting the warning after every rebuild. It is
+    # valid for a year. Delete the volume if you want a fresh one.
     if [ -f /etc/nginx/ssl/local.crt ] && [ -f /etc/nginx/ssl/local.key ]; then
         echo "[entrypoint] Local mode: reusing existing self-signed certificate"
     else

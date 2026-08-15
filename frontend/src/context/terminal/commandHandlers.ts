@@ -190,9 +190,7 @@ export function createCommandHandlers(
       }
 
       const requested = args[0]?.toLowerCase();
-      // Bare `oauth` with a single provider configured just goes there — the
-      // welcome page already names it, so making the user retype it adds
-      // nothing. With several, they pick from the list on that page.
+      // bare `oauth` with one provider just goes there
       const chosen =
         !requested && providers.length === 1
           ? providers[0]
@@ -211,8 +209,8 @@ export function createCommandHandlers(
       }
 
       addLine(t("redirecting to {label}...", { label: chosen.label }));
-      // a full navigation, not a fetch: the provider has to own the address bar
-      // so the user can see whose login page they are about to type into
+      // a real navigation, not a fetch — the user should see whose login page
+      // they're typing into
       window.location.href = `/api/auth/${chosen.id}`;
       return;
     }

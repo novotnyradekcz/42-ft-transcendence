@@ -89,10 +89,8 @@ pub fn find_or_create_oauth_user(
         .optional()?;
 
     if let Some(user) = existing {
-        // Backfill an address we did not have before. GitHub hands out no email
-        // at all until the account has a verified one we are allowed to read,
-        // so a row created on an earlier login can be missing it through no
-        // fault of the user. Only ever fills a blank — it never overwrites.
+        // fill in an email we didn't have before (GitHub often gives none on
+        // the first login). only ever fills a blank, never overwrites
         if user.email.is_empty() && !profile.email.is_empty() {
             diesel::update(ftt_users.filter(id.eq(user.id)))
                 .set(email.eq(&profile.email))
@@ -136,8 +134,7 @@ pub fn find_or_create_oauth_user(
         .returning(DbUser::as_returning())
         .get_result(conn)?;
 
-    // Returns the row rather than UserInfo: the caller needs `password` to build
-    // the in-memory store entry that JWT minting reads from.
+    // the row, not UserInfo — the caller needs `password` for the user store
     Ok(inserted)
 }
 

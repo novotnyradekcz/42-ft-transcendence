@@ -99,10 +99,8 @@ export default function Terminal() {
             or the browser Back button cannot reach them. Anything else a
             guest asks for falls through to the front page.
 
-            Neither table renders while the session is still being hydrated.
-            The guest table's catch-all does `<Navigate to="/" replace />`, so
-            picking it before an in-flight OAuth exchange resolves would both
-            flash the guest UI and destroy the URL the user was sent to.
+            Neither renders while hydrating: the guest catch-all replaces the
+            URL, so picking it too early throws away where the user was going.
           */}
           {isHydrating ? null : sessionUser ? (
             <Routes>

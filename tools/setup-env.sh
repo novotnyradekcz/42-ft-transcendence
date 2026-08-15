@@ -1,10 +1,7 @@
 #!/bin/sh
-# Creates server/.env from server/.env.example and fills in the values that
-# have to exist but whose content is arbitrary: the two secrets and the local
-# database connection.
-#
-# Refuses to touch an existing .env — it holds credentials that cannot be
-# regenerated, and overwriting SECRET_HASH invalidates every session cookie.
+# Makes server/.env from the example, filling in the bits that have to exist
+# but can be anything: the two secrets and the local db connection.
+# Won't touch an existing .env — the OAuth secrets in it can't be regenerated.
 set -eu
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -27,16 +24,13 @@ command -v openssl >/dev/null 2>&1 || {
     exit 1
 }
 
-# 64 hex characters each. For SECRET_HASH that length is a requirement, not a
-# preference: it signs the OAuth session cookie, and cookie::Key::from panics
-# on anything shorter than 64 bytes.
+# 64 hex chars. For SECRET_HASH that's a hard requirement — cookie::Key::from
+# panics below 64 bytes.
 secret_hash=$(openssl rand -hex 32)
 jwt_hash=$(openssl rand -hex 32)
 
-# Matches the credentials docker-compose.yml gives the db service. The server
-# container receives DATABASE_URL from compose and ignores this one; it is
-# what a host-side `cargo run` or `cargo test` uses to reach the same database
-# through the published port.
+# Matches what compose gives the db service. Only used by host-side cargo runs;
+# the container gets its own DATABASE_URL from compose.
 database_url="postgres://postgres:postgres@localhost:5432/ft_transcendence"
 database_password="postgres"
 

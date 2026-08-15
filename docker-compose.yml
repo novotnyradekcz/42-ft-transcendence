@@ -27,28 +27,22 @@ services:
       - "8080:8080"
     environment:
       DATABASE_URL: postgres://postgres:postgres@db:5432/ft_transcendence
-      # openssl-sys is built with features = ["vendored"], so it looks for CA
-      # certificates in a compiled-in directory that does not exist in this
-      # image — every outbound HTTPS call fails "certificate verify failed".
-      # Point it at Alpine's bundle, which curl already uses successfully.
+      # vendored openssl looks for CA certs somewhere that doesn't exist here,
+      # so every outbound HTTPS call fails. point it at Alpine's bundle
       SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
       SSL_CERT_DIR: /etc/ssl/certs
     volumes:
       # Bind-mount the source tree so the container can build & run it.
       - ./server:/app
-      # Keep target/ in a named volume rather than on the bind mount: the
-      # container builds as root, and writing artefacts straight onto the host
-      # tree leaves root-owned files that break the developer's own cargo runs.
+      # target/ in a volume, not on the bind mount — the container builds as
+      # root and leaves root-owned files all over the host tree otherwise
       - server-target:/app/target
     depends_on:
       db:
         condition: service_healthy
-    # Grep the body rather than trusting the exit code: an unmatched path falls
-    # through to SecurityTransform and answers 302, and `curl -f` only fails on
-    # 4xx/5xx — so a missing route would still report healthy. Only the real
-    # handler emits {"status":"ok"}.
-    # start_period covers a cold `cargo build`, which takes minutes. Failures
-    # during it are not counted, so the container reads "health: starting".
+    # grep the body, don't trust the exit code: an unmatched path 302s and
+    # `curl -f` only fails on 4xx/5xx, so a missing route would look healthy.
+    # start_period covers a cold cargo build
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS --max-time 3 http://localhost:8080/health | grep -q '\"status\":\"ok\"' || exit 1"]
       interval: 5s
@@ -69,8 +63,7 @@ services:
       server:
         condition: service_healthy
     volumes:
-      # Keeps the self-signed certificate across rebuilds so developers accept
-      # the browser warning once rather than after every `up --build`.
+      # keeps the cert across rebuilds so you accept the warning once
       - frontend-ssl:/etc/nginx/ssl
     ports:
       - "80:80"
