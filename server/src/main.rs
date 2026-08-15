@@ -126,7 +126,8 @@ async fn main() -> std::io::Result<()> {
                         .build(),
                     )
                     .service(crate::oauth::auth_42)
-                    .service(crate::oauth::auth_42_callback),
+                    .service(crate::oauth::auth_42_callback)
+                    .service(crate::oauth::oauth_session),
             )
             // Everything else is authenticated. SessionMiddleware/CookieSessionStore
             // intentionally dropped: this branch is stateless JWT.

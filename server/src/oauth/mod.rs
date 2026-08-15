@@ -1,13 +1,15 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
+use crate::authenticator::{get_user_from_store, register_user, TokenResponse};
+use crate::model::users::{find_or_create_oauth_user, get_user_in_db, OAuthProfile};
 use crate::AppState;
+use actix_security::prelude::User;
 use actix_session::Session;
 use actix_web::{get, web, HttpResponse, Responder};
 use rand::{distributions::Alphanumeric, Rng};
+use serde::Deserialize;
 use std::sync::Arc;
 use url::Url;
-use crate::model::users::{find_or_create_oauth_user, OAuthProfile};
-use serde::Deserialize;
 
 const AUTHORIZE_42_URL: &str = "https://api.intra.42.fr/oauth/authorize";
 const TOKEN_42_URL: &str = "https://api.intra.42.fr/oauth/token";
@@ -32,7 +34,7 @@ pub struct CallbackQuery {
 }
 
 #[derive(Deserialize)]
-struct TokenResponse {
+struct Intra42Token {
     access_token: String,
 }
 
@@ -84,7 +86,7 @@ pub async fn auth_42_callback(
 
     let client = awc::Client::default();
 
-    let token: TokenResponse = match client
+    let token: Intra42Token = match client
         .post(TOKEN_42_URL)
         .insert_header(("User-Agent", "ft_transcendence"))
         .send_form(&[
@@ -95,7 +97,7 @@ pub async fn auth_42_callback(
             ("redirect_uri", cfg.redirect_uri.as_str()),
         ])
         .await {
-        Ok(mut resp) if resp.status().is_success() => match resp.json::<TokenResponse>().await {
+        Ok(mut resp) if resp.status().is_success() => match resp.json::<Intra42Token>().await {
             Ok(t) => t,
             Err(e) => {
                 log::error!("42 token response was not the expected shape: {e}");
@@ -157,7 +159,7 @@ pub async fn auth_42_callback(
 
     // Scoped so the mutex guard is dropped before the response is built, and so
     // no `.await` ever happens while the database lock is held.
-    let user = {
+    let db_user = {
         let mut db = pool
             .database
             .lock()
@@ -173,7 +175,21 @@ pub async fn auth_42_callback(
         }
     };
 
-    if session.insert("user_id", user.id).is_err() {
+    // JWT minting reads from the in-memory user store, which is populated at
+    // boot from the database. A user created moments ago by the branch above is
+    // not in it yet, so register it here — the same thing /register does after
+    // creating a row.
+    if get_user_from_store(&db_user.name).is_err() {
+        register_user(
+            User::with_encoded_password(&db_user.name, db_user.password.clone())
+                .roles(&["USER".into()]),
+        );
+    }
+
+    // Only the user id goes in the cookie, and only until /auth/session spends
+    // it. The token pair itself is never put in a URL, where it would land in
+    // browser history, referrer headers and proxy logs.
+    if session.insert("user_id", db_user.id).is_err() {
         return HttpResponse::InternalServerError().json(serde_json::json!({
             "message": "Could not start your session",
         }));
@@ -220,3 +236,71 @@ pub async fn auth_42(pool: web::Data<Arc<AppState>>, session: Session) -> impl R
         .finish()
 }
 
+
+/// Trades the short-lived OAuth cookie for the same JWT pair `/users/login`
+/// issues, so an OAuth user is indistinguishable from a password user from
+/// here on: same Authorization header, same refresh rotation, same WebSocket
+/// auth. Nothing downstream needs to know how the login happened.
+///
+/// One-shot by construction — the id is removed from the session as it is read,
+/// so a replayed request finds nothing to spend.
+#[get("/session")]
+pub async fn oauth_session(
+    pool: web::Data<Arc<AppState>>,
+    session: Session,
+) -> impl Responder {
+    let user_id = match session
+        .remove_as::<i32>("user_id")
+        .and_then(|r| r.ok())
+    {
+        Some(id) => id,
+        None => {
+            return HttpResponse::Unauthorized().json(serde_json::json!({
+                "message": "No OAuth session to exchange",
+            }));
+        }
+    };
+
+    let user_info = {
+        let mut db = pool
+            .database
+            .lock()
+            .expect("oauth_session expects DatabaseInitializer");
+        get_user_in_db(&mut db, user_id)
+    };
+
+    let user_info = match user_info {
+        Ok(Some(u)) => u,
+        _ => {
+            log::error!("OAuth session referenced user id {user_id}, which no longer exists");
+            return HttpResponse::Unauthorized().json(serde_json::json!({
+                "message": "Unexisting user",
+            }));
+        }
+    };
+
+    let store_user = match get_user_from_store(&user_info.name) {
+        Ok(u) => u,
+        Err(_) => {
+            log::error!("user {} is absent from the user store", user_info.name);
+            return HttpResponse::Unauthorized().json(serde_json::json!({
+                "message": "Unexisting user",
+            }));
+        }
+    };
+
+    match pool.jwt_token_service.generate_token_pair(&store_user) {
+        Ok(pair) => HttpResponse::Ok().json(TokenResponse::new(
+            pair.access_token,
+            pair.refresh_token,
+            pair.token_type,
+            pair.expires_in,
+        )),
+        Err(e) => {
+            log::error!("could not mint a token pair for an OAuth login: {e}");
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Could not complete the login",
+            }))
+        }
+    }
+}
