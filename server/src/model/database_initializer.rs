@@ -81,6 +81,12 @@ pub const PROVIDER_SPECS: &[ProviderSpec] = &[
         profile_url: "https://api.intra.42.fr/v2/me",
         scope: "public",
     },
+    // UNVERIFIED against the real service — written from Google's documented
+    // endpoints but never exercised, because nobody on the team had a Google
+    // account to register a client with. It costs nothing to leave here: with
+    // no OAUTH_GOOGLE_* credentials it is filtered out of the menu entirely
+    // and /auth/google answers 503. Whoever first configures it should expect
+    // to debug it, and should delete this comment once a login has worked.
     ProviderSpec {
         id: "google",
         label: "Google",
