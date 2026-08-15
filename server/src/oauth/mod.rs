@@ -7,7 +7,7 @@ use actix_security::prelude::User;
 use actix_session::Session;
 use actix_web::{get, web, HttpResponse, Responder};
 use rand::{distributions::Alphanumeric, Rng};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use url::Url;
 
@@ -24,6 +24,15 @@ fn after_login_url(redirect_uri: &str) -> String {
         .and_then(|u| u.join("/menu"))
         .map(String::from)
         .unwrap_or_else(|_| "/menu".to_string())
+}
+
+/// One entry in the sign-in menu. `id` is the path segment: a provider listed
+/// as `"42"` is started at `/auth/42`, so the frontend never needs its own
+/// table of provider routes.
+#[derive(Serialize)]
+struct ProviderInfo {
+    id: &'static str,
+    label: &'static str,
 }
 
 #[derive(Deserialize)]
@@ -303,4 +312,25 @@ pub async fn oauth_session(
             }))
         }
     }
+}
+
+/// The providers this server can actually complete a login with.
+///
+/// Configured ones only: a deployment without 42 credentials offers nothing
+/// rather than offering an entry that 503s when chosen. Adding Google or
+/// GitHub later means adding their config alongside `oauth42` and pushing one
+/// more entry here — the frontend menu needs no change, because it renders
+/// whatever this returns.
+#[get("/providers")]
+pub async fn oauth_providers(pool: web::Data<Arc<AppState>>) -> impl Responder {
+    let mut providers: Vec<ProviderInfo> = Vec::new();
+
+    if pool.oauth42.is_configured() {
+        providers.push(ProviderInfo {
+            id: "42",
+            label: "42 Intra",
+        });
+    }
+
+    HttpResponse::Ok().json(serde_json::json!({ "providers": providers }))
 }

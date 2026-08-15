@@ -125,6 +125,7 @@ async fn main() -> std::io::Result<()> {
                         .cookie_secure(false)
                         .build(),
                     )
+                    .service(crate::oauth::oauth_providers)
                     .service(crate::oauth::auth_42)
                     .service(crate::oauth::auth_42_callback)
                     .service(crate::oauth::oauth_session),

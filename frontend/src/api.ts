@@ -543,3 +543,23 @@ export async function loginWith42(): Promise<SessionUser | null> {
   );
   return { ...user, status: "online" };
 }
+
+export interface OAuthProvider {
+  id: string;
+  label: string;
+}
+
+// The sign-in providers this server can actually complete a login with.
+// Asked rather than hardcoded: a deployment without credentials for a provider
+// simply doesn't list it, so the menu never offers an option that fails.
+export async function fetchOAuthProviders(): Promise<OAuthProvider[]> {
+  try {
+    const { providers } = await requestJson<{ providers: OAuthProvider[] }>(
+      "/auth/providers",
+      { method: "GET" },
+    );
+    return Array.isArray(providers) ? providers : [];
+  } catch {
+    return [];
+  }
+}

@@ -1,6 +1,7 @@
 import {
   addFriend as apiAddFriend,
   displayName,
+  fetchOAuthProviders,
   getDiscussion,
   getMail,
   getUser,
@@ -173,6 +174,46 @@ export function createCommandHandlers(
       }
       startLoginFlow(deps);
       addLine(t("login started. enter name."));
+      return;
+    }
+
+    if (command === "oauth") {
+      if (sessionUser) {
+        addLine(t("already logged in. use logout first."));
+        return;
+      }
+
+      const providers = await fetchOAuthProviders();
+      if (providers.length === 0) {
+        addLine(t("no external sign-in providers are configured."));
+        return;
+      }
+
+      const requested = args[0]?.toLowerCase();
+      // Bare `oauth` with a single provider configured just goes there — the
+      // welcome page already names it, so making the user retype it adds
+      // nothing. With several, they pick from the list on that page.
+      const chosen =
+        !requested && providers.length === 1
+          ? providers[0]
+          : providers.find((p) => p.id.toLowerCase() === requested);
+
+      if (!requested && !chosen) {
+        providers.forEach((provider) =>
+          addLine(`  ${provider.id} - ${provider.label}`),
+        );
+        addLine(t("use `oauth <provider>` to continue."));
+        return;
+      }
+      if (!chosen) {
+        addLine(t("unknown provider: {name}", { name: requested }));
+        return;
+      }
+
+      addLine(t("redirecting to {label}...", { label: chosen.label }));
+      // a full navigation, not a fetch: the provider has to own the address bar
+      // so the user can see whose login page they are about to type into
+      window.location.href = `/api/auth/${chosen.id}`;
       return;
     }
 
