@@ -2061,12 +2061,14 @@ dependencies = [
  "dotenvy",
  "downcast-rs",
  "env_logger",
+ "log",
  "openssl",
  "openssl-sys",
  "pq-sys",
  "rand 0.8.6",
  "serde",
  "serde_json",
+ "url",
 ]
 
 [[package]]

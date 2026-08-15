@@ -10,7 +10,7 @@ mod schema;
 mod status;
 mod users;
 mod websocket;
-
+mod oauth;
 
 use crate::authenticator::{create_authenticator, create_authorizer, init_user_store};
 use model::database_initializer::{initialize_db, OAuth42Config};
@@ -63,7 +63,14 @@ async fn main() -> std::io::Result<()> {
         jwt_token_service: None,
         oauth42: OAuth42Config::from_env(),
     });
-    let secret_key = cookie::Key::generate();
+    // Not Key::generate(): a fresh key each boot invalidates every session
+    // cookie on restart, which in development is constant. SECRET_HASH is
+    // already required at startup; Key::from needs at least 64 bytes.
+    let secret_key = cookie::Key::from(
+        std::env::var("SECRET_HASH")
+            .expect("SECRET_HASH must be set")
+            .as_bytes(),
+    );
 
     init_user_store(users);
 
@@ -86,6 +93,16 @@ async fn main() -> std::io::Result<()> {
             // Authorization header, and before scope("") whose empty prefix
             // would otherwise swallow it.
             .service(health)
+            .service(
+                web::scope("/auth")
+                    .wrap(
+                        SessionMiddleware::builder(CookieSessionStore::default(),secret_key.clone())
+                        .cookie_secure(false)
+                        .build()
+                    )
+                    .service(crate::oauth::auth_42)
+                    .service(crate::oauth::auth_42_callback),
+            )
             .service(
                 web::scope("")
                     .wrap(

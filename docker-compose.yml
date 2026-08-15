@@ -28,6 +28,12 @@ services:
       - "8080:8080"
     environment:
       DATABASE_URL: postgres://postgres:postgres@db:5432/ft_transcendence
+      # openssl-sys is built with features = ["vendored"], so it looks for CA
+      # certificates in a compiled-in directory that does not exist in this
+      # image — every outbound HTTPS call fails "certificate verify failed".
+      # Point it at Alpine's bundle, which curl already uses successfully.
+      SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
+      SSL_CERT_DIR: /etc/ssl/certs
     volumes:
       # Bind-mount the source tree so the container can build & run it.
       - ./server:/app
