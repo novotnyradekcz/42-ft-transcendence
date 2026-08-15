@@ -585,7 +585,7 @@ pub async fn health() -> impl Responder {
 mod router_tests {
     use super::*;
     use crate::games::Lobby;
-    use crate::model::database_initializer::{initialize_db, OAuth42Config};
+    use crate::model::database_initializer::{initialize_db, OAuthConfig};
     use crate::status::StatusRegistry;
     use actix_security::http::security::Argon2PasswordEncoder;
     use actix_security::prelude::{JwtAuthenticator, JwtConfig, JwtTokenService, User};
@@ -612,7 +612,7 @@ mod router_tests {
             jwt_authenticator,
             jwt_token_service,
             token_blacklist: RwLock::new(HashSet::new()),
-            oauth42: OAuth42Config::from_env(),
+            oauth: OAuthConfig::from_env(),
         })
     }
 

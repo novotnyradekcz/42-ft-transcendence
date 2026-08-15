@@ -1,6 +1,7 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
 use crate::authenticator::{get_user_from_store, register_user, TokenResponse};
+use crate::model::database_initializer::OAuthProvider;
 use crate::model::users::{find_or_create_oauth_user, get_user_in_db, OAuthProfile};
 use crate::AppState;
 use actix_security::prelude::User;
@@ -11,24 +12,9 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use url::Url;
 
-const AUTHORIZE_42_URL: &str = "https://api.intra.42.fr/oauth/authorize";
-const TOKEN_42_URL: &str = "https://api.intra.42.fr/oauth/token";
-const PROFILE_42_URL: &str = "https://api.intra.42.fr/v2/me";
-
-/// Where the browser lands once the session exists. Derived from the
-/// configured redirect URI rather than hardcoded: both point at the frontend
-/// origin, so they cannot drift apart when the deployment moves (as it did
-/// when the frontend went from :3000 to HTTPS on 443).
-fn after_login_url(redirect_uri: &str) -> String {
-    Url::parse(redirect_uri)
-        .and_then(|u| u.join("/menu"))
-        .map(String::from)
-        .unwrap_or_else(|_| "/menu".to_string())
-}
-
 /// One entry in the sign-in menu. `id` is the path segment: a provider listed
-/// as `"42"` is started at `/auth/42`, so the frontend never needs its own
-/// table of provider routes.
+/// as `"github"` is started at `/auth/github`, so the frontend never needs its
+/// own table of provider routes.
 #[derive(Serialize)]
 struct ProviderInfo {
     id: &'static str,
@@ -43,35 +29,117 @@ pub struct CallbackQuery {
 }
 
 #[derive(Deserialize)]
-struct Intra42Token {
+struct AccessToken {
     access_token: String,
 }
 
-/// Only the fields we consume. 42's /v2/me returns a great deal more;
-/// serde ignores unknown fields by default.
-#[derive(Deserialize)]
-struct Intra42Me {
-    id: i64,
-    login: String,
-    email: Option<String>,
+/// The providers this server can actually complete a login with.
+///
+/// Configured ones only: a deployment without GitHub credentials offers
+/// nothing for GitHub rather than an entry that fails when chosen.
+#[get("/providers")]
+pub async fn oauth_providers(pool: web::Data<Arc<AppState>>) -> impl Responder {
+    let providers: Vec<ProviderInfo> = pool
+        .oauth
+        .all_configured()
+        .map(|p| ProviderInfo {
+            id: p.spec.id,
+            label: p.spec.label,
+        })
+        .collect();
+
+    HttpResponse::Ok().json(serde_json::json!({ "providers": providers }))
 }
 
-#[get("/42/callback")]
-pub async fn auth_42_callback(
+/// Steps 1-2 of the flow: mint a per-browser `state`, remember it, and hand the
+/// browser off to the provider. Nothing secret leaves the server — `client_id`
+/// is public by design; only `client_secret` stays behind.
+#[get("/{provider}")]
+pub async fn oauth_start(
     pool: web::Data<Arc<AppState>>,
     session: Session,
-    query: web::Query<CallbackQuery>,
-    ) -> impl Responder {
-    let cfg = &pool.oauth42;
+    path: web::Path<String>,
+) -> impl Responder {
+    let provider_id = path.into_inner();
+    let provider = match pool.oauth.configured(&provider_id) {
+        Some(p) => p,
+        None => {
+            return HttpResponse::ServiceUnavailable().json(serde_json::json!({
+                "message": format!("{provider_id} sign-in is not configured on this server"),
+            }));
+        }
+    };
 
-    if let Some(err) = &query.error {
-        return HttpResponse::BadRequest().json(serde_json::json!({
-            "message" : format!("42 refused the authorization: {}", err),
+    let state: String = rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(32)
+        .map(char::from)
+        .collect();
+
+    // Keyed by provider so two tabs mid-handshake with different providers do
+    // not overwrite each other's state.
+    if session
+        .insert(state_key(&provider_id), &state)
+        .is_err()
+    {
+        return HttpResponse::InternalServerError().json(serde_json::json!({
+            "message": "Could not start the OAuth flow",
         }));
     }
 
+    let redirect = match Url::parse_with_params(
+        provider.spec.authorize_url,
+        &[
+            ("client_id", provider.client_id.as_str()),
+            ("redirect_uri", provider.redirect_uri.as_str()),
+            ("response_type", "code"),
+            ("scope", provider.spec.scope),
+            ("state", state.as_str()),
+        ],
+    ) {
+        Ok(url) => url,
+        Err(e) => {
+            log::error!("could not build the {provider_id} authorize URL: {e}");
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Could not start the OAuth flow",
+            }));
+        }
+    };
+
+    HttpResponse::Found()
+        .append_header(("Location", redirect.as_str()))
+        .finish()
+}
+
+/// Steps 5-10: verify `state`, redeem the code over the back channel, fetch the
+/// profile, resolve it to a local user, and start a session.
+#[get("/{provider}/callback")]
+pub async fn oauth_callback(
+    pool: web::Data<Arc<AppState>>,
+    session: Session,
+    path: web::Path<String>,
+    query: web::Query<CallbackQuery>,
+) -> impl Responder {
+    let provider_id = path.into_inner();
+    let provider = match pool.oauth.configured(&provider_id) {
+        Some(p) => p,
+        None => {
+            return HttpResponse::ServiceUnavailable().json(serde_json::json!({
+                "message": format!("{provider_id} sign-in is not configured on this server"),
+            }));
+        }
+    };
+
+    if let Some(err) = &query.error {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "message": format!("{} refused the authorization: {}", provider.spec.label, err),
+        }));
+    }
+
+    // Consume the stored state unconditionally: one flow, one use. Doing this
+    // before anything else means a replayed callback finds nothing to match.
     let expected = session
-        .remove_as::<String>("oauth_state")
+        .remove_as::<String>(&state_key(&provider_id))
         .and_then(|r| r.ok());
 
     let received = query.state.as_deref().unwrap_or_default();
@@ -84,6 +152,7 @@ pub async fn auth_42_callback(
         }
     }
 
+    // Only now is it safe to touch `code`.
     let code = match query.code.as_deref() {
         Some(c) if !c.is_empty() => c,
         _ => {
@@ -95,75 +164,92 @@ pub async fn auth_42_callback(
 
     let client = awc::Client::default();
 
-    let token: Intra42Token = match client
-        .post(TOKEN_42_URL)
+    let token: AccessToken = match client
+        .post(provider.spec.token_url)
         .insert_header(("User-Agent", "ft_transcendence"))
+        // GitHub answers the token endpoint in form-encoded by default and
+        // only returns JSON when asked. The others ignore this header.
+        .insert_header(("Accept", "application/json"))
         .send_form(&[
             ("grant_type", "authorization_code"),
-            ("client_id", cfg.client_id.as_str()),
-            ("client_secret", cfg.client_secret.as_str()),
+            ("client_id", provider.client_id.as_str()),
+            ("client_secret", provider.client_secret.as_str()),
             ("code", code),
-            ("redirect_uri", cfg.redirect_uri.as_str()),
+            ("redirect_uri", provider.redirect_uri.as_str()),
         ])
-        .await {
-        Ok(mut resp) if resp.status().is_success() => match resp.json::<Intra42Token>().await {
+        .await
+    {
+        Ok(mut resp) if resp.status().is_success() => match resp.json::<AccessToken>().await {
             Ok(t) => t,
             Err(e) => {
-                log::error!("42 token response was not the expected shape: {e}");
+                log::error!("{provider_id} token response was not the expected shape: {e}");
                 return HttpResponse::BadGateway().json(serde_json::json!({
-                    "message": "Unexpected response from 42",
+                    "message": format!("Unexpected response from {}", provider.spec.label),
                 }));
             }
         },
         Ok(resp) => {
-            log::error!("42 rejected the code exchange: HTTP {}", resp.status());
+            log::error!(
+                "{provider_id} rejected the code exchange: HTTP {}",
+                resp.status()
+            );
             return HttpResponse::BadGateway().json(serde_json::json!({
-                "message": "42 rejected the authorization code",
+                "message": format!("{} rejected the authorization code", provider.spec.label),
             }));
         }
         Err(e) => {
-            log::error!("could not reach 42 for the code exchange: {e}");
+            log::error!("could not reach {provider_id} for the code exchange: {e}");
             return HttpResponse::BadGateway().json(serde_json::json!({
-                "message": "Could not reach 42",
+                "message": format!("Could not reach {}", provider.spec.label),
             }));
         }
     };
 
-    let me: Intra42Me = match client
-        .get(PROFILE_42_URL)
+    // Parsed as a Value because the three providers agree on nothing: 42 and
+    // GitHub give a numeric `id` and a `login`, Google a string `sub` and no
+    // username at all.
+    let raw_profile: serde_json::Value = match client
+        .get(provider.spec.profile_url)
         .insert_header(("Authorization", format!("Bearer {}", token.access_token)))
         .insert_header(("User-Agent", "ft_transcendence"))
+        .insert_header(("Accept", "application/json"))
         .send()
         .await
     {
-        Ok(mut resp) if resp.status().is_success() => match resp.json::<Intra42Me>().await {
-            Ok(m) => m,
+        Ok(mut resp) if resp.status().is_success() => match resp.json::<serde_json::Value>().await {
+            Ok(v) => v,
             Err(e) => {
-                log::error!("42 profile was not the expected shape: {e}");
+                log::error!("{provider_id} profile was not valid JSON: {e}");
                 return HttpResponse::BadGateway().json(serde_json::json!({
-                    "message": "Unexpected profile response from 42",
+                    "message": format!("Unexpected profile response from {}", provider.spec.label),
                 }));
             }
         },
         Ok(resp) => {
-            log::error!("42 refused the profile request: HTTP {}", resp.status());
+            log::error!(
+                "{provider_id} refused the profile request: HTTP {}",
+                resp.status()
+            );
             return HttpResponse::BadGateway().json(serde_json::json!({
-                "message": "Could not read your 42 profile",
+                "message": format!("Could not read your {} profile", provider.spec.label),
             }));
         }
         Err(e) => {
-            log::error!("could not reach 42 for the profile: {e}");
+            log::error!("could not reach {provider_id} for the profile: {e}");
             return HttpResponse::BadGateway().json(serde_json::json!({
-                "message": "Could not reach 42",
+                "message": format!("Could not reach {}", provider.spec.label),
             }));
         }
     };
 
-    let profile = OAuthProfile {
-        provider: "42".to_string(),
-        provider_user_id: me.id.to_string(),
-        login: me.login,
-        email: me.email.unwrap_or_default(),
+    let profile = match parse_profile(provider, &raw_profile) {
+        Some(p) => p,
+        None => {
+            log::error!("{provider_id} profile lacked a usable id: {raw_profile}");
+            return HttpResponse::BadGateway().json(serde_json::json!({
+                "message": format!("Unexpected profile response from {}", provider.spec.label),
+            }));
+        }
     };
 
     // Scoped so the mutex guard is dropped before the response is built, and so
@@ -172,11 +258,11 @@ pub async fn auth_42_callback(
         let mut db = pool
             .database
             .lock()
-            .expect("auth_42_callback expects DatabaseInitializer");
+            .expect("oauth_callback expects DatabaseInitializer");
         match find_or_create_oauth_user(&mut db, &profile, &pool.encoder) {
             Ok(u) => u,
             Err(e) => {
-                log::error!("could not resolve the 42 identity to a user: {e}");
+                log::error!("could not resolve the {provider_id} identity to a user: {e}");
                 return HttpResponse::InternalServerError().json(serde_json::json!({
                     "message": "Could not complete the login",
                 }));
@@ -205,46 +291,9 @@ pub async fn auth_42_callback(
     }
 
     HttpResponse::Found()
-        .append_header(("Location", after_login_url(&cfg.redirect_uri)))
+        .append_header(("Location", pool.oauth.after_login_url()))
         .finish()
 }
-
-#[get("/42")]
-pub async fn auth_42(pool: web::Data<Arc<AppState>>, session: Session) -> impl Responder {
-    let cfg = &pool.oauth42;
-
-    if !cfg.is_configured() {
-        return HttpResponse::ServiceUnavailable().json(serde_json::json!(
-                {"message" : "42 OAuth is not configured on this server",}));
-    }
-
-    let state: String = rand::thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(32)
-        .map(char::from)
-        .collect();
-
-    if session.insert("oauth_state", &state).is_err() {
-        return HttpResponse::InternalServerError().json(serde_json::json!(
-                {"message" : "Could not start the OAuth flow",}));
-    }
-    
-    let redirect = Url::parse_with_params(
-        AUTHORIZE_42_URL,
-        &[
-            ("client_id", cfg.client_id.as_str()),
-            ("redirect_uri", cfg.redirect_uri.as_str()),
-            ("response_type", "code"),
-            ("scope", "public"),
-            ("state", state.as_str()),
-        ]
-    ).expect("AUTHORIZE_42_URL is a valid URL");
-
-    HttpResponse::Found()
-        .append_header(("Location", redirect.as_str()))
-        .finish()
-}
-
 
 /// Trades the short-lived OAuth cookie for the same JWT pair `/users/login`
 /// issues, so an OAuth user is indistinguishable from a password user from
@@ -254,14 +303,8 @@ pub async fn auth_42(pool: web::Data<Arc<AppState>>, session: Session) -> impl R
 /// One-shot by construction — the id is removed from the session as it is read,
 /// so a replayed request finds nothing to spend.
 #[get("/session")]
-pub async fn oauth_session(
-    pool: web::Data<Arc<AppState>>,
-    session: Session,
-) -> impl Responder {
-    let user_id = match session
-        .remove_as::<i32>("user_id")
-        .and_then(|r| r.ok())
-    {
+pub async fn oauth_session(pool: web::Data<Arc<AppState>>, session: Session) -> impl Responder {
+    let user_id = match session.remove_as::<i32>("user_id").and_then(|r| r.ok()) {
         Some(id) => id,
         None => {
             return HttpResponse::Unauthorized().json(serde_json::json!({
@@ -314,23 +357,66 @@ pub async fn oauth_session(
     }
 }
 
-/// The providers this server can actually complete a login with.
+fn state_key(provider_id: &str) -> String {
+    format!("oauth_state_{provider_id}")
+}
+
+/// Normalises the three providers' wildly different profile payloads.
 ///
-/// Configured ones only: a deployment without 42 credentials offers nothing
-/// rather than offering an entry that 503s when chosen. Adding Google or
-/// GitHub later means adding their config alongside `oauth42` and pushing one
-/// more entry here — the frontend menu needs no change, because it renders
-/// whatever this returns.
-#[get("/providers")]
-pub async fn oauth_providers(pool: web::Data<Arc<AppState>>) -> impl Responder {
-    let mut providers: Vec<ProviderInfo> = Vec::new();
+/// The only field that must be present is the provider's own stable id — it is
+/// what `(provider, provider_user_id)` is keyed on, and the one thing we refuse
+/// to guess at. Everything else degrades: a missing name falls back to the
+/// email's local part and then to the id, and a missing email to the empty
+/// string, which is what the column defaults to anyway.
+fn parse_profile(provider: &OAuthProvider, raw: &serde_json::Value) -> Option<OAuthProfile> {
+    let email = raw
+        .get("email")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
 
-    if pool.oauth42.is_configured() {
-        providers.push(ProviderInfo {
-            id: "42",
-            label: "42 Intra",
-        });
+    let (id, login) = match provider.spec.id {
+        // 42 and GitHub both expose a numeric id and a username.
+        "42" | "github" => {
+            let id = raw.get("id").and_then(json_id)?;
+            let login = raw
+                .get("login")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+                .unwrap_or_else(|| id.clone());
+            (id, login)
+        }
+        // Google has no username: `sub` is the stable id, and the closest thing
+        // to a handle is the local part of the email.
+        "google" => {
+            let id = raw.get("sub").and_then(json_id)?;
+            let login = raw
+                .get("name")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+                .or_else(|| email.split('@').next().map(str::to_string))
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| id.clone());
+            (id, login)
+        }
+        _ => return None,
+    };
+
+    Some(OAuthProfile {
+        provider: provider.spec.id.to_string(),
+        provider_user_id: id,
+        login,
+        email,
+    })
+}
+
+/// Providers disagree on whether an id is a JSON number or a JSON string, and
+/// the same provider can change its mind between endpoints. Accept either, and
+/// store it as text.
+fn json_id(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        serde_json::Value::String(s) if !s.is_empty() => Some(s.clone()),
+        _ => None,
     }
-
-    HttpResponse::Ok().json(serde_json::json!({ "providers": providers }))
 }

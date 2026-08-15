@@ -20,7 +20,7 @@ use crate::model::DatabaseInitializer;
 use crate::router::*;
 use crate::session::load_valid_blacklisted_tokens;
 use crate::status::{status_ws, StatusRegistry};
-use model::database_initializer::{initialize_db, OAuth42Config};
+use model::database_initializer::{initialize_db, OAuthConfig};
 
 use actix_security::http::security::middleware::SecurityTransform;
 use actix_security::http::security::Argon2PasswordEncoder;
@@ -41,7 +41,7 @@ struct AppState {
     jwt_token_service: JwtTokenService,
     /// In-memory blacklist of invalidated token JTIs (or raw tokens when jti is absent).
     token_blacklist: RwLock<HashSet<String>>,
-    oauth42: OAuth42Config,
+    oauth: OAuthConfig,
 }
 
 #[actix_web::main]
@@ -69,7 +69,7 @@ async fn main() -> std::io::Result<()> {
     // set is consistent with the DB after a restart.
     let token_blacklist = RwLock::new(load_valid_blacklisted_tokens(&mut db));
     // Signs the short-lived cookie that carries the OAuth `state` across the
-    // redirect to 42. Not Key::generate(): a fresh key each boot would void
+    // redirect to the provider. Not Key::generate(): a fresh key each boot would void
     // every in-flight handshake on restart. Key::from needs >= 64 bytes, and
     // SECRET_HASH is already mandatory at startup.
     let secret_key = cookie::Key::from(db.server_environment.get_pass_hash().as_bytes());
@@ -81,7 +81,7 @@ async fn main() -> std::io::Result<()> {
         jwt_authenticator,
         jwt_token_service,
         token_blacklist,
-        oauth42: OAuth42Config::from_env(),
+        oauth: OAuthConfig::from_env(),
     });
 
     init_user_store(users);
@@ -125,10 +125,13 @@ async fn main() -> std::io::Result<()> {
                         .cookie_secure(false)
                         .build(),
                     )
+                    // Order matters: the literal routes must be registered
+                    // before /{provider}, whose pattern would otherwise
+                    // swallow "providers" and "session" as provider ids.
                     .service(crate::oauth::oauth_providers)
-                    .service(crate::oauth::auth_42)
-                    .service(crate::oauth::auth_42_callback)
-                    .service(crate::oauth::oauth_session),
+                    .service(crate::oauth::oauth_session)
+                    .service(crate::oauth::oauth_callback)
+                    .service(crate::oauth::oauth_start),
             )
             // Everything else is authenticated. SessionMiddleware/CookieSessionStore
             // intentionally dropped: this branch is stateless JWT.
