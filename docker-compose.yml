@@ -30,11 +30,26 @@ services:
       DATABASE_URL: postgres://postgres:postgres@db:5432/ft_transcendence
     volumes:
       # Bind-mount the source tree so the container can build & run it.
-      # The compiled artefacts (target/) stay on the host for layer caching.
       - ./server:/app
+      # Keep target/ in a named volume rather than on the bind mount: the
+      # container builds as root, and writing artefacts straight onto the host
+      # tree leaves root-owned files that break the developer's own cargo runs.
+      - server-target:/app/target
     depends_on:
       db:
         condition: service_healthy
+    # Grep the body rather than trusting the exit code: an unmatched path falls
+    # through to SecurityTransform and answers 302, and `curl -f` only fails on
+    # 4xx/5xx — so a missing route would still report healthy. Only the real
+    # handler emits {"status":"ok"}.
+    # start_period covers a cold `cargo build`, which takes minutes. Failures
+    # during it are not counted, so the container reads "health: starting".
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS --max-time 3 http://localhost:8080/health | grep -q '\"status\":\"ok\"' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 600s
     restart: on-failure
   
   # ── Node.js / React frontend ───────────────────────────────────────────────
@@ -44,9 +59,11 @@ services:
       args:
         VITE_API_BASE_URL: /api
     depends_on:
-      - server
+      server:
+        condition: service_healthy
     ports:
       - "3000:80"
 
 volumes:
   postgres-data:
+  server-target:

@@ -18,7 +18,7 @@ use crate::games::{Lobby, play_game_ws};
 use crate::model::DatabaseInitializer;
 use crate::model::users::get_all_users_from_db;
 use crate::status::{StatusRegistry, status_ws};
-use crate::router::{index, show_users, login_user, user_detail, create_user, show_games, game_detail, create_game, show_discussions, discussion_detail, create_discussion, create_discussion_post, show_mail, mail_detail, create_mail};
+use crate::router::{index, show_users, login_user, user_detail, create_user, show_games, game_detail, create_game, show_discussions, discussion_detail, create_discussion, create_discussion_post, show_mail, mail_detail, create_mail, health};
 
 use actix_security::http::security::{Argon2PasswordEncoder, SessionFixationStrategy};
 use actix_security::http::security::middleware::SecurityTransform;
@@ -81,6 +81,11 @@ async fn main() -> std::io::Result<()> {
                 web::scope("/status")
                     .service(status_ws),
             )
+            // Unauthenticated liveness probe for the container healthcheck.
+            // Registered outside SecurityTransform so it answers without an
+            // Authorization header, and before scope("") whose empty prefix
+            // would otherwise swallow it.
+            .service(health)
             .service(
                 web::scope("")
                     .wrap(
