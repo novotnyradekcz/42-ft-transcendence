@@ -242,7 +242,7 @@ pub async fn oauth_callback(
         }
     };
 
-    let profile = match parse_profile(provider, &raw_profile) {
+    let mut profile = match parse_profile(provider, &raw_profile) {
         Some(p) => p,
         None => {
             log::error!("{provider_id} profile lacked a usable id: {raw_profile}");
@@ -251,6 +251,18 @@ pub async fn oauth_callback(
             }));
         }
     };
+
+    // GitHub's /user only carries an email when the account has a *public*
+    // one, so most users arrive with none. The `user:email` scope we already
+    // request exists precisely for this: /user/emails has the real addresses.
+    // Worth the extra call — the frontend rejects a user payload with no
+    // email, so without this a GitHub login succeeds server-side and then
+    // silently drops back to guest.
+    if profile.email.is_empty() && provider.spec.id == "github" {
+        if let Some(email) = github_primary_email(&client, &token.access_token).await {
+            profile.email = email;
+        }
+    }
 
     // Scoped so the mutex guard is dropped before the response is built, and so
     // no `.await` ever happens while the database lock is held.
@@ -419,4 +431,55 @@ fn json_id(value: &serde_json::Value) -> Option<String> {
         serde_json::Value::String(s) if !s.is_empty() => Some(s.clone()),
         _ => None,
     }
+}
+
+const GITHUB_EMAILS_URL: &str = "https://api.github.com/user/emails";
+
+/// GitHub keeps addresses off /user unless one is public. This asks for the
+/// list and picks the primary verified address.
+///
+/// Verified matters: an unverified address is one the account holder typed,
+/// not one they proved they control, so treating it as identity would let
+/// someone claim an address that is not theirs. Returns None rather than
+/// failing the login — a user with no email is degraded, not broken.
+async fn github_primary_email(client: &awc::Client, access_token: &str) -> Option<String> {
+    let mut response = client
+        .get(GITHUB_EMAILS_URL)
+        .insert_header(("Authorization", format!("Bearer {access_token}")))
+        .insert_header(("User-Agent", "ft_transcendence"))
+        .insert_header(("Accept", "application/json"))
+        .send()
+        .await
+        .map_err(|e| log::error!("could not reach GitHub for the email list: {e}"))
+        .ok()?;
+
+    if !response.status().is_success() {
+        log::error!(
+            "GitHub refused the email list: HTTP {} (is the user:email scope granted?)",
+            response.status()
+        );
+        return None;
+    }
+
+    let emails = response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|e| log::error!("GitHub email list was not valid JSON: {e}"))
+        .ok()?;
+
+    let entries = emails.as_array()?;
+    let verified = |e: &&serde_json::Value| {
+        e.get("verified").and_then(serde_json::Value::as_bool) == Some(true)
+    };
+
+    entries
+        .iter()
+        .find(|e| {
+            verified(e) && e.get("primary").and_then(serde_json::Value::as_bool) == Some(true)
+        })
+        // A verified non-primary address still beats no address at all.
+        .or_else(|| entries.iter().find(verified))
+        .and_then(|e| e.get("email"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
 }

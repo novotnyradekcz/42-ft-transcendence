@@ -89,6 +89,19 @@ pub fn find_or_create_oauth_user(
         .optional()?;
 
     if let Some(user) = existing {
+        // Backfill an address we did not have before. GitHub hands out no email
+        // at all until the account has a verified one we are allowed to read,
+        // so a row created on an earlier login can be missing it through no
+        // fault of the user. Only ever fills a blank — it never overwrites.
+        if user.email.is_empty() && !profile.email.is_empty() {
+            diesel::update(ftt_users.filter(id.eq(user.id)))
+                .set(email.eq(&profile.email))
+                .execute(conn)?;
+            return Ok(DbUser {
+                email: profile.email.clone(),
+                ..user
+            });
+        }
         return Ok(user);
     }
 
