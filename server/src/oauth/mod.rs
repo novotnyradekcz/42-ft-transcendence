@@ -13,7 +13,16 @@ const AUTHORIZE_42_URL: &str = "https://api.intra.42.fr/oauth/authorize";
 const TOKEN_42_URL: &str = "https://api.intra.42.fr/oauth/token";
 const PROFILE_42_URL: &str = "https://api.intra.42.fr/v2/me";
 
-const AFTER_LOGIN_URL: &str = "http://localhost:3000/menu";
+/// Where the browser lands once the session exists. Derived from the
+/// configured redirect URI rather than hardcoded: both point at the frontend
+/// origin, so they cannot drift apart when the deployment moves (as it did
+/// when the frontend went from :3000 to HTTPS on 443).
+fn after_login_url(redirect_uri: &str) -> String {
+    Url::parse(redirect_uri)
+        .and_then(|u| u.join("/menu"))
+        .map(String::from)
+        .unwrap_or_else(|_| "/menu".to_string())
+}
 
 #[derive(Deserialize)]
 pub struct CallbackQuery {
@@ -171,7 +180,7 @@ pub async fn auth_42_callback(
     }
 
     HttpResponse::Found()
-        .append_header(("Location", AFTER_LOGIN_URL))
+        .append_header(("Location", after_login_url(&cfg.redirect_uri)))
         .finish()
 }
 
