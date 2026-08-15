@@ -50,6 +50,32 @@ impl DatabaseInitializer {
     }
 }
 
+pub struct OAuth42Config {
+    pub client_id: String,
+    pub client_secret: String,
+    pub redirect_uri: String,
+}
+
+impl OAuth42Config {
+    pub fn from_env() -> Self {
+        dotenv().ok();
+        Self {
+            client_id:
+                env::var("OAUTH42_CLIENT_ID").ok().unwrap_or_default(),
+            client_secret: 
+                env::var("OAUTH42_CLIENT_SECRET").ok().unwrap_or_default(),
+            redirect_uri:
+                env::var("OAUTH42_REDIRECT_URI").ok().unwrap_or_default(),
+        }
+    }
+
+    pub fn is_configured(&self) -> bool {
+        !self.client_id.is_empty()
+            && !self.client_secret.is_empty()
+            && !self.redirect_uri.is_empty()
+    }
+}
+
 pub fn initialize_db() -> DatabaseInitializer {
     let mut dbinitializer = DatabaseInitializer::new();
     dbinitializer.connect();

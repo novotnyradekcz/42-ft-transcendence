@@ -13,7 +13,7 @@ mod websocket;
 
 
 use crate::authenticator::{create_authenticator, create_authorizer, init_user_store};
-use model::database_initializer::initialize_db;
+use model::database_initializer::{initialize_db, OAuth42Config};
 use crate::games::{Lobby, play_game_ws};
 use crate::model::DatabaseInitializer;
 use crate::model::users::get_all_users_from_db;
@@ -37,6 +37,7 @@ struct AppState {
     session_config: SessionConfig,
     jwt_authenticator: Option<JwtAuthenticator>,
     jwt_token_service: Option<JwtTokenService>,
+    oauth42: OAuth42Config,
 }
 
 #[actix_web::main]
@@ -60,6 +61,7 @@ async fn main() -> std::io::Result<()> {
         session_config,
         jwt_authenticator: None,
         jwt_token_service: None,
+        oauth42: OAuth42Config::from_env(),
     });
     let secret_key = cookie::Key::generate();
 
