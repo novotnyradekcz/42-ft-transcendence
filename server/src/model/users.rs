@@ -117,7 +117,7 @@ pub fn find_or_create_oauth_user(
             profile.login, profile.provider, attempt);
     }
 
-        let unreachable_secret: String = rand::thread_rng()
+    let unreachable_secret: String = rand::thread_rng()
         .sample_iter(&rand::distributions::Alphanumeric)
         .take(48)
         .map(char::from)
