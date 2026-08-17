@@ -576,11 +576,16 @@ pub async fn create_game(
     }
 }
 
+#[get("/health")]
+pub async fn health() -> impl Responder {
+    HttpResponse::Ok().json(serde_json::json!({"status" : "ok"}))
+}
+
 #[cfg(test)]
 mod router_tests {
     use super::*;
     use crate::games::Lobby;
-    use crate::model::database_initializer::initialize_db;
+    use crate::model::database_initializer::{initialize_db, OAuthConfig};
     use crate::status::StatusRegistry;
     use actix_security::http::security::Argon2PasswordEncoder;
     use actix_security::prelude::{JwtAuthenticator, JwtConfig, JwtTokenService, User};
@@ -607,6 +612,7 @@ mod router_tests {
             jwt_authenticator,
             jwt_token_service,
             token_blacklist: RwLock::new(HashSet::new()),
+            oauth: OAuthConfig::from_env(),
         })
     }
 

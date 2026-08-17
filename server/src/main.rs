@@ -11,6 +11,7 @@ mod session;
 mod status;
 mod users;
 mod websocket;
+mod oauth;
 
 use crate::authenticator::{create_authenticator, create_authorizer, init_user_store};
 use crate::games::{play_game_ws, Lobby};
@@ -19,13 +20,14 @@ use crate::model::DatabaseInitializer;
 use crate::router::*;
 use crate::session::load_valid_blacklisted_tokens;
 use crate::status::{status_ws, StatusRegistry};
-use model::database_initializer::initialize_db;
+use model::database_initializer::{initialize_db, OAuthConfig};
 
 use actix_security::http::security::middleware::SecurityTransform;
 use actix_security::http::security::Argon2PasswordEncoder;
 use actix_security::prelude::{JwtAuthenticator, JwtConfig, JwtTokenService, User};
+use actix_session::{storage::CookieSessionStore, SessionMiddleware};
 use actix_web::web::Data;
-use actix_web::{web, App, HttpServer};
+use actix_web::{cookie, web, App, HttpServer};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -39,6 +41,7 @@ struct AppState {
     jwt_token_service: JwtTokenService,
     /// In-memory blacklist of invalidated token JTIs (or raw tokens when jti is absent).
     token_blacklist: RwLock<HashSet<String>>,
+    oauth: OAuthConfig,
 }
 
 #[actix_web::main]
@@ -65,6 +68,9 @@ async fn main() -> std::io::Result<()> {
     // Load non-expired blacklisted tokens from the database so the in-memory
     // set is consistent with the DB after a restart.
     let token_blacklist = RwLock::new(load_valid_blacklisted_tokens(&mut db));
+    // signs the OAuth state cookie. not Key::generate() — a new key each boot
+    // kills every in-flight login. needs >= 64 bytes
+    let secret_key = cookie::Key::from(db.server_environment.get_pass_hash().as_bytes());
     let state = Arc::new(AppState {
         database: Mutex::new(db),
         lobby: Mutex::new(lobby),
@@ -73,6 +79,7 @@ async fn main() -> std::io::Result<()> {
         jwt_authenticator,
         jwt_token_service,
         token_blacklist,
+        oauth: OAuthConfig::from_env(),
     });
 
     init_user_store(users);
@@ -96,6 +103,28 @@ async fn main() -> std::io::Result<()> {
             // them. Both handlers authenticate themselves via the auth subprotocol.
             .service(web::scope("/games/play").service(play_game_ws))
             .service(web::scope("/status").service(status_ws))
+            // liveness probe for the healthcheck. outside SecurityTransform so
+            // it answers without a header, and before scope("") swallows it
+            .service(health)
+            // the one place that still needs a cookie: `state` has to be tied
+            // to the browser that started the flow, and a logged-out user has
+            // no Authorization header. scoped to /auth; the rest stays JWT
+            .service(
+                web::scope("/auth")
+                    .wrap(
+                        SessionMiddleware::builder(
+                            CookieSessionStore::default(),
+                            secret_key.clone(),
+                        )
+                        .cookie_secure(true)
+                        .build(),
+                    )
+                    // literal routes first, or /{provider} eats them
+                    .service(crate::oauth::oauth_providers)
+                    .service(crate::oauth::oauth_session)
+                    .service(crate::oauth::oauth_callback)
+                    .service(crate::oauth::oauth_start),
+            )
             // Everything else is authenticated. SessionMiddleware/CookieSessionStore
             // intentionally dropped: this branch is stateless JWT.
             .service(

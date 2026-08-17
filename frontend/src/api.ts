@@ -515,3 +515,54 @@ export async function createGame(
     body: JSON.stringify({ name, body }),
   });
 }
+
+export async function exchangeOAuthSession(): Promise<SessionUser | null> {
+  let payload: JwtPayload;
+  try {
+    // not requestJson — it sends credentials: "omit" and would drop the cookie
+    const response = await fetch(`${apiBaseUrl}/auth/session`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      credentials: "same-origin",
+    });
+    if (!response.ok) return null;
+    payload = (await response.json()) as JwtPayload;
+  } catch {
+    return null;
+  }
+
+  const jwt_token = normalizeJwt(payload);
+  if (!jwt_token.access_token || jwt_token.expires_in === 0) return null;
+
+  // set before /users/me so requestJson picks the token up
+  currentCredentials = { basic_auth: null, jwt_token };
+
+  const user: UserProfile = normalizeUser(
+    await requestJson<unknown>("/users/me", { method: "GET" }),
+  );
+  return { ...user, status: "online" };
+}
+
+// Read at import time: the guest catch-all route replaces the URL, so the query
+// string is gone before any component mounts.
+export const oauthError: string | null = new URLSearchParams(
+  window.location.search,
+).get("oauth_error");
+
+export interface OAuthProvider {
+  id: string;
+  label: string;
+}
+
+// Asked, not hardcoded, so the menu never offers a provider that isn't set up.
+export async function fetchOAuthProviders(): Promise<OAuthProvider[]> {
+  try {
+    const { providers } = await requestJson<{ providers: OAuthProvider[] }>(
+      "/auth/providers",
+      { method: "GET" },
+    );
+    return Array.isArray(providers) ? providers : [];
+  } catch {
+    return [];
+  }
+}

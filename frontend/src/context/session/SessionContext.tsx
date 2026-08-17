@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type {SessionUser, UserProfile} from "../../types";
 import { CREDENTIALS_KEY, SESSION_USER_KEY } from "../../constants";
 import {
+  exchangeOAuthSession,
   getCredentials,
   listUsers,
   login as apiLogin,
@@ -25,6 +26,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     ),
   );
 
+  // true until the OAuth cookie exchange has been tried. unlike isRestoring
+  // this one waits on the network, so routing has to wait for it too
+  const [isHydrating, setIsHydrating] = useState<boolean>(
+    () => sessionUser === null,
+  );
+
   // rebuilds knownUsers after a page refresh, without blocking
   useEffect(() => {
     if (!isRestoring) return;
@@ -32,6 +39,28 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       .then(setKnownUsers)
       .catch(() => {})
       .finally(() => setIsRestoring(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // an OAuth login lands here with empty storage — the only credential is the
+  // one-shot cookie. spend it before deciding they're a guest
+  useEffect(() => {
+    if (!isHydrating) return;
+    let cancelled = false;
+    exchangeOAuthSession()
+      .then(async (user) => {
+        if (cancelled || !user) return;
+        persistSession(user);
+        setSessionUser(user);
+        setKnownUsers(await listUsers());
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setIsHydrating(false);
+      });
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -97,6 +126,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         sessionUser,
         knownUsers,
         isRestoring,
+        isHydrating,
         login,
         register,
         logout,

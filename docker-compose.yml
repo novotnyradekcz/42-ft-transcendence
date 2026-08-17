@@ -27,11 +27,28 @@ services:
       - "8080:8080"
     environment:
       DATABASE_URL: postgres://postgres:postgres@db:5432/ft_transcendence
+      # vendored openssl looks for CA certs somewhere that doesn't exist here,
+      # so every outbound HTTPS call fails. point it at Alpine's bundle
+      SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
+      SSL_CERT_DIR: /etc/ssl/certs
     volumes:
+      # Bind-mount the source tree so the container can build & run it.
       - ./server:/app
+      # target/ in a volume, not on the bind mount — the container builds as
+      # root and leaves root-owned files all over the host tree otherwise
+      - server-target:/app/target
     depends_on:
       db:
         condition: service_healthy
+    # grep the body, don't trust the exit code: an unmatched path 302s and
+    # `curl -f` only fails on 4xx/5xx, so a missing route would look healthy.
+    # start_period covers a cold cargo build
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS --max-time 3 http://localhost:8080/health | grep -q '\"status\":\"ok\"' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 600s
     restart: on-failure
 
   # ── Node.js / React frontend ───────────────────────────────────────────────
@@ -43,10 +60,16 @@ services:
     env_file:
       - ./frontend/.env
     depends_on:
-      - server
+      server:
+        condition: service_healthy
+    volumes:
+      # keeps the cert across rebuilds so you accept the warning once
+      - frontend-ssl:/etc/nginx/ssl
     ports:
       - "80:80"
       - "443:443"
 
 volumes:
   postgres-data:
+  server-target:
+  frontend-ssl:
