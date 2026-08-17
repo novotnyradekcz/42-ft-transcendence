@@ -26,6 +26,9 @@ const PAGE_RESOURCES: Record<Page, DataResource[]> = {
   welcome: [],
   home: [],
   help: [],
+  // static text, and readable by guests, so they must not trigger a fetch
+  privacy: [],
+  terms: [],
   login: [],
   register: [],
   discussions: ["discussions"],

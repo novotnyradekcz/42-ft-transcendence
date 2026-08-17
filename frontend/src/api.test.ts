@@ -164,7 +164,7 @@ describe("normalizeUser", () => {
       friends: [],
     };
     const user = normalizeUser(noBio);
-    expect(user.bio).toBe("No profile info yet.");
+    expect(user.bio).toBe("Placeholder bio.");
   });
 });
 

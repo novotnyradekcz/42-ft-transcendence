@@ -53,7 +53,8 @@ export interface TerminalDeps {
   writeFlow: WriteFlow;
   setWriteFlow: Dispatch<SetStateAction<WriteFlow>>;
   setWriteError: Dispatch<SetStateAction<string>>;
-  setCommandHelpOpen: Dispatch<SetStateAction<boolean>>;
+  // closes the ? popover and, with it, any second layer it was showing
+  closeCommandHelp: () => void;
   logVisible: boolean;
   setLogVisible: Dispatch<SetStateAction<boolean>>;
 

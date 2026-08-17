@@ -13,6 +13,8 @@ import GamesPage from "../pages/GamesPage";
 import HelpPage from "../pages/HelpPage";
 import HomePage from "../pages/HomePage";
 import LoginPage from "../pages/LoginPage";
+import PrivacyPage from "../pages/PrivacyPage";
+import TermsPage from "../pages/TermsPage";
 import MailDetailPage from "../pages/MailDetailPage";
 import MailPage from "../pages/MailPage";
 import ProfilePage from "../pages/ProfilePage";
@@ -41,12 +43,15 @@ export default function Terminal() {
     authFlow,
     writeFlow,
     commandHelpOpen,
-    setCommandHelpOpen,
+    toggleCommandHelp,
+    helpSubmenu,
     availableCommands,
     isBusy,
     handleCommandSubmit,
     handleCommandKeyDown,
     handleCommandHelpClick,
+    handleCommandHelpSelect,
+    closeCommandHelpSubmenu,
     getPromptLabel,
   } = useTerminal();
 
@@ -107,6 +112,8 @@ export default function Terminal() {
               <Route path="/" element={<WelcomePage />} />
               <Route path="/menu" element={<HomePage />} />
               <Route path="/help" element={<HelpPage />} />
+              <Route path="/privacy" element={<PrivacyPage />} />
+              <Route path="/terms" element={<TermsPage />} />
               <Route path="/users/show" element={<UsersPage />} />
               <Route path="/users/show/:id" element={<UserDetailPage />} />
               <Route path="/friends/show" element={<FriendsPage />} />
@@ -137,6 +144,9 @@ export default function Terminal() {
             <Routes>
               <Route path="/" element={<WelcomePage />} />
               <Route path="/help" element={<HelpPage />} />
+              {/* guests must be able to read what they're agreeing to */}
+              <Route path="/privacy" element={<PrivacyPage />} />
+              <Route path="/terms" element={<TermsPage />} />
               <Route path="/users/login" element={<LoginPage />} />
               <Route path="/users/create" element={<RegisterPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
@@ -203,25 +213,62 @@ export default function Terminal() {
       </section>
 
       {/* ── Command help popover ──────────────────────────────────────────── */}
+      {/* Two layers: the command list, and — for a command that takes a value
+          — the values it can take, so the user picks a language or a list
+          entry instead of reading a number off the page and typing it. */}
       <div className={`command-help ${commandHelpOpen ? "open" : ""}`}>
         {commandHelpOpen && (
           <div
             className="command-help-popover"
             role="menu"
-            aria-label="Available commands"
+            aria-label={
+              helpSubmenu
+                ? t("choices for {command}", { command: helpSubmenu.command })
+                : t("available commands")
+            }
           >
-            {availableCommands.map((command) => (
-              <button
-                key={command}
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  void handleCommandHelpClick(command);
-                }}
-              >
-                {command}
-              </button>
-            ))}
+            {helpSubmenu ? (
+              <>
+                <button
+                  type="button"
+                  className="command-help-back"
+                  onClick={closeCommandHelpSubmenu}
+                >
+                  {`< ${helpSubmenu.title}`}
+                </button>
+                {helpSubmenu.loading ? (
+                  <p className="command-help-note">{t("loading...")}</p>
+                ) : helpSubmenu.options.length === 0 ? (
+                  <p className="command-help-note">{t("nothing to pick.")}</p>
+                ) : (
+                  helpSubmenu.options.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        void handleCommandHelpSelect(option.value);
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  ))
+                )}
+              </>
+            ) : (
+              availableCommands.map((command) => (
+                <button
+                  key={command}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    void handleCommandHelpClick(command);
+                  }}
+                >
+                  {command}
+                </button>
+              ))
+            )}
           </div>
         )}
         <button
@@ -229,7 +276,7 @@ export default function Terminal() {
           className="command-help-toggle"
           aria-label="Show available commands"
           aria-expanded={commandHelpOpen}
-          onClick={() => setCommandHelpOpen((open) => !open)}
+          onClick={toggleCommandHelp}
         >
           ?
         </button>

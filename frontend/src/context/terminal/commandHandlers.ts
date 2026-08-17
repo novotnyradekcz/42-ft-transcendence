@@ -39,7 +39,7 @@ export function createCommandHandlers(
     setSelectedGame,
     setAuthFlow,
     setAuthError,
-    setCommandHelpOpen,
+    closeCommandHelp,
     logVisible,
     setLogVisible,
     addLine,
@@ -56,7 +56,7 @@ export function createCommandHandlers(
   } = deps;
 
   async function executeCommand(rawInput: string, echo = true) {
-    setCommandHelpOpen(false);
+    closeCommandHelp();
     if (echo) addLine(`> ${rawInput}`);
 
     const { name, args } = parseCommand(rawInput);
@@ -228,6 +228,9 @@ export function createCommandHandlers(
     }
 
     const directPaths: Partial<Record<string, string>> = {
+      // both reachable without a session, they are in GUEST_COMMANDS
+      privacy: PAGE_PATHS.privacy,
+      terms: PAGE_PATHS.terms,
       users: PAGE_PATHS.users,
       friends: PAGE_PATHS.friends,
       profile: PAGE_PATHS.profile,

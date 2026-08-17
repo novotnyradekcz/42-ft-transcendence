@@ -5,6 +5,13 @@
   font-synthesis: none;
   line-height: 1.35;
   text-rendering: optimizeLegibility;
+
+  /* space between the text and the edge of the browser. carried by the rows
+     inside the window rather than by the page, so the scrolling region can
+     still reach the edge */
+  --gutter: clamp(0.75rem, 2vw, 1.5rem);
+  /* reading width every text block wraps at, whatever the browser width */
+  --column: 78ch;
 }
 
 * {
@@ -28,21 +35,26 @@ textarea {
 .terminal-page {
   height: 100vh;
   height: 100dvh;
-  padding: clamp(0.75rem, 2vw, 1.5rem);
+  /* vertical padding only — a horizontal one here would inset .terminal-body
+     and park its scrollbar next to the text instead of at the browser edge */
+  padding: var(--gutter) 0;
   background: #000;
   overflow: hidden;
 }
 
+/* full width so .terminal-body's scrollbar sits at the edge of the page, not
+   at the end of the text column. content keeps its own 78ch reading cap */
 .terminal-window {
   display: flex;
   flex-direction: column;
-  width: min(100%, 78ch);
+  width: 100%;
   height: 100%;
   background: #000;
 }
 
 .terminal-header {
   flex-shrink: 0;
+  padding: 0 var(--gutter);
   margin-bottom: 1rem;
 }
 
@@ -77,6 +89,7 @@ small {
 }
 
 .terminal-output {
+  max-width: var(--column);
   margin-top: 1rem;
 }
 
@@ -85,14 +98,20 @@ small {
   overflow-wrap: anywhere;
 }
 
+/* the only scrolling region: it spans the browser so its scrollbar rides the
+   right edge, and the gutter keeps the text off that scrollbar */
 .terminal-body {
   flex: 1 1 auto;
   min-height: 0;
+  padding: 0 var(--gutter);
   overflow: auto;
 }
 
+/* every routed page renders inside this, so the cap here is what keeps text
+   wrapping onto a new line rather than widening with the browser */
 .terminal-section {
-  max-width: 78ch;
+  max-width: var(--column);
+  overflow-wrap: anywhere;
 }
 
 .terminal-section h2 {
@@ -105,7 +124,7 @@ small {
 }
 
 .terminal-copy {
-  max-width: 78ch;
+  max-width: var(--column);
   margin: 0 0 0.75rem;
 }
 
@@ -149,6 +168,31 @@ code {
   margin-left: 3.3rem;
 }
 
+/* privacy policy and terms: numbered sections of running text */
+.legal-block {
+  margin-bottom: 1.25rem;
+}
+
+.legal-block h3 {
+  margin: 0 0 0.35rem;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 400;
+  text-transform: uppercase;
+}
+
+.legal-block .terminal-list {
+  margin-bottom: 0.75rem;
+}
+
+.legal-note {
+  color: #8a8a8a;
+}
+
+.legal-meta {
+  color: #8a8a8a;
+}
+
 /* login/register step checklist */
 .auth-steps {
   margin: 0 0 0.75rem;
@@ -175,7 +219,7 @@ code {
   display: grid;
   grid-template-columns: 10rem minmax(0, 1fr);
   gap: 0.15rem 1rem;
-  max-width: 78ch;
+  max-width: var(--column);
   margin: 0 0 0.75rem;
 }
 
@@ -231,7 +275,7 @@ code {
   grid-template-columns: 7rem minmax(0, 1fr);
   gap: 1rem;
   align-items: start;
-  max-width: 78ch;
+  max-width: var(--column);
 }
 
 .profile-form {
@@ -260,6 +304,34 @@ code {
 .profile-form textarea {
   min-height: 5rem;
   resize: vertical;
+}
+
+/* the browser's own file button, dressed as a terminal button */
+.profile-form input[type="file"] {
+  padding: 0.35rem;
+  cursor: pointer;
+}
+
+.profile-form input[type="file"]::file-selector-button {
+  margin-right: 0.5rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid #fff;
+  border-radius: 0;
+  background: #000;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.profile-form input[type="file"]:hover::file-selector-button,
+.profile-form input[type="file"]:focus::file-selector-button {
+  background: #fff;
+  color: #000;
+}
+
+/* says what a field will accept, sits under its input */
+.field-legend {
+  color: #8a8a8a;
 }
 
 .terminal-button {
@@ -381,6 +453,8 @@ code {
 
 .terminal-footer {
   flex-shrink: 0;
+  max-width: calc(var(--column) + 2 * var(--gutter));
+  padding: 0 var(--gutter);
   margin-top: 1rem;
 }
 
@@ -467,7 +541,23 @@ code {
   color: #fff;
   font: inherit;
   text-align: left;
+  /* list entries carry user-supplied names, so let them wrap */
+  overflow-wrap: anywhere;
   cursor: pointer;
+}
+
+/* first row of the second layer, back to the command list */
+.command-help-popover .command-help-back {
+  margin-bottom: 0.25rem;
+  border-color: #c8c8c8;
+  color: #c8c8c8;
+}
+
+/* stands in for the options while they load, or when there are none */
+.command-help-note {
+  margin: 0;
+  padding: 0.35rem 0.5rem;
+  color: #c8c8c8;
 }
 
 .command-help-popover button:hover,
@@ -479,10 +569,6 @@ code {
 }
 
 @media (max-width: 720px) {
-  .terminal-window {
-    width: 100%;
-  }
-
   .bbs-banner,
   .welcome-logo,
   .ascii-rule {

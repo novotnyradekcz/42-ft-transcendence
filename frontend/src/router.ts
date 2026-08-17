@@ -7,6 +7,8 @@ export const PAGE_PATHS: Record<Page, string> = {
   welcome: "/",
   home: "/menu",
   help: "/help",
+  privacy: "/privacy",
+  terms: "/terms",
   users: "/users/show",
   "user-detail": "/users/show",
   friends: "/friends/show",
@@ -25,6 +27,8 @@ export const PAGE_PATHS: Record<Page, string> = {
 // pages missing here are roots
 export const PAGE_PARENTS: Partial<Record<Page, Page>> = {
   help: "home",
+  privacy: "home",
+  terms: "home",
   users: "home",
   "user-detail": "users",
   friends: "home",
@@ -58,6 +62,8 @@ export function pageFromPath(pathname: string): Page {
   if (pathname.startsWith("/games/play")) return "game-play";
   if (pathname === "/games/show") return "games";
   if (pathname === "/help") return "help";
+  if (pathname === "/privacy") return "privacy";
+  if (pathname === "/terms") return "terms";
   if (pathname === "/users/me") return "profile";
   if (pathname === "/users/login") return "login";
   if (pathname === "/users/create") return "register";

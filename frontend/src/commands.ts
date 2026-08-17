@@ -8,6 +8,18 @@ export const commandDefinitions: CommandDefinition[] = [
     description: "Show all available commands.",
   },
   {
+    command: "privacy",
+    aliases: ["gdpr"],
+    usage: "privacy",
+    description: "Read the privacy policy.",
+  },
+  {
+    command: "terms",
+    aliases: ["tos"],
+    usage: "terms",
+    description: "Read the terms of service.",
+  },
+  {
     command: "menu",
     aliases: ["home", "me"],
     usage: "menu",
@@ -130,9 +142,20 @@ export const commandDefinitions: CommandDefinition[] = [
 ];
 
 const pageCommands: Record<Page, string[]> = {
-  welcome: ["menu", "login", "register", "oauth", "lang <code>", "help"],
+  welcome: [
+    "menu",
+    "login",
+    "register",
+    "oauth",
+    "lang <code>",
+    "help",
+    "terms",
+    "privacy",
+  ],
   home: [
     "help",
+    "terms",
+    "privacy",
     "users",
     "login",
     "register",
@@ -146,6 +169,8 @@ const pageCommands: Record<Page, string[]> = {
     "log",
   ],
   help: ["menu", "back"],
+  privacy: ["terms", "menu", "back"],
+  terms: ["privacy", "menu", "back"],
   users: ["list", "enter <number>", "addfriend <number>", "menu", "back"],
   "user-detail": ["addfriend", "removefriend", "users", "menu", "back"],
   friends: ["list", "enter <number>", "removefriend <number>", "menu", "back"],
@@ -161,12 +186,16 @@ const pageCommands: Record<Page, string[]> = {
 };
 
 // commands for guests (not logged in)
+// the policy pages are here on purpose: they are what you agree to by
+// registering, so they have to be readable before there is an account
 export const GUEST_COMMANDS = [
   "login",
   "register",
   "oauth",
   "lang",
   "help",
+  "terms",
+  "privacy",
   "back",
 ];
 

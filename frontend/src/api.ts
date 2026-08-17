@@ -248,7 +248,7 @@ export function normalizeUser(payload: unknown): UserProfile {
     id,
     name,
     email,
-    bio: textValue(user.bio) || "No profile info yet.",
+    bio: textValue(user.bio) || "Placeholder bio.",
     avatarUrl:
       textValue(user.avatarUrl) ||
       textValue(user.avatar_url) ||
@@ -385,25 +385,21 @@ export async function getUserByName(name: string): Promise<UserProfile | null> {
   return users.find((u) => u.name === cleanName) ?? null;
 }
 
+// Name and email are identity, not profile: they are what you log in and are
+// addressed as, and an account created through OAuth doesn't own them here at
+// all. They are shown read-only and deliberately left out of the body, so the
+// request cannot rename an account even if the form were tampered with.
 export async function updateCurrentUserProfile(
   userId: number,
-  update: { name: string; email: string; bio: string; avatarUrl?: string },
+  update: { bio: string; avatarUrl?: string },
 ): Promise<SessionUser> {
-  const cleanName = update.name.trim();
-  const cleanEmail = update.email.trim();
   const cleanBio = update.bio.trim();
-
-  if (!cleanName || !cleanEmail) {
-    throw new Error("Name and email are required.");
-  }
 
   const user = normalizeUser(
     await requestJson<unknown>(`/users/update/${userId}`, {
       method: "PUT",
       body: JSON.stringify({
-        name: cleanName,
-        email: cleanEmail,
-        bio: cleanBio || "No profile info yet.",
+        bio: cleanBio || "Placeholder bio.",
         ...(update.avatarUrl ? { avatarUrl: update.avatarUrl } : {}),
       }),
     }),

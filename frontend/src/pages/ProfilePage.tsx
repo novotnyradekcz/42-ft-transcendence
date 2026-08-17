@@ -1,6 +1,6 @@
-import { type FormEvent, useState } from "react";
+import { type ChangeEvent, type FormEvent, useState } from "react";
 import { updateCurrentUserProfile } from "../api";
-import { PH_USER_IMAGE } from "../constants";
+import { AVATAR_MAX_PX, avatarToData } from "../avatar";
 import AvatarImage from "../components/AvatarImage";
 import TerminalSection from "../components/TerminalSection";
 import { useStatus } from "../context/status/useStatus";
@@ -16,9 +16,9 @@ export default function ProfilePage() {
   const { addLine } = useTerminal();
   const { t } = useTranslation();
 
-  const [name, setName] = useState(sessionUser?.name ?? "");
-  const [email, setEmail] = useState(sessionUser?.email ?? "");
+  // name and email are fixed at registration and only shown, never edited
   const [bio, setBio] = useState(sessionUser?.bio ?? "");
+  // holds the picked image itself, not a link to one, and is what gets saved
   const [avatarUrl, setAvatarUrl] = useState(sessionUser?.avatarUrl ?? "");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -27,14 +27,35 @@ export default function ProfilePage() {
     return <TerminalSection title={t("Profile")}>{t("Not logged in.")}</TerminalSection>;
   }
 
+  // reads and shrinks the picked file, but doesn't save it — the result sits
+  // in the preview until the profile is submitted
+  async function handleAvatarChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    // the input is cleared either way, so re-picking the same file re-fires
+    event.target.value = "";
+    if (!file) return;
+
+    setMessage("");
+    setError("");
+    try {
+      setAvatarUrl(await avatarToData(file));
+      setMessage(t("avatar ready. save the profile to keep it."));
+    } catch (caughtError) {
+      const msg =
+        caughtError instanceof Error
+          ? t(caughtError.message)
+          : t("could not read that image.");
+      setError(msg);
+      addLine(msg);
+    }
+  }
+
   async function handleSubmit(event: FormSubmitEvent) {
     event.preventDefault();
     setMessage("");
     setError("");
     try {
       const nextUser = await updateCurrentUserProfile(sessionUser!.id, {
-        name,
-        email,
         bio,
         avatarUrl: avatarUrl.trim(),
       });
@@ -55,7 +76,12 @@ export default function ProfilePage() {
   return (
     <TerminalSection title={t("Profile")}>
       <div className="profile-layout">
-        <AvatarImage user={sessionUser} size="large" />
+        {/* shows the pending pick, so the crop and scale are visible before
+            anything is saved */}
+        <AvatarImage
+          user={{ name: sessionUser.name, avatarUrl }}
+          size="large"
+        />
         <div>
           <dl className="terminal-facts">
             <dt>{t("Name")}</dt>
@@ -68,27 +94,28 @@ export default function ProfilePage() {
             <dd>{sessionUser.bio}</dd>
           </dl>
           <form className="profile-form" onSubmit={handleSubmit}>
-            <label>
-              {t("Name")}
-              <input value={name} onChange={(e) => setName(e.target.value)} />
-            </label>
-            <label>
-              {t("Email")}
-              <input value={email} onChange={(e) => setEmail(e.target.value)} />
-            </label>
+            {/* Name and email are listed above and stay there: they identify
+                the account, so the form only edits what's cosmetic. */}
             <label>
               {t("Bio")}
               <textarea value={bio} onChange={(e) => setBio(e.target.value)} />
             </label>
             <label>
-              {t("Avatar URL")}
+              {t("Avatar")}
               <input
-                type="text"
-                inputMode="url"
-                value={avatarUrl}
-                placeholder={PH_USER_IMAGE}
-                onChange={(e) => setAvatarUrl(e.target.value)}
+                type="file"
+                accept="image/png,image/jpeg"
+                onChange={(e) => {
+                  void handleAvatarChange(e);
+                }}
               />
+              {/* what the picker will accept, in place of the old URL box */}
+              <small className="field-legend">
+                {t(
+                  "PNG or JPEG only, up to 500 KB. Larger pictures are scaled down to {size}x{size}.",
+                  { size: AVATAR_MAX_PX },
+                )}
+              </small>
             </label>
             <button className="terminal-button" type="submit">
               {t("save profile")}
