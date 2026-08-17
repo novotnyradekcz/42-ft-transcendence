@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import TerminalSection from "../components/TerminalSection";
 import { useSession } from "../context/session/useSession";
 import { useTranslation } from "../context/language/i18n";
-import { fetchOAuthProviders, type OAuthProvider } from "../api";
+import { fetchOAuthProviders, oauthError, type OAuthProvider } from "../api";
 
 export default function WelcomePage() {
   const { sessionUser } = useSession();
@@ -39,6 +39,7 @@ FT_TRANSCENDENCE`}
         <p className="terminal-copy">{t("Type `menu` to enter the board.")}</p>
       ) : (
         <>
+          {oauthError && <p className="terminal-error">{oauthError}</p>}
           <p className="terminal-copy">
             {t("Members only. Sign in to enter the board.")}
           </p>

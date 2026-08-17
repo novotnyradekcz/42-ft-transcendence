@@ -31,6 +31,19 @@ struct AccessToken {
     access_token: String,
 }
 
+/// `/{provider}` and `/{provider}/callback` are top-level navigations, so a JSON
+/// body would be rendered as a page. Send them back to the app with the reason.
+fn oauth_failed(pool: &AppState, message: &str) -> HttpResponse {
+    let base = pool.oauth.after_login_url();
+    let target = Url::parse_with_params(&base, &[("oauth_error", message)])
+        .map(String::from)
+        .unwrap_or(base);
+
+    HttpResponse::Found()
+        .append_header(("Location", target))
+        .finish()
+}
+
 /// Only providers we have credentials for, so the menu never offers a dud.
 #[get("/providers")]
 pub async fn oauth_providers(pool: web::Data<Arc<AppState>>) -> impl Responder {
@@ -58,9 +71,10 @@ pub async fn oauth_start(
     let provider = match pool.oauth.configured(&provider_id) {
         Some(p) => p,
         None => {
-            return HttpResponse::ServiceUnavailable().json(serde_json::json!({
-                "message": format!("{provider_id} sign-in is not configured on this server"),
-            }));
+            return oauth_failed(
+                &pool,
+                &format!("{provider_id} sign-in is not configured on this server"),
+            );
         }
     };
 
@@ -75,9 +89,7 @@ pub async fn oauth_start(
         .insert(state_key(&provider_id), &state)
         .is_err()
     {
-        return HttpResponse::InternalServerError().json(serde_json::json!({
-            "message": "Could not start the OAuth flow",
-        }));
+        return oauth_failed(&pool, "Could not start the OAuth flow");
     }
 
     let redirect = match Url::parse_with_params(
@@ -93,9 +105,7 @@ pub async fn oauth_start(
         Ok(url) => url,
         Err(e) => {
             log::error!("could not build the {provider_id} authorize URL: {e}");
-            return HttpResponse::InternalServerError().json(serde_json::json!({
-                "message": "Could not start the OAuth flow",
-            }));
+            return oauth_failed(&pool, "Could not start the OAuth flow");
         }
     };
 
@@ -116,16 +126,18 @@ pub async fn oauth_callback(
     let provider = match pool.oauth.configured(&provider_id) {
         Some(p) => p,
         None => {
-            return HttpResponse::ServiceUnavailable().json(serde_json::json!({
-                "message": format!("{provider_id} sign-in is not configured on this server"),
-            }));
+            return oauth_failed(
+                &pool,
+                &format!("{provider_id} sign-in is not configured on this server"),
+            );
         }
     };
 
     if let Some(err) = &query.error {
-        return HttpResponse::BadRequest().json(serde_json::json!({
-            "message": format!("{} refused the authorization: {}", provider.spec.label, err),
-        }));
+        return oauth_failed(
+            &pool,
+            &format!("{} refused the authorization: {}", provider.spec.label, err),
+        );
     }
 
     // consumed no matter what, so a replayed callback finds nothing
@@ -137,9 +149,7 @@ pub async fn oauth_callback(
     match expected {
         Some(ref e) if e == received && !received.is_empty() => {}
         _ => {
-            return HttpResponse::BadRequest().json(serde_json::json!({
-                "message": "Invalid OAuth state — start the login again",
-            }));
+            return oauth_failed(&pool, "Invalid OAuth state — start the login again");
         }
     }
 
@@ -147,9 +157,7 @@ pub async fn oauth_callback(
     let code = match query.code.as_deref() {
         Some(c) if !c.is_empty() => c,
         _ => {
-            return HttpResponse::BadRequest().json(serde_json::json!({
-                "message": "Missing authorization code",
-            }));
+            return oauth_failed(&pool, "Missing authorization code");
         }
     };
 
@@ -173,9 +181,10 @@ pub async fn oauth_callback(
             Ok(t) => t,
             Err(e) => {
                 log::error!("{provider_id} token response was not the expected shape: {e}");
-                return HttpResponse::BadGateway().json(serde_json::json!({
-                    "message": format!("Unexpected response from {}", provider.spec.label),
-                }));
+                return oauth_failed(
+                    &pool,
+                    &format!("Unexpected response from {}", provider.spec.label),
+                );
             }
         },
         Ok(resp) => {
@@ -183,15 +192,14 @@ pub async fn oauth_callback(
                 "{provider_id} rejected the code exchange: HTTP {}",
                 resp.status()
             );
-            return HttpResponse::BadGateway().json(serde_json::json!({
-                "message": format!("{} rejected the authorization code", provider.spec.label),
-            }));
+            return oauth_failed(
+                &pool,
+                &format!("{} rejected the authorization code", provider.spec.label),
+            );
         }
         Err(e) => {
             log::error!("could not reach {provider_id} for the code exchange: {e}");
-            return HttpResponse::BadGateway().json(serde_json::json!({
-                "message": format!("Could not reach {}", provider.spec.label),
-            }));
+            return oauth_failed(&pool, &format!("Could not reach {}", provider.spec.label));
         }
     };
 
@@ -208,9 +216,10 @@ pub async fn oauth_callback(
             Ok(v) => v,
             Err(e) => {
                 log::error!("{provider_id} profile was not valid JSON: {e}");
-                return HttpResponse::BadGateway().json(serde_json::json!({
-                    "message": format!("Unexpected profile response from {}", provider.spec.label),
-                }));
+                return oauth_failed(
+                    &pool,
+                    &format!("Unexpected profile response from {}", provider.spec.label),
+                );
             }
         },
         Ok(resp) => {
@@ -218,15 +227,14 @@ pub async fn oauth_callback(
                 "{provider_id} refused the profile request: HTTP {}",
                 resp.status()
             );
-            return HttpResponse::BadGateway().json(serde_json::json!({
-                "message": format!("Could not read your {} profile", provider.spec.label),
-            }));
+            return oauth_failed(
+                &pool,
+                &format!("Could not read your {} profile", provider.spec.label),
+            );
         }
         Err(e) => {
             log::error!("could not reach {provider_id} for the profile: {e}");
-            return HttpResponse::BadGateway().json(serde_json::json!({
-                "message": format!("Could not reach {}", provider.spec.label),
-            }));
+            return oauth_failed(&pool, &format!("Could not reach {}", provider.spec.label));
         }
     };
 
@@ -234,9 +242,10 @@ pub async fn oauth_callback(
         Some(p) => p,
         None => {
             log::error!("{provider_id} profile lacked a usable id: {raw_profile}");
-            return HttpResponse::BadGateway().json(serde_json::json!({
-                "message": format!("Unexpected profile response from {}", provider.spec.label),
-            }));
+            return oauth_failed(
+                &pool,
+                &format!("Unexpected profile response from {}", provider.spec.label),
+            );
         }
     };
 
@@ -258,9 +267,7 @@ pub async fn oauth_callback(
             Ok(u) => u,
             Err(e) => {
                 log::error!("could not resolve the {provider_id} identity to a user: {e}");
-                return HttpResponse::InternalServerError().json(serde_json::json!({
-                    "message": "Could not complete the login",
-                }));
+                return oauth_failed(&pool, "Could not complete the login");
             }
         }
     };
@@ -276,9 +283,7 @@ pub async fn oauth_callback(
     // just the id, and only until /auth/session spends it. tokens in a URL
     // end up in history, referrers and proxy logs
     if session.insert("user_id", db_user.id).is_err() {
-        return HttpResponse::InternalServerError().json(serde_json::json!({
-            "message": "Could not start your session",
-        }));
+        return oauth_failed(&pool, "Could not start your session");
     }
 
     HttpResponse::Found()

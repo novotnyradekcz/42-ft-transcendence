@@ -543,6 +543,12 @@ export async function exchangeOAuthSession(): Promise<SessionUser | null> {
   return { ...user, status: "online" };
 }
 
+// Read at import time: the guest catch-all route replaces the URL, so the query
+// string is gone before any component mounts.
+export const oauthError: string | null = new URLSearchParams(
+  window.location.search,
+).get("oauth_error");
+
 export interface OAuthProvider {
   id: string;
   label: string;
