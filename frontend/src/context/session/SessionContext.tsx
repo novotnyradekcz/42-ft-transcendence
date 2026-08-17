@@ -2,10 +2,10 @@ import { useEffect, useState, type ReactNode } from "react";
 import type {SessionUser, UserProfile} from "../../types";
 import { CREDENTIALS_KEY, SESSION_USER_KEY } from "../../constants";
 import {
+  exchangeOAuthSession,
   getCredentials,
   listUsers,
   login as apiLogin,
-  loginWith42,
   logout as apiLogout,
   register as apiRegister,
   restoreSession,
@@ -47,7 +47,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isHydrating) return;
     let cancelled = false;
-    loginWith42()
+    exchangeOAuthSession()
       .then(async (user) => {
         if (cancelled || !user) return;
         persistSession(user);

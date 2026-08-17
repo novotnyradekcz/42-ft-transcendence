@@ -516,7 +516,7 @@ export async function createGame(
   });
 }
 
-export async function loginWith42(): Promise<SessionUser | null> {
+export async function exchangeOAuthSession(): Promise<SessionUser | null> {
   let payload: JwtPayload;
   try {
     // not requestJson — it sends credentials: "omit" and would drop the cookie
