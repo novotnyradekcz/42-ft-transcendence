@@ -34,6 +34,12 @@ export const cs: Record<string, string> = {
   "[ history ]": "[ historie ]",
   "[ leaderboard ]": "[ žebříček ]",
   "Type `menu` to enter the board.": "Napište `menu` pro vstup na nástěnku.",
+  "Type `login` or `register` to enter.":
+    "Napište `login` nebo `register` pro vstup.",
+  "Members only. Sign in to enter the board.":
+    "Pouze pro členy. Přihlaste se pro vstup na nástěnku.",
+  "sign in to an existing account": "přihlášení k existujícímu účtu",
+  "create a new account": "vytvoření nového účtu",
   "Welcome {name}.": "Vítejte {name}.",
   "Welcome {name}. Choose a board section with commands.":
     "Vítejte {name}. Vyberte sekci nástěnky pomocí příkazů.",
@@ -72,18 +78,17 @@ export const cs: Record<string, string> = {
   "save profile": "uložit profil",
   "saved.": "uloženo.",
   "could not save profile.": "profil se nepodařilo uložit.",
-  "Login happens in the command input. Current prompt: {step}.":
-    "Přihlášení probíhá v příkazovém řádku. Aktuální krok: {step}.",
-  "Press Ctrl+C or Esc to quit login.":
-    "Stiskněte Ctrl+C nebo Esc pro ukončení přihlášení.",
-  "Register happens in the command input. Current prompt: {step}.":
-    "Registrace probíhá v příkazovém řádku. Aktuální krok: {step}.",
-  "Registration sends name, email, and password to `/users/create`.":
-    "Registrace odešle jméno, e-mail a heslo na `/users/create`.",
-  "Press Ctrl+C or Esc to quit register.":
-    "Stiskněte Ctrl+C nebo Esc pro ukončení registrace.",
-  idle: "nečinný",
+  "Answer each prompt in the command line below.":
+    "Odpovězte na každou výzvu v příkazovém řádku níže.",
+  username: "uživatelské jméno",
+  email: "e-mail",
+  password: "heslo",
+  "No account yet? Cancel, then type `register`.":
+    "Ještě nemáte účet? Zrušte a napište `register`.",
+  "Already have an account? Cancel, then type `login`.":
+    "Už máte účet? Zrušte a napište `login`.",
   "available:": "dostupné:",
+  "loading...": "načítání...",
   "Press Ctrl+C or Esc to cancel.": "Stiskněte Ctrl+C nebo Esc pro zrušení.",
   "Writing new discussion. Current prompt: {step}.":
     "Píšete novou diskuzi. Aktuální krok: {step}.",
@@ -125,6 +130,8 @@ export const cs: Record<string, string> = {
     "Vrátit se o úroveň zpět. Ctrl+C a Escape dělají totéž.",
   "unknown command: {name}": "neznámý příkaz: {name}",
   "type `menu` to enter.": "napište `menu` pro vstup.",
+  "type `login` or `register` to enter.":
+    "napište `login` nebo `register` pro vstup.",
   "refreshed {page}.": "obnoveno: {page}.",
   "logged out.": "odhlášeno.",
   "already logged in. use logout first.": "již přihlášen. nejprve se odhlaste.",
@@ -184,6 +191,7 @@ export const cs: Record<string, string> = {
   "write is not available on this page.": "psaní není na této stránce dostupné.",
   "login/register cancelled.": "přihlášení/registrace zrušeno.",
   "write cancelled.": "psaní zrušeno.",
+  "nothing to go back to.": "není kam se vrátit.",
   "profile updated.": "profil aktualizován.",
   "Recipient name does not exist.": "Jméno příjemce neexistuje.",
   "Could not send mail.": "Poštu se nepodařilo odeslat.",

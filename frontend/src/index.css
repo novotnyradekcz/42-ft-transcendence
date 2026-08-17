@@ -23,9 +23,8 @@ textarea {
   font: inherit;
 }
 
-/* The page is a fixed viewport-high column: header and command prompt stay
-   visible, only .terminal-body scrolls. dvh tracks the mobile keyboard /
-   browser chrome; vh is the fallback for older browsers. */
+/* fixed viewport-high column, only .terminal-body scrolls */
+/* dvh tracks the mobile keyboard, vh is the fallback */
 .terminal-page {
   height: 100vh;
   height: 100dvh;
@@ -148,6 +147,28 @@ code {
 .terminal-list small {
   display: block;
   margin-left: 3.3rem;
+}
+
+/* login/register step checklist */
+.auth-steps {
+  margin: 0 0 0.75rem;
+}
+
+.auth-steps li[data-state="done"]::before {
+  content: "[x] ";
+}
+
+.auth-steps li[data-state="current"]::before {
+  content: "[>] ";
+  color: #fff;
+}
+
+.auth-steps li[data-state="pending"]::before {
+  content: "[ ] ";
+}
+
+.auth-steps li[data-state="pending"] span {
+  color: #8a8a8a;
 }
 
 .terminal-facts {
@@ -292,6 +313,37 @@ code {
   outline: none;
 }
 
+/* progress line while a command waits on the network */
+.terminal-status.busy {
+  color: #fff;
+}
+
+.terminal-status.busy::after {
+  content: "";
+  animation: terminal-ellipsis 1.2s steps(4, end) infinite;
+}
+
+@keyframes terminal-ellipsis {
+  0% {
+    content: "";
+  }
+  25% {
+    content: ".";
+  }
+  50% {
+    content: "..";
+  }
+  75% {
+    content: "...";
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-status.busy::after {
+    animation: none;
+  }
+}
+
 .terminal-error {
   margin: 0;
   color: #fff;
@@ -337,7 +389,7 @@ code {
   overflow-wrap: anywhere;
 }
 
-/* One line only — a long message must not reflow and push the prompt off-screen. */
+/* one line only, so a long message can't push the prompt off-screen */
 .terminal-status {
   white-space: nowrap;
   overflow: hidden;
@@ -502,7 +554,7 @@ code {
   overflow: hidden;
 }
 
-/* CRT Screen reflection effect */
+/* crt screen reflection */
 .terminal-grid-wrapper::after {
   content: " ";
   display: block;
@@ -532,7 +584,7 @@ code {
   cursor: pointer;
   user-select: none;
   white-space: pre;
-  /* Phosphor glow effect */
+  /* phosphor glow */
   text-shadow: 0 0 3px currentColor;
   transition: background-color 0.1s;
 }

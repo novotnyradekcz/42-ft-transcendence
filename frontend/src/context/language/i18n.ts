@@ -32,7 +32,6 @@ export type I18nContextValue = {
   lang: Lang;
   setLang: (lang: Lang) => void;
   t: TranslateFn;
-  languages: typeof LANGUAGES;
 };
 
 // context for language state

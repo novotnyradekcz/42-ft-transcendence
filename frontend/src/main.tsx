@@ -9,16 +9,7 @@ import { SessionProvider } from "./context/session/SessionContext.tsx";
 import { TerminalProvider } from "./context/terminal/TerminalContext.tsx";
 import "./index.css";
 
-/**
- * Provider hierarchy (outermost → innermost):
- *
- *   BrowserRouter        — React Router (needed by TerminalContext hooks)
- *   SessionProvider      — auth, credentials, knownUsers
- *   StatusProvider       — live online status over WebSocket (needs Session)
- *   DataProvider         — resource data (discussions, mail, games, selected items)
- *   TerminalProvider     — command UI state + execution (uses Session + Data)
- *   App → Terminal       — renders the full BBS UI and <Routes>
- */
+// provider order matters, each one below depends on the ones above it
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <LanguageProvider>

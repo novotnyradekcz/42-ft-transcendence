@@ -2,14 +2,15 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
   type KeyboardEvent,
   type ReactNode,
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { getAvailableCommands } from "../../commands";
-import { PAGE_PATHS, pageFromPath } from "../../router";
+import { baseCommand, getAvailableCommands } from "../../commands";
+import { PAGE_PATHS, pageFromPath, parentPath } from "../../router";
 import type { AuthFlow, WriteFlow } from "../../terminalTypes";
 import { useTranslation } from "../language/i18n";
 import { initModeration } from "../../components/moderation";
@@ -38,6 +39,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   const {
     sessionUser,
     knownUsers,
+    isRestoring,
     login,
     register,
     logout: contextLogout,
@@ -56,16 +58,18 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     setSelectedMail,
     setSelectedGame,
     setSelectedUser,
-    refreshBoard,
+    ensureForPage,
+    refreshForPage,
     refreshBoardForUser,
   } = useData();
-
-  // ─── Terminal state ───────────────────────────────────────────────────────
 
   const [commandInput, setCommandInput] = useState("");
   const [terminalLines, setTerminalLines] = useState<string[]>(() => [
     t("ft_transcendence BBS ready."),
-    t("Type `menu` to enter."),
+    // restoreSession() is synchronous, so sessionUser is already correct here
+    sessionUser
+      ? t("Type `menu` to enter.")
+      : t("Type `login` or `register` to enter."),
   ]);
   const [focusInputSignal, setFocusInputSignal] = useState(0);
 
@@ -80,20 +84,71 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   const [writeFlow, setWriteFlow] = useState<WriteFlow>(null);
   const [writeError, setWriteError] = useState("");
   const [commandHelpOpen, setCommandHelpOpen] = useState(false);
-  // The log starts hidden; the footer status line carries the newest message so
-  // commands still give feedback without it. Toggled by the `log` command.
+  // raised while a command waits on the network
+  // the ref blocks re-entry, the state renders the loading line
+  const [isBusy, setIsBusy] = useState(false);
+  const busyRef = useRef(false);
+  // hidden by default, toggled by the `log` command
   const [logVisible, setLogVisible] = useState(false);
+  // bumped by every cancel, so a late reply can tell it's no longer wanted
+  const flowEpoch = useRef(0);
+
+  // keeps the auth flow in sync with the url, during render so the prompt
+  // never paints a frame belonging to the page the user just left
+  const [flowPage, setFlowPage] = useState(page);
+  if (flowPage !== page) {
+    setFlowPage(page);
+    if (page === "login") {
+      setAuthFlow((flow) =>
+        flow?.mode === "login" ? flow : { mode: "login", step: "name", name: "" },
+      );
+    } else if (page === "register") {
+      setAuthFlow((flow) =>
+        flow?.mode === "register"
+          ? flow
+          : { mode: "register", step: "name", name: "", email: "" },
+      );
+    } else {
+      setAuthFlow(null);
+      setAuthError("");
+    }
+    // a write flow belongs to the page it started on, so leaving drops it
+    setWriteFlow(null);
+    setWriteError("");
+  }
 
   const availableCommands = useMemo(
     () => getAvailableCommands(page, Boolean(sessionUser)),
     [page, sessionUser],
   );
 
-  // ─── Helpers ──────────────────────────────────────────────────────────────
-
   const addLine = useCallback((line: string) => {
     setTerminalLines((lines) => [...lines.slice(-8), line]);
   }, []);
+
+  // loads what the page on screen renders, and nothing else. replaces the old
+  // load-everything-at-startup: this runs on navigation and on login/logout,
+  // and refetches content each visit so changes made elsewhere show up. it
+  // runs behind the page rather than blocking the command that navigated
+  // there, so failures land in the log as they arrive.
+  useEffect(() => {
+    // wait for a saved session to finish restoring — loading first would fetch
+    // as a guest and then have to be redone
+    if (isRestoring) return;
+
+    let cancelled = false;
+    void ensureForPage(page).then((errors) => {
+      if (!cancelled) errors.forEach(addLine);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // ensureForPage is deliberately not a dependency: its identity changes
+    // whenever knownUsers does, and since content refetches on every call,
+    // depending on it would fire a second identical request the moment the
+    // first one lands.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, sessionUser?.id, isRestoring]);
 
   function clearWriteModes() {
     setWriteFlow(null);
@@ -107,11 +162,16 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
 
   function goBack() {
     clearWriteModes();
-    navigate(-1);
+    const target = parentPath(page, Boolean(sessionUser));
+    // root pages have nowhere above them, don't fall back to browser history
+    if (!target) {
+      addLine(t("nothing to go back to."));
+      return;
+    }
+    navigate(target);
   }
 
-  // ─── Handlers (extracted into sibling modules) ─────────────────────────────
-
+  // everything the handler modules need, passed in one object
   const deps: TerminalDeps = {
     page,
     sessionUser,
@@ -131,11 +191,13 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     setSelectedMail,
     setSelectedGame,
     setSelectedUser,
-    refreshBoard,
+    ensureForPage,
+    refreshForPage,
     refreshBoardForUser,
     authFlow,
     setAuthFlow,
     setAuthError,
+    flowEpoch,
     writeFlow,
     setWriteFlow,
     setWriteError,
@@ -156,29 +218,44 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     createWriteFlowHandlers(deps);
   const { executeCommand } = createCommandHandlers(deps, handleWriteCommand);
 
-  // ─── Command submit ───────────────────────────────────────────────────────
+  // runs an action with the busy flag raised for its duration
+  async function runBusy(action: () => Promise<void>): Promise<void> {
+    busyRef.current = true;
+    setIsBusy(true);
+    try {
+      await action();
+    } finally {
+      busyRef.current = false;
+      setIsBusy(false);
+    }
+  }
 
   async function handleCommandSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const rawInput = commandInput.trim();
     if (!rawInput) return;
+    // checked before clearing, so a held enter key doesn't eat what was typed
+    if (busyRef.current) return;
     setCommandInput("");
 
-    if (authFlow) {
-      await handleAuthFlowInput(rawInput);
-      return;
-    }
-    if (writeFlow) {
-      await handleWriteFlowInput(rawInput);
-      return;
-    }
-    await executeCommand(rawInput);
+    await runBusy(async () => {
+      if (authFlow) {
+        await handleAuthFlowInput(rawInput);
+        return;
+      }
+      if (writeFlow) {
+        await handleWriteFlowInput(rawInput);
+        return;
+      }
+      await executeCommand(rawInput);
+    });
   }
-
-  // ─── Keyboard ─────────────────────────────────────────────────────────────
 
   function handleCommandKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.ctrlKey && event.key.toLowerCase() === "c") {
+      // selected text means the user is copying, not cancelling
+      const input = event.currentTarget;
+      if (input.selectionStart !== input.selectionEnd) return;
       event.preventDefault();
       addLine("^C");
       cancelInputMode();
@@ -192,11 +269,16 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   }
 
   function cancelInputMode() {
+    // invalidate in-flight requests first, so late replies get discarded
+    flowEpoch.current += 1;
     if (authFlow) {
       setAuthFlow(null);
       setAuthError("");
       setCommandInput("");
-      navigate(PAGE_PATHS.home);
+      // replaced, not pushed, so back doesn't re-arm the abandoned login page
+      navigate(sessionUser ? PAGE_PATHS.home : PAGE_PATHS.welcome, {
+        replace: true,
+      });
       addLine(t("login/register cancelled."));
       return;
     }
@@ -209,13 +291,14 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     goBack();
   }
 
-  // ─── Command help ─────────────────────────────────────────────────────────
-
+  // runs a command picked from the help list instead of typed
   async function handleCommandHelpClick(commandLabel: string) {
     const commandName = commandLabel.split(/\s+/)[0] ?? "";
-    const normalizedCommand = commandName.toLowerCase();
+    // normalised through the same helper the command table uses
+    const normalizedCommand = baseCommand(commandLabel);
     const needsValue = commandLabel.includes("<");
 
+    if (busyRef.current) return;
     setCommandHelpOpen(false);
 
     if (authFlow || writeFlow) {
@@ -232,10 +315,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    await executeCommand(commandName);
+    await runBusy(() => executeCommand(commandName));
   }
-
-  // ─── Prompt label ─────────────────────────────────────────────────────────
 
   function getPromptLabel(): string {
     return promptLabel(authFlow, writeFlow, sessionUser);
@@ -257,6 +338,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
         commandHelpOpen,
         setCommandHelpOpen,
         availableCommands,
+        isBusy,
         page,
         handleCommandSubmit,
         handleCommandKeyDown,

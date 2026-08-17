@@ -34,6 +34,12 @@ export const sl: Record<string, string> = {
   "[ history ]": "[ zgodovina ]",
   "[ leaderboard ]": "[ lestvica ]",
   "Type `menu` to enter the board.": "Vnesite `menu` za vstop na tablo.",
+  "Type `login` or `register` to enter.":
+    "Vnesite `login` ali `register` za vstop.",
+  "Members only. Sign in to enter the board.":
+    "Samo za člane. Prijavite se za vstop na tablo.",
+  "sign in to an existing account": "prijava v obstoječi račun",
+  "create a new account": "ustvarjanje novega računa",
   "Welcome {name}.": "Dobrodošli {name}.",
   "Welcome {name}. Choose a board section with commands.":
     "Dobrodošli {name}. Izberite razdelek table z ukazi.",
@@ -73,18 +79,17 @@ export const sl: Record<string, string> = {
   "save profile": "shrani profil",
   "saved.": "shranjeno.",
   "could not save profile.": "profila ni bilo mogoče shraniti.",
-  "Login happens in the command input. Current prompt: {step}.":
-    "Prijava poteka v ukazni vrstici. Trenutni korak: {step}.",
-  "Press Ctrl+C or Esc to quit login.":
-    "Pritisnite Ctrl+C ali Esc za izhod iz prijave.",
-  "Register happens in the command input. Current prompt: {step}.":
-    "Registracija poteka v ukazni vrstici. Trenutni korak: {step}.",
-  "Registration sends name, email, and password to `/users/create`.":
-    "Registracija pošlje ime, e-pošto in geslo na `/users/create`.",
-  "Press Ctrl+C or Esc to quit register.":
-    "Pritisnite Ctrl+C ali Esc za izhod iz registracije.",
-  idle: "nedejavno",
+  "Answer each prompt in the command line below.":
+    "Odgovorite na vsak poziv v ukazni vrstici spodaj.",
+  username: "uporabniško ime",
+  email: "e-pošta",
+  password: "geslo",
+  "No account yet? Cancel, then type `register`.":
+    "Še nimate računa? Prekličite in vnesite `register`.",
+  "Already have an account? Cancel, then type `login`.":
+    "Že imate račun? Prekličite in vnesite `login`.",
   "available:": "na voljo:",
+  "loading...": "nalaganje...",
   "Press Ctrl+C or Esc to cancel.": "Pritisnite Ctrl+C ali Esc za preklic.",
   "Writing new discussion. Current prompt: {step}.":
     "Pišete novo razpravo. Trenutni korak: {step}.",
@@ -126,6 +131,8 @@ export const sl: Record<string, string> = {
     "Pojdi en nivo nazaj. Ctrl+C in Escape naredita enako.",
   "unknown command: {name}": "neznan ukaz: {name}",
   "type `menu` to enter.": "vnesite `menu` za vstop.",
+  "type `login` or `register` to enter.":
+    "vnesite `login` ali `register` za vstop.",
   "refreshed {page}.": "osveženo: {page}.",
   "logged out.": "odjavljeno.",
   "already logged in. use logout first.": "že prijavljeni. najprej se odjavite.",
@@ -185,6 +192,7 @@ export const sl: Record<string, string> = {
   "write is not available on this page.": "pisanje na tej strani ni na voljo.",
   "login/register cancelled.": "prijava/registracija preklicana.",
   "write cancelled.": "pisanje preklicano.",
+  "nothing to go back to.": "ni se kam vrniti.",
   "profile updated.": "profil posodobljen.",
   "Recipient name does not exist.": "Ime prejemnika ne obstaja.",
   "Could not send mail.": "Pošte ni bilo mogoče poslati.",

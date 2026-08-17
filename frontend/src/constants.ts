@@ -1,11 +1,8 @@
-/**
- * Placeholder shown when a user has no avatar set.
- * Use a bundled asset so the UI doesn't depend on a third-party host or leak requests.
- */
+// bundled placeholder for users with no avatar
 export const PH_USER_IMAGE = "/images/profile.png";
 
-/** sessionStorage key for the Basic-Auth credentials string. */
+// sessionStorage key for the stored credentials
 export const CREDENTIALS_KEY = "ft_transcendence.credentials";
 
-/** sessionStorage key for the serialised SessionUser object. */
+// sessionStorage key for the stored SessionUser
 export const SESSION_USER_KEY = "ft_transcendence.sessionUser";

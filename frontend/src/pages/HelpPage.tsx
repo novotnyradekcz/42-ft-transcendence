@@ -1,4 +1,4 @@
-import { commandDefinitions } from "../commands";
+import { commandDefinitions, isGuestCommand } from "../commands";
 import TerminalSection from "../components/TerminalSection";
 import { useSession } from "../context/session/useSession";
 import { useTranslation } from "../context/language/i18n";
@@ -12,7 +12,8 @@ export default function HelpPage() {
     if (isLoggedIn) {
       return command.command !== "login" && command.command !== "register";
     }
-    return command.command !== "logout";
+    // guests only see what the gate lets through
+    return isGuestCommand(command.command);
   });
 
   return (

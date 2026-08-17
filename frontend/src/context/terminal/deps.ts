@@ -11,11 +11,8 @@ import type {
   UserProfile,
 } from "../../types";
 
-/**
- * Everything the extracted terminal handler factories need from the provider.
- * The provider rebuilds this object every render with the current state and
- * setters, so the closures the factories return always see fresh values.
- */
+// everything the handler factories need from the provider
+// rebuilt every render, so the returned closures always see fresh values
 export interface TerminalDeps {
   page: Page;
 
@@ -43,13 +40,16 @@ export interface TerminalDeps {
   setSelectedMail: (m: MailMessage | null) => void;
   setSelectedGame: (g: GameSummary | null) => void;
   setSelectedUser: (u: UserProfile | null) => void;
-  refreshBoard: () => Promise<string[]>;
+  ensureForPage: (page: Page) => Promise<string[]>;
+  refreshForPage: (page: Page) => Promise<string[]>;
   refreshBoardForUser: (user: SessionUser | null) => Promise<string[]>;
 
   // terminal state + setters
   authFlow: AuthFlow;
   setAuthFlow: Dispatch<SetStateAction<AuthFlow>>;
   setAuthError: Dispatch<SetStateAction<string>>;
+  // cancel token, an async handler bails out if it moved while awaiting
+  flowEpoch: { current: number };
   writeFlow: WriteFlow;
   setWriteFlow: Dispatch<SetStateAction<WriteFlow>>;
   setWriteError: Dispatch<SetStateAction<string>>;

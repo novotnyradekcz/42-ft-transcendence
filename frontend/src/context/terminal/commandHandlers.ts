@@ -1,5 +1,6 @@
 import {
   addFriend as apiAddFriend,
+  displayName,
   getDiscussion,
   getMail,
   getUser,
@@ -9,12 +10,14 @@ import {
 import {
   commandDefinitions,
   isCommand,
+  isGuestCommand,
   parseCommand,
 } from "../../commands";
 import { isLang, LANGUAGES } from "../language/i18n";
 import { PAGE_PATHS } from "../../router";
 import type { TerminalDeps } from "./deps";
-import { errMsg } from "./helpers";
+import { errMsg } from "../../errors";
+import { startLoginFlow } from "./helpers";
 
 export function createCommandHandlers(
   deps: TerminalDeps,
@@ -45,7 +48,7 @@ export function createCommandHandlers(
     goTo,
     goBack,
     clearWriteModes,
-    refreshBoard,
+    refreshForPage,
     contextLogout,
     updateSessionUser,
     refreshUsers,
@@ -64,7 +67,13 @@ export function createCommandHandlers(
       return;
     }
 
-    if (page === "welcome" && command !== "menu") {
+    // guests only get login and register until there's a session
+    if (!sessionUser) {
+      if (!isGuestCommand(command)) {
+        addLine(t("type `login` or `register` to enter."));
+        return;
+      }
+    } else if (page === "welcome" && command !== "menu") {
       addLine(t("type `menu` to enter."));
       return;
     }
@@ -110,7 +119,8 @@ export function createCommandHandlers(
     }
 
     if (command === "list") {
-      const errors = await refreshBoard();
+      // refresh what this page shows, not every collection in the app
+      const errors = await refreshForPage(page);
       errors.forEach(addLine);
       if (errors.length === 0) addLine(t("refreshed {page}.", { page }));
       return;
@@ -120,7 +130,8 @@ export function createCommandHandlers(
       contextLogout();
       setSelectedMail(null);
       setSelectedUser(null);
-      navigate(PAGE_PATHS.home);
+      // back to the guest front page, the board went with the session
+      navigate(PAGE_PATHS.welcome);
       addLine(t("logged out."));
       return;
     }
@@ -132,9 +143,7 @@ export function createCommandHandlers(
     if (command === "upload") {
       if (!sessionUser) {
         addLine(t("login first to upload games."));
-        setAuthFlow({ mode: "login", step: "name", name: "" });
-        setAuthError("");
-        goTo(PAGE_PATHS.login);
+        startLoginFlow(deps);
         return;
       }
       if (page !== "games") {
@@ -162,9 +171,7 @@ export function createCommandHandlers(
         addLine(t("already logged in. use logout first."));
         return;
       }
-      setAuthFlow({ mode: "login", step: "name", name: "" });
-      setAuthError("");
-      goTo(PAGE_PATHS.login);
+      startLoginFlow(deps);
       addLine(t("login started. enter name."));
       return;
     }
@@ -202,15 +209,13 @@ export function createCommandHandlers(
             ? t("login first to view your match history.")
             : t("login first to view friends."),
       );
-      setAuthFlow({ mode: "login", step: "name", name: "" });
-      setAuthError("");
-      goTo(PAGE_PATHS.login);
+      startLoginFlow(deps);
       return;
     }
 
     if (nextPath) {
-      const errors = await refreshBoard();
-      errors.forEach(addLine);
+      // go straight there. TerminalContext loads what the destination needs
+      // once it's on screen, so navigation never waits on the network.
       goTo(nextPath);
     }
   }
@@ -290,9 +295,7 @@ export function createCommandHandlers(
       }
       if (!sessionUser) {
         addLine(t("login first to play games."));
-        setAuthFlow({ mode: "login", step: "name", name: "" });
-        setAuthError("");
-        goTo(PAGE_PATHS.login);
+        startLoginFlow(deps);
         return;
       }
       setSelectedGame(selected);
@@ -309,9 +312,7 @@ export function createCommandHandlers(
   ) {
     if (!sessionUser) {
       addLine(t("login first to manage friends."));
-      setAuthFlow({ mode: "login", step: "name", name: "" });
-      setAuthError("");
-      goTo(PAGE_PATHS.login);
+      startLoginFlow(deps);
       return;
     }
 
@@ -321,11 +322,7 @@ export function createCommandHandlers(
       return;
     }
 
-    if (action === "addfriend") {
-      await handleAddFriend(target.id);
-    } else {
-      await handleRemoveFriend(target.id);
-    }
+    await applyFriendChange(action, target.id);
   }
 
   async function resolveFriendTarget(targetValue?: string) {
@@ -339,43 +336,35 @@ export function createCommandHandlers(
     return getUserByName(targetValue).catch(() => null);
   }
 
-  async function handleAddFriend(userId: number) {
+  // shared path for addfriend and removefriend, they only differ in the call
+  async function applyFriendChange(
+    action: "addfriend" | "removefriend",
+    userId: number,
+  ) {
     if (!sessionUser) return;
+    const adding = action === "addfriend";
     try {
-      await apiAddFriend(sessionUser.id, userId);
+      await (adding ? apiAddFriend : apiRemoveFriend)(sessionUser.id, userId);
       updateSessionUser({
         ...sessionUser,
-        friends: [...new Set([...sessionUser.friends, userId])],
+        friends: adding
+          ? [...new Set([...sessionUser.friends, userId])]
+          : sessionUser.friends.filter((id) => id !== userId),
       });
-      const target = knownUsers.find((u) => u.id === userId);
+      const name = displayName(userId, knownUsers);
       addLine(
-        t("added {name} as friend.", {
-          name: target?.name ?? `user#${userId}`,
-        }),
+        adding
+          ? t("added {name} as friend.", { name })
+          : t("removed {name} from friends.", { name }),
       );
       await refreshUsers().catch(() => {});
     } catch (e) {
-      addLine(errMsg(e, t("could not add friend.")));
-    }
-  }
-
-  async function handleRemoveFriend(userId: number) {
-    if (!sessionUser) return;
-    try {
-      await apiRemoveFriend(sessionUser.id, userId);
-      updateSessionUser({
-        ...sessionUser,
-        friends: sessionUser.friends.filter((id) => id !== userId),
-      });
-      const target = knownUsers.find((u) => u.id === userId);
       addLine(
-        t("removed {name} from friends.", {
-          name: target?.name ?? `user#${userId}`,
-        }),
+        errMsg(
+          e,
+          adding ? t("could not add friend.") : t("could not remove friend."),
+        ),
       );
-      await refreshUsers().catch(() => {});
-    } catch (e) {
-      addLine(errMsg(e, t("could not remove friend.")));
     }
   }
 

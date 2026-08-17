@@ -11,7 +11,6 @@ export default function GameLeaderboardPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    setLoading(true);
     getLeaderboard()
       .then((data) => {
         setLeaderboard(data);

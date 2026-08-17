@@ -1,10 +1,8 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// The dev server proxies API calls to the dockerised backend on :8080, so
-// `npm run dev` (hot-reload) works against the same endpoints as production.
-// Avatars are plain URLs stored in the DB, so there is no upload/file-storage
-// middleware here; static assets under public/ are served by Vite directly.
+// proxies api calls to the backend on :8080, so `npm run dev` hits
+// the same endpoints as production
 
 export default defineConfig({
   plugins: [react()],

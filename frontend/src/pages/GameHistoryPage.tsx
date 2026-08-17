@@ -9,16 +9,12 @@ export default function GameHistoryPage() {
   const { sessionUser } = useSession();
   const { t } = useTranslation();
   const [history, setHistory] = useState<GameHistoryItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => Boolean(sessionUser));
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!sessionUser) {
-      setLoading(false);
-      return;
-    }
+    if (!sessionUser) return;
 
-    setLoading(true);
     getGameHistory()
       .then((data) => {
         setHistory(data);

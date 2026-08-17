@@ -1,3 +1,4 @@
+import AuthPrompt from "../components/AuthPrompt";
 import TerminalSection from "../components/TerminalSection";
 import { useTerminal } from "../context/terminal/useTerminal";
 import { useTranslation } from "../context/language/i18n";
@@ -5,16 +6,21 @@ import { useTranslation } from "../context/language/i18n";
 export default function LoginPage() {
   const { authFlow, authError } = useTerminal();
   const { t } = useTranslation();
+  const flow = authFlow?.mode === "login" ? authFlow : null;
 
   return (
     <TerminalSection title={t("Login")}>
+      <AuthPrompt
+        current={flow?.step ?? null}
+        error={authError}
+        steps={[
+          { key: "name", label: t("username"), value: flow?.name },
+          { key: "password", label: t("password") },
+        ]}
+      />
       <p className="terminal-copy">
-        {t("Login happens in the command input. Current prompt: {step}.", {
-          step: authFlow?.mode === "login" ? authFlow.step : t("idle"),
-        })}
+        {t("No account yet? Cancel, then type `register`.")}
       </p>
-      <p className="terminal-copy">{t("Press Ctrl+C or Esc to quit login.")}</p>
-      {authError && <p className="terminal-error">{authError}</p>}
     </TerminalSection>
   );
 }

@@ -10,7 +10,7 @@ import { useNavigate } from "react-router-dom";
 import { PAGE_PATHS } from "../router";
 
 export default function GamesPage() {
-  const { games, refreshBoard } = useData();
+  const { games, refreshForPage } = useData();
   const { sessionUser, knownUsers } = useSession();
   const { addLine } = useTerminal();
   const { t } = useTranslation();
@@ -71,7 +71,7 @@ export default function GamesPage() {
       const name = file.name.replace(/\.lua$/i, "").trim() || "Untitled Game";
 
       await createGame(name, body);
-      await refreshBoard();
+      await refreshForPage("games");
 
       const successStr = t("uploaded game '{name}'.", { name });
       setStatusMsg(successStr);

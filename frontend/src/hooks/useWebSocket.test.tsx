@@ -1,13 +1,4 @@
-/**
- * Tests for useWebSocket reconnection.
- *
- * These exist because a socket opened while the server is still compiling dies
- * with a 502 and, before `reconnectMaxDelayMs`, never retried — which silently
- * broke online status for the whole session. The opt-in shape matters just as
- * much: the game must stay one-shot so a reconnect cannot re-enter matchmaking.
- *
- * Run with:  npm test
- */
+// tests for useWebSocket reconnection, run with `npm test`
 
 import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -15,18 +6,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useWebSocket } from "./useWebSocket";
 
 declare global {
-  // React reads this to decide whether act() may flush effects synchronously.
-  // Without it act() is a no-op wrapper and the assertions below would be
-  // checking un-flushed state.
+  // without this act() is a no-op and effects never flush
   // eslint-disable-next-line no-var
   var IS_REACT_ACT_ENVIRONMENT: boolean;
 }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-// api.ts reads module state for credentials; a fixed value keeps the URL stable.
-vi.mock("../api", () => ({ getCredentials: () => "Basic dGVzdDp0ZXN0" }));
+// a fixed credential keeps the url stable across tests
+vi.mock("../api", () => ({
+  authHeader: () => "Bearer dGVzdC10b2tlbg==",
+}));
 
-/** Minimal stand-in that records every construction and lets tests fire events. */
+// stand-in that records every construction and lets tests fire events
 class FakeWebSocket {
   static instances: FakeWebSocket[] = [];
   static readonly CONNECTING = 0;
@@ -57,13 +48,13 @@ class FakeWebSocket {
     this.readyState = FakeWebSocket.CLOSED;
   }
 
-  /** Simulate the server accepting the handshake. */
+  // the server accepts the handshake
   fireOpen() {
     this.readyState = FakeWebSocket.OPEN;
     this.onopen?.();
   }
 
-  /** Simulate the connection dropping (server down, 401, network loss). */
+  // the connection drops, server down or network loss
   fireClose() {
     this.readyState = FakeWebSocket.CLOSED;
     this.onclose?.();
