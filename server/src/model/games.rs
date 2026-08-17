@@ -245,87 +245,85 @@ pub fn get_game_history_for_user_in_db(
     Ok(result)
 }
 
+// Using raw SQL query here for better performance for when there are many users and games played
+#[derive(QueryableByName, Debug)]
+struct RawLeaderboardRow {
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub user_id: i32,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub user_name: String,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub wins: i32,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub losses: i32,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub draws: i32,
+    #[diesel(sql_type = diesel::sql_types::Double)]
+    pub win_loss_ratio: f64,
+}
+
 pub fn get_leaderboard_in_db(
     db: &mut DatabaseInitializer,
 ) -> Result<Vec<LeaderboardEntry>, diesel::result::Error> {
-    use crate::schema::ftt_game_history::dsl as gh;
-    use crate::schema::ftt_users::dsl as users;
-
     let conn = connection(db);
-    let records = gh::ftt_game_history
-        .select(DbGameHistoryRecord::as_select())
-        .load::<DbGameHistoryRecord>(conn)?;
 
-    let all_users = users::ftt_users
-        .select((users::id, users::name))
-        .load::<(i32, String)>(conn)?;
+    let sql = "
+        WITH player_outcomes AS (
+            SELECT
+                player1_id AS user_id,
+                CASE WHEN winner_id = player1_id THEN 1 ELSE 0 END AS win,
+                CASE WHEN winner_id IS NOT NULL AND winner_id != player1_id THEN 1 ELSE 0 END AS loss,
+                CASE WHEN winner_id IS NULL THEN 1 ELSE 0 END AS draw
+            FROM ftt_game_history
+            UNION ALL
+            SELECT
+                player2_id AS user_id,
+                CASE WHEN winner_id = player2_id THEN 1 ELSE 0 END AS win,
+                CASE WHEN winner_id IS NOT NULL AND winner_id != player2_id THEN 1 ELSE 0 END AS loss,
+                CASE WHEN winner_id IS NULL THEN 1 ELSE 0 END AS draw
+            FROM ftt_game_history
+        ),
+        player_stats AS (
+            SELECT
+                user_id,
+                SUM(win)::INT AS wins,
+                SUM(loss)::INT AS losses,
+                SUM(draw)::INT AS draws,
+                CASE
+                    WHEN SUM(loss) = 0 THEN SUM(win)::FLOAT8
+                    ELSE ROUND((SUM(win)::NUMERIC / SUM(loss)::NUMERIC) * 100, 2)::FLOAT8
+                END AS win_loss_ratio
+            FROM player_outcomes
+            GROUP BY user_id
+        )
+        SELECT
+            u.id AS user_id,
+            u.name AS user_name,
+            s.wins,
+            s.losses,
+            s.draws,
+            s.win_loss_ratio
+        FROM player_stats s
+        JOIN ftt_users u ON u.id = s.user_id
+        ORDER BY s.win_loss_ratio DESC, s.wins DESC
+        LIMIT 10;
+    ";
 
-    let mut stats: std::collections::HashMap<i32, (i32, i32, i32)> = std::collections::HashMap::new();
+    let rows = diesel::sql_query(sql).load::<RawLeaderboardRow>(conn)?;
 
-    for (uid, _) in &all_users {
-        stats.insert(*uid, (0, 0, 0));
-    }
-
-    for r in records {
-        let p1 = r.player1_id;
-        let p2 = r.player2_id;
-
-        match r.winner_id {
-            Some(w) => {
-                if w == p1 {
-                    stats.entry(p1).or_insert((0, 0, 0)).0 += 1;
-                    stats.entry(p2).or_insert((0, 0, 0)).1 += 1;
-                } else if w == p2 {
-                    stats.entry(p2).or_insert((0, 0, 0)).0 += 1;
-                    stats.entry(p1).or_insert((0, 0, 0)).1 += 1;
-                }
-            }
-            None => {
-                stats.entry(p1).or_insert((0, 0, 0)).2 += 1;
-                stats.entry(p2).or_insert((0, 0, 0)).2 += 1;
-            }
-        }
-    }
-
-    let user_map: std::collections::HashMap<i32, String> = all_users.into_iter().collect();
-
-    let mut entries: Vec<LeaderboardEntry> = stats
+    let entries = rows
         .into_iter()
-        .filter_map(|(uid, (wins, losses, draws))| {
-            let total = wins + losses + draws;
-            if total == 0 {
-                return None;
-            }
-            let ratio = if losses == 0 {
-                wins as f64
-            } else {
-                (wins as f64 / losses as f64 * 100.0).round() / 100.0
-            };
-            let uname = user_map.get(&uid).cloned().unwrap_or_else(|| format!("User #{}", uid));
-
-            Some(LeaderboardEntry {
-                rank: 0,
-                user_id: uid,
-                user_name: uname,
-                wins,
-                losses,
-                draws,
-                win_loss_ratio: ratio,
-            })
+        .enumerate()
+        .map(|(idx, r)| LeaderboardEntry {
+            rank: (idx + 1) as i32,
+            user_id: r.user_id,
+            user_name: r.user_name,
+            wins: r.wins,
+            losses: r.losses,
+            draws: r.draws,
+            win_loss_ratio: r.win_loss_ratio,
         })
         .collect();
-
-    entries.sort_by(|a, b| {
-        b.win_loss_ratio
-            .partial_cmp(&a.win_loss_ratio)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| b.wins.cmp(&a.wins))
-    });
-
-    entries.truncate(10);
-    for (idx, entry) in entries.iter_mut().enumerate() {
-        entry.rank = (idx + 1) as i32;
-    }
 
     Ok(entries)
 }
