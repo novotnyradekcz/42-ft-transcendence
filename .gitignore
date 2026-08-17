@@ -2,6 +2,10 @@
 .idea
 .agents
 
+# Editor swap files
+*.sw[a-p]
+*~
+
 # Local env configs
 .env
 .env.local
