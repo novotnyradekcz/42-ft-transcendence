@@ -394,9 +394,8 @@ export async function createGame(
   });
 }
 
-export async function getGameHistory(userId: number): Promise<GameHistoryItem[]> {
-  const params = new URLSearchParams({ user_id: String(userId) });
-  return requestJson<GameHistoryItem[]>(`/games/history?${params.toString()}`);
+export async function getGameHistory(): Promise<GameHistoryItem[]> {
+  return requestJson<GameHistoryItem[]>("/games/history");
 }
 
 export async function getLeaderboard(): Promise<LeaderboardItem[]> {

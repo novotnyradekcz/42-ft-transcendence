@@ -19,7 +19,7 @@ export default function GameHistoryPage() {
     }
 
     setLoading(true);
-    getGameHistory(sessionUser.id)
+    getGameHistory()
       .then((data) => {
         setHistory(data);
         setError("");

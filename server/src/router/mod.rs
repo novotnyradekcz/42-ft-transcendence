@@ -393,30 +393,32 @@ pub async fn create_game(
     }
 }
 
-#[derive(serde::Deserialize)]
-pub struct HistoryQuery {
-    pub user_id: Option<i32>,
-}
-
 #[get("/history")]
 pub async fn get_game_history(
     pool: web::Data<Arc<AppState>>,
-    query: web::Query<HistoryQuery>,
+    user: AuthenticatedUser,
 ) -> impl Responder {
-    let user_id = match query.user_id {
-        Some(id) => id,
-        None => {
-            return HttpResponse::BadRequest().json(serde_json::json!({
-                "message": "user_id query parameter is required",
-            }))
-        }
-    };
+    let username = user.into_inner().get_username().to_string();
 
     let mut db = match pool.database.lock() {
         Ok(db) => db,
         Err(_) => {
             return HttpResponse::InternalServerError().json(serde_json::json!({
                 "message": "Database lock poisoned.",
+            }))
+        }
+    };
+
+    let user_id = match users::find_user_id_by_name(&mut db, &username) {
+        Ok(Some(id)) => id,
+        Ok(None) => {
+            return HttpResponse::Unauthorized().json(serde_json::json!({
+                "message": "Authenticated user not found in database.",
+            }))
+        }
+        Err(err) => {
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": format!("Could not lookup user: {}", err),
             }))
         }
     };

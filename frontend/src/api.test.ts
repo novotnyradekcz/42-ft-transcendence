@@ -522,7 +522,7 @@ describe("getGameHistory", () => {
     vi.restoreAllMocks();
   });
 
-  it("happy path: fetches game history for a specific user_id", async () => {
+  it("happy path: fetches game history for authenticated user", async () => {
     const mockHistory = [
       {
         id: 1,
@@ -539,11 +539,11 @@ describe("getGameHistory", () => {
     ];
     const mockFetch = stubFetch(200, mockHistory);
 
-    const result = await getGameHistory(1);
+    const result = await getGameHistory();
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const [url] = mockFetch.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("/games/history?user_id=1");
+    expect(url).toContain("/games/history");
     expect(result).toEqual(mockHistory);
   });
 });
