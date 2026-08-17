@@ -116,7 +116,7 @@ async fn main() -> std::io::Result<()> {
                             CookieSessionStore::default(),
                             secret_key.clone(),
                         )
-                        .cookie_secure(false)
+                        .cookie_secure(true)
                         .build(),
                     )
                     // literal routes first, or /{provider} eats them
