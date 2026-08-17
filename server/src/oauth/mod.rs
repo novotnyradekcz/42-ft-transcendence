@@ -313,7 +313,7 @@ pub async fn oauth_session(pool: web::Data<Arc<AppState>>, session: Session) -> 
         _ => {
             log::error!("OAuth session referenced user id {user_id}, which no longer exists");
             return HttpResponse::Unauthorized().json(serde_json::json!({
-                "message": "Unexisting user",
+                "message": "User does not exist",
             }));
         }
     };
@@ -323,7 +323,7 @@ pub async fn oauth_session(pool: web::Data<Arc<AppState>>, session: Session) -> 
         Err(_) => {
             log::error!("user {} is absent from the user store", user_info.name);
             return HttpResponse::Unauthorized().json(serde_json::json!({
-                "message": "Unexisting user",
+                "message": "User does not exist",
             }));
         }
     };
