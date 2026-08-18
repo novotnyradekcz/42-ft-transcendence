@@ -385,10 +385,11 @@ export async function getUserByName(name: string): Promise<UserProfile | null> {
   return users.find((u) => u.name === cleanName) ?? null;
 }
 
-// Name and email are identity, not profile: they are what you log in and are
-// addressed as, and an account created through OAuth doesn't own them here at
-// all. They are shown read-only and deliberately left out of the body, so the
-// request cannot rename an account even if the form were tampered with.
+// Only bio and avatar are editable here, so name and email aren't sent.
+// That's a UI decision, not a guarantee: any caller with a valid JWT can send
+// them anyway, so the server has to reject those fields for this to hold (#49).
+// Matters most for `name` — the auth store is keyed by username, so a rename
+// is an identity change, not a cosmetic one.
 export async function updateCurrentUserProfile(
   userId: number,
   update: { bio: string; avatarUrl?: string },
