@@ -38,6 +38,8 @@ const PAGE_RESOURCES: Record<Page, DataResource[]> = {
   "mail-detail": ["mail", "users"],
   games: ["games", "users"],
   "game-play": ["games", "users"],
+  "game-history": ["games", "users"],
+  "game-leaderboard": ["games", "users"],
   users: ["users"],
   "user-detail": ["users"],
   friends: ["users"],

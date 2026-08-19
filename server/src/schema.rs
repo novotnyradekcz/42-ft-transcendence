@@ -64,15 +64,30 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    ftt_game_history (id) {
+        id -> Int4,
+        game_id -> Int4,
+        game_name -> Text,
+        player1_id -> Int4,
+        player2_id -> Int4,
+        winner_id -> Nullable<Int4>,
+        played_at -> Timestamp,
+    }
+}
+
 diesel::joinable!(ftt_games -> ftt_users (author));
 diesel::joinable!(ftt_posts -> ftt_users (author));
 diesel::joinable!(ftt_posts -> ftt_discussions (discussion_id));
+diesel::joinable!(ftt_game_history -> ftt_games (game_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     ftt_discussions,
+    ftt_game_history,
     ftt_games,
     ftt_mail,
     ftt_posts,
     ftt_token_blacklist,
     ftt_users,
 );
+

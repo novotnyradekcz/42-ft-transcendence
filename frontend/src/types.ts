@@ -15,7 +15,9 @@ export type Page =
   | "mail"
   | "mail-detail"
   | "games"
-  | "game-play";
+  | "game-play"
+  | "game-history"
+  | "game-leaderboard";
 
 export type UserProfile = {
   id: number;
@@ -69,6 +71,30 @@ export type GameSummary = {
   name: string;
   body: string;
 };
+
+export type GameHistoryItem = {
+  id: number;
+  game_id: number;
+  game_name: string;
+  player1_id: number;
+  player1_name: string;
+  player2_id: number;
+  player2_name: string;
+  winner_id: number | null;
+  winner_name: string | null;
+  played_at: string;
+};
+
+export type LeaderboardItem = {
+  rank: number;
+  user_id: number;
+  user_name: string;
+  wins: number;
+  losses: number;
+  draws: number;
+  win_loss_ratio: number;
+};
+
 
 export type CommandDefinition = {
   command: string;

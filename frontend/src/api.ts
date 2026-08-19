@@ -1,6 +1,9 @@
 import type {
   DiscussionThread,
-  GameSummary, JwtObject,
+  GameHistoryItem,
+  GameSummary,
+  LeaderboardItem,
+  JwtObject,
   MailMessage,
   SessionUser,
   UserProfile,
@@ -511,6 +514,14 @@ export async function createGame(
     method: "POST",
     body: JSON.stringify({ name, body }),
   });
+}
+
+export async function getGameHistory(): Promise<GameHistoryItem[]> {
+  return requestJson<GameHistoryItem[]>("/games/history");
+}
+
+export async function getLeaderboard(): Promise<LeaderboardItem[]> {
+  return requestJson<LeaderboardItem[]>("/games/leaderboard");
 }
 
 export async function exchangeOAuthSession(): Promise<SessionUser | null> {

@@ -147,7 +147,9 @@ async fn main() -> std::io::Result<()> {
                         web::scope("/games")
                             .service(show_games)
                             .service(game_detail)
-                            .service(create_game),
+                            .service(create_game)
+                            .service(get_game_history)
+                            .service(get_leaderboard),
                     )
                     .service(
                         web::scope("/discussions")

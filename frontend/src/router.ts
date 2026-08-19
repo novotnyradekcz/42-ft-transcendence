@@ -21,6 +21,8 @@ export const PAGE_PATHS: Record<Page, string> = {
   "mail-detail": "/mail/show",
   games: "/games/show",
   "game-play": "/games/play",
+  "game-history": "/games/history",
+  "game-leaderboard": "/games/leaderboard",
 };
 
 // the page one level up from each page, `back` walks this instead of history
@@ -39,6 +41,8 @@ export const PAGE_PARENTS: Partial<Record<Page, Page>> = {
   "mail-detail": "mail",
   games: "home",
   "game-play": "games",
+  "game-history": "games",
+  "game-leaderboard": "games",
 };
 
 // where `back` lands from a page, null when there's nowhere to go
@@ -60,6 +64,8 @@ export function pageFromPath(pathname: string): Page {
   if (pathname.startsWith("/mail/show/")) return "mail-detail";
   if (pathname === "/mail/show") return "mail";
   if (pathname.startsWith("/games/play")) return "game-play";
+  if (pathname === "/games/history") return "game-history";
+  if (pathname === "/games/leaderboard") return "game-leaderboard";
   if (pathname === "/games/show") return "games";
   if (pathname === "/help") return "help";
   if (pathname === "/privacy") return "privacy";

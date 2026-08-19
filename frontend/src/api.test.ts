@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildBasicAuthHeader,
   createGame,
+  getGameHistory,
+  getLeaderboard,
   listFriends,
   listUsers,
   login,
@@ -571,36 +573,6 @@ describe("register", () => {
   });
 });
 
-describe("createGame", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("happy path: sends POST request to /games/create and returns created game", async () => {
-    const mockGame = {
-      id: 5,
-      author: 2,
-      name: "Custom Pong",
-      body: "print('pong')",
-    };
-    const mockFetch = stubFetch(201, mockGame);
-
-    const result = await createGame("Custom Pong", "print('pong')");
-
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("/games/create");
-    expect(init.method).toBe("POST");
-    expect(JSON.parse(init.body as string)).toEqual({
-      name: "Custom Pong",
-      body: "print('pong')",
-    });
-    expect(result).toEqual(mockGame);
-  });
-});
-
-// ── Token refresh ────────────────────────────────────────────────────────────
-
 // queues one reply per call, so a 401 can be followed by the refresh and replay
 function stubFetchSequence(replies: { status: number; body: unknown }[]) {
   const mock = vi.fn();
@@ -739,5 +711,64 @@ describe("createGame", () => {
       body: "print('pong')",
     });
     expect(result).toEqual(mockGame);
+  });
+});
+
+describe("getGameHistory", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("happy path: fetches game history for authenticated user", async () => {
+    const mockHistory = [
+      {
+        id: 1,
+        game_id: 1,
+        game_name: "Tic-Tac-Toe",
+        player1_id: 1,
+        player1_name: "alice",
+        player2_id: 2,
+        player2_name: "bob",
+        winner_id: 1,
+        winner_name: "alice",
+        played_at: "2026-08-12 09:00",
+      },
+    ];
+    const mockFetch = stubFetch(200, mockHistory);
+
+    const result = await getGameHistory();
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/games/history");
+    expect(result).toEqual(mockHistory);
+  });
+});
+
+describe("getLeaderboard", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("happy path: fetches top 10 players leaderboard", async () => {
+    const mockLeaderboard = [
+      {
+        rank: 1,
+        user_id: 1,
+        user_name: "alice",
+        wins: 5,
+        losses: 1,
+        draws: 0,
+        win_loss_ratio: 5.0,
+      },
+    ];
+    const mockFetch = stubFetch(200, mockLeaderboard);
+
+    const result = await getLeaderboard();
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/games/leaderboard");
+    expect(result).toEqual(mockLeaderboard);
   });
 });

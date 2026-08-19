@@ -576,6 +576,61 @@ pub async fn create_game(
     }
 }
 
+#[get("/history")]
+pub async fn get_game_history(
+    pool: web::Data<Arc<AppState>>,
+    user: AuthenticatedUser,
+) -> impl Responder {
+    let username = user.into_inner().get_username().to_string();
+
+    let mut db = match pool.database.lock() {
+        Ok(db) => db,
+        Err(_) => {
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Database lock poisoned.",
+            }))
+        }
+    };
+
+    let user_id = match users::find_user_id_by_name(&mut db, &username) {
+        Ok(Some(id)) => id,
+        Ok(None) => {
+            return HttpResponse::Unauthorized().json(serde_json::json!({
+                "message": "Authenticated user not found in database.",
+            }))
+        }
+        Err(err) => {
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": format!("Could not lookup user: {}", err),
+            }))
+        }
+    };
+
+    match crate::model::games::get_game_history_for_user_in_db(&mut db, user_id) {
+        Ok(history) => HttpResponse::Ok().json(history),
+        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "message": format!("Could not load game history: {}", err),
+        })),
+    }
+}
+
+#[get("/leaderboard")]
+pub async fn get_leaderboard(pool: web::Data<Arc<AppState>>) -> impl Responder {
+    let mut db = match pool.database.lock() {
+        Ok(db) => db,
+        Err(_) => {
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Database lock poisoned.",
+            }))
+        }
+    };
+
+    match crate::model::games::get_leaderboard_in_db(&mut db) {
+        Ok(leaderboard) => HttpResponse::Ok().json(leaderboard),
+        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "message": format!("Could not load leaderboard: {}", err),
+        })),
+    }
 #[get("/health")]
 pub async fn health() -> impl Responder {
     HttpResponse::Ok().json(serde_json::json!({"status" : "ok"}))
