@@ -29,7 +29,7 @@ export default function Terminal() {
   const location = useLocation();
   const page = pageFromPath(location.pathname);
 
-  const { sessionUser } = useSession();
+  const { sessionUser, isHydrating } = useSession();
   // selectedGame needed by GamePlayPage route
   const { selectedGame } = useData();
   const { t } = useTranslation();
@@ -100,8 +100,11 @@ export default function Terminal() {
             board pages are never mounted at all, so a typed URL, a bookmark
             or the browser Back button cannot reach them. Anything else a
             guest asks for falls through to the front page.
+
+            Neither renders while hydrating: the guest catch-all replaces the
+            URL, so picking it too early throws away where the user was going.
           */}
-          {sessionUser ? (
+          {isHydrating ? null : sessionUser ? (
             <Routes>
               <Route path="/" element={<WelcomePage />} />
               <Route path="/menu" element={<HomePage />} />

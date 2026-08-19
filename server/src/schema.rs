@@ -59,6 +59,8 @@ diesel::table! {
         bio -> Text,
         avatar_url -> Text,
         friends -> Text,
+        provider_user_id -> Text,
+        provider -> Text,
     }
 }
 

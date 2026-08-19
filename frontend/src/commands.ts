@@ -32,6 +32,12 @@ export const commandDefinitions: CommandDefinition[] = [
     description: "Start command-line registration.",
   },
   {
+    command: "oauth",
+    aliases: ["o"],
+    usage: "oauth [provider]",
+    description: "Sign in with an external account.",
+  },
+  {
     command: "profile",
     aliases: ["p"],
     usage: "profile",
@@ -136,7 +142,7 @@ export const commandDefinitions: CommandDefinition[] = [
 ];
 
 const pageCommands: Record<Page, string[]> = {
-  welcome: ["menu", "login", "register", "lang <code>", "help"],
+  welcome: ["menu", "login", "register", "oauth", "lang <code>", "help"],
   home: [
     "help",
     "users",
@@ -169,7 +175,14 @@ const pageCommands: Record<Page, string[]> = {
 };
 
 // commands for guests (not logged in)
-export const GUEST_COMMANDS = ["login", "register", "lang", "help", "back"];
+export const GUEST_COMMANDS = [
+  "login",
+  "register",
+  "oauth",
+  "lang",
+  "help",
+  "back",
+];
 
 // the bare command inside a label, "lang <code>" -> "lang"
 export function baseCommand(label: string): string {

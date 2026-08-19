@@ -1,6 +1,7 @@
 import {
   addFriend as apiAddFriend,
   displayName,
+  fetchOAuthProviders,
   getDiscussion,
   getMail,
   getUser,
@@ -173,6 +174,44 @@ export function createCommandHandlers(
       }
       startLoginFlow(deps);
       addLine(t("login started. enter name."));
+      return;
+    }
+
+    if (command === "oauth") {
+      if (sessionUser) {
+        addLine(t("already logged in. use logout first."));
+        return;
+      }
+
+      const providers = await fetchOAuthProviders();
+      if (providers.length === 0) {
+        addLine(t("no external sign-in providers are configured."));
+        return;
+      }
+
+      const requested = args[0]?.toLowerCase();
+      // bare `oauth` with one provider just goes there
+      const chosen =
+        !requested && providers.length === 1
+          ? providers[0]
+          : providers.find((p) => p.id.toLowerCase() === requested);
+
+      if (!requested && !chosen) {
+        providers.forEach((provider) =>
+          addLine(`  ${provider.id} - ${provider.label}`),
+        );
+        addLine(t("use `oauth <provider>` to continue."));
+        return;
+      }
+      if (!chosen) {
+        addLine(t("unknown provider: {name}", { name: requested }));
+        return;
+      }
+
+      addLine(t("redirecting to {label}...", { label: chosen.label }));
+      // a real navigation, not a fetch — the user should see whose login page
+      // they're typing into
+      window.location.href = `/api/auth/${chosen.id}`;
       return;
     }
 

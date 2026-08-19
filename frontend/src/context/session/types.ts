@@ -7,6 +7,8 @@ export interface SessionContextValue {
   knownUsers: UserProfile[];
   /** True while the initial sessionStorage restore is in progress. */
   isRestoring: boolean;
+  /** True until the OAuth cookie exchange has been tried. Routing waits on it. */
+  isHydrating: boolean;
   login(name: string, password: string): Promise<SessionUser>;
   register(name: string, email: string, password: string): Promise<SessionUser>;
   logout(): void;
