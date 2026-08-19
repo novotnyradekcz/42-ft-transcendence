@@ -37,9 +37,6 @@ export default function GameLeaderboardPage() {
           {leaderboard.map((item) => (
             <li key={item.user_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
-                <span style={{ fontWeight: "bold", color: "#00ffff", marginRight: "0.5rem" }}>
-                  #{item.rank}
-                </span>
                 <strong>{item.user_name}</strong>
               </div>
               <div>
@@ -47,7 +44,7 @@ export default function GameLeaderboardPage() {
                   {item.wins}W / {item.losses}L / {item.draws}D
                 </small>
                 <span style={{ color: "#ffff00", fontWeight: "bold" }}>
-                  Ratio: {item.win_loss_ratio.toFixed(2)}
+                  Ratio: {item.win_loss_ratio.toFixed(4)}
                 </span>
               </div>
             </li>

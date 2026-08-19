@@ -290,8 +290,8 @@ pub fn get_leaderboard_in_db(
                 SUM(loss)::INT AS losses,
                 SUM(draw)::INT AS draws,
                 CASE
-                    WHEN SUM(loss) = 0 THEN SUM(win)::FLOAT8
-                    ELSE ROUND((SUM(win)::NUMERIC / SUM(loss)::NUMERIC) * 100, 2)::FLOAT8
+                    WHEN SUM(win) + SUM(loss) = 0 THEN 0::FLOAT8
+                    ELSE ROUND(SUM(win)::NUMERIC / (SUM(win) + SUM(loss))::NUMERIC, 4)::FLOAT8
                 END AS win_loss_ratio
             FROM player_outcomes
             GROUP BY user_id
