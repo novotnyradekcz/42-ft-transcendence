@@ -631,6 +631,8 @@ pub async fn get_leaderboard(pool: web::Data<Arc<AppState>>) -> impl Responder {
             "message": format!("Could not load leaderboard: {}", err),
         })),
     }
+}
+
 #[get("/health")]
 pub async fn health() -> impl Responder {
     HttpResponse::Ok().json(serde_json::json!({"status" : "ok"}))
