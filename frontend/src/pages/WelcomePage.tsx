@@ -57,6 +57,12 @@ FT_TRANSCENDENCE`}
               </li>
             ))}
           </ol>
+          {/* readable before registering, which is the point of them */}
+          <p className="terminal-copy">
+            {t("Registering means accepting the")} <span>terms</span>{" "}
+            {t("and the")} <span>privacy</span>{" "}
+            {t("policy — type either to read it.")}
+          </p>
         </>
       )}
     </TerminalSection>

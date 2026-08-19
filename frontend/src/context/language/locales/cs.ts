@@ -53,7 +53,26 @@ export const cs: Record<string, string> = {
   From: "Od",
   To: "Komu",
   Title: "Předmět",
-  "Avatar URL": "URL avataru",
+  "Privacy Policy": "Zásady ochrany osobních údajů",
+  "Terms of Service": "Podmínky použití",
+  "This text is available in English only.":
+    "Tento text je k dispozici pouze v angličtině.",
+  "Read the privacy policy.": "Zobrazit zásady ochrany osobních údajů.",
+  "Read the terms of service.": "Zobrazit podmínky použití.",
+  "Registering means accepting the": "Registrací přijímáte",
+  "and the": "a",
+  "policy — type either to read it.":
+    "zásady — napište kterékoli z nich pro zobrazení.",
+  Avatar: "Avatar",
+  "PNG or JPEG only, up to 500 KB. Larger pictures are scaled down to {size}x{size}.":
+    "Pouze PNG nebo JPEG, do 500 KB. Větší obrázky se zmenší na {size}x{size}.",
+  "avatar ready. save the profile to keep it.":
+    "avatar připraven. uložte profil pro zachování.",
+  "Avatar must be a PNG or JPEG image.": "Avatar musí být obrázek PNG nebo JPEG.",
+  "Avatar must be 500 KB or smaller.": "Avatar musí mít nejvýše 500 KB.",
+  "Could not read that image.": "Tento obrázek se nepodařilo načíst.",
+  "Could not process that image.": "Tento obrázek se nepodařilo zpracovat.",
+  "could not read that image.": "tento obrázek se nepodařilo načíst.",
   "aliases: {aliases}": "aliasy: {aliases}",
   "add friend": "přidat přítele",
   "remove friend": "odebrat přítele",
@@ -88,6 +107,9 @@ export const cs: Record<string, string> = {
   "Language set to {lang}.": "Jazyk nastaven na {lang}.",
   "Usage: lang <en|cs|sl>": "Použití: lang <en|cs|sl>",
   "Available languages: {langs}": "Dostupné jazyky: {langs}",
+  "available commands": "dostupné příkazy",
+  "choices for {command}": "možnosti pro {command}",
+  "nothing to pick.": "není z čeho vybírat.",
   "Show or hide the activity log below the page content.":
     "Zobrazit nebo skrýt log aktivity pod obsahem stránky.",
   "Log shown.": "Log zobrazen.",

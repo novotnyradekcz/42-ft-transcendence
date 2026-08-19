@@ -54,7 +54,26 @@ export const sl: Record<string, string> = {
   From: "Od",
   To: "Za",
   Title: "Naslov",
-  "Avatar URL": "URL avatarja",
+  "Privacy Policy": "Politika zasebnosti",
+  "Terms of Service": "Pogoji uporabe",
+  "This text is available in English only.":
+    "To besedilo je na voljo samo v angleščini.",
+  "Read the privacy policy.": "Preberi politiko zasebnosti.",
+  "Read the terms of service.": "Preberi pogoje uporabe.",
+  "Registering means accepting the": "Z registracijo sprejmete",
+  "and the": "in",
+  "policy — type either to read it.":
+    "politiko — vpišite katero koli za ogled.",
+  Avatar: "Avatar",
+  "PNG or JPEG only, up to 500 KB. Larger pictures are scaled down to {size}x{size}.":
+    "Samo PNG ali JPEG, do 500 KB. Večje slike se pomanjšajo na {size}x{size}.",
+  "avatar ready. save the profile to keep it.":
+    "avatar pripravljen. shranite profil, da ga obdržite.",
+  "Avatar must be a PNG or JPEG image.": "Avatar mora biti slika PNG ali JPEG.",
+  "Avatar must be 500 KB or smaller.": "Avatar mora biti velik največ 500 KB.",
+  "Could not read that image.": "Te slike ni bilo mogoče prebrati.",
+  "Could not process that image.": "Te slike ni bilo mogoče obdelati.",
+  "could not read that image.": "te slike ni bilo mogoče prebrati.",
   "aliases: {aliases}": "vzdevki: {aliases}",
   "add friend": "dodaj prijatelja",
   "remove friend": "odstrani prijatelja",
@@ -89,6 +108,9 @@ export const sl: Record<string, string> = {
   "Language set to {lang}.": "Jezik nastavljen na {lang}.",
   "Usage: lang <en|cs|sl>": "Uporaba: lang <en|cs|sl>",
   "Available languages: {langs}": "Razpoložljivi jeziki: {langs}",
+  "available commands": "razpoložljivi ukazi",
+  "choices for {command}": "možnosti za {command}",
+  "nothing to pick.": "ni česa za izbrati.",
   "Show or hide the activity log below the page content.":
     "Prikaži ali skrij dnevnik dejavnosti pod vsebino strani.",
   "Log shown.": "Dnevnik prikazan.",

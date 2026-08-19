@@ -19,6 +19,12 @@ import { useSession } from "../session/useSession";
 import { createAuthFlowHandlers } from "./authFlow";
 import { createCommandHandlers } from "./commandHandlers";
 import { createWriteFlowHandlers } from "./writeFlow";
+import {
+  buildSubmenu,
+  loadOAuthOptions,
+  opensSubmenu,
+  type HelpSubmenu,
+} from "./helpMenu";
 import type { TerminalDeps } from "./deps";
 import { getPromptLabel as promptLabel } from "./helpers";
 import { TerminalContext } from "./useTerminal";
@@ -84,6 +90,10 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   const [writeFlow, setWriteFlow] = useState<WriteFlow>(null);
   const [writeError, setWriteError] = useState("");
   const [commandHelpOpen, setCommandHelpOpen] = useState(false);
+  // second layer of the ? menu, null while the command list is showing
+  const [helpSubmenu, setHelpSubmenu] = useState<HelpSubmenu | null>(null);
+  // bumped on every open, so a slow provider list can tell it's stale
+  const helpMenuEpoch = useRef(0);
   // raised while a command waits on the network
   // the ref blocks re-entry, the state renders the loading line
   const [isBusy, setIsBusy] = useState(false);
@@ -115,6 +125,20 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     // a write flow belongs to the page it started on, so leaving drops it
     setWriteFlow(null);
     setWriteError("");
+    // so does the second help layer — it lists what the old page was showing
+    setHelpSubmenu(null);
+  }
+
+  // the second layer only exists inside an open popover, so both close together
+  function closeCommandHelp() {
+    helpMenuEpoch.current += 1;
+    setCommandHelpOpen(false);
+    setHelpSubmenu(null);
+  }
+
+  function toggleCommandHelp() {
+    if (commandHelpOpen) closeCommandHelp();
+    else setCommandHelpOpen(true);
   }
 
   const availableCommands = useMemo(
@@ -201,7 +225,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     writeFlow,
     setWriteFlow,
     setWriteError,
-    setCommandHelpOpen,
+    closeCommandHelp,
     logVisible,
     setLogVisible,
     addLine,
@@ -299,7 +323,15 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     const needsValue = commandLabel.includes("<");
 
     if (busyRef.current) return;
-    setCommandHelpOpen(false);
+
+    // a command that takes a value opens the second layer rather than
+    // running, so the popover stays up to show the choices
+    if (!authFlow && !writeFlow && opensSubmenu(commandLabel)) {
+      openHelpSubmenu(commandLabel);
+      return;
+    }
+
+    closeCommandHelp();
 
     if (authFlow || writeFlow) {
       if (["back", "cancel", "ctrl+c", "esc"].includes(normalizedCommand)) {
@@ -309,6 +341,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    // nothing to enumerate: fall back to prefilling the prompt
     if (needsValue) {
       setCommandInput(`${commandName} `);
       setFocusInputSignal((n) => n + 1);
@@ -316,6 +349,46 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     }
 
     await runBusy(() => executeCommand(commandName));
+  }
+
+  function openHelpSubmenu(commandLabel: string) {
+    const submenu = buildSubmenu(commandLabel, deps);
+    setHelpSubmenu(submenu);
+    if (!submenu.loading) return;
+
+    // oauth only: the provider list comes from the server
+    const epoch = (helpMenuEpoch.current += 1);
+    void loadOAuthOptions()
+      .then((options) => {
+        if (helpMenuEpoch.current !== epoch) return;
+        setHelpSubmenu((current) =>
+          current?.command === submenu.command
+            ? { ...current, options, loading: false }
+            : current,
+        );
+      })
+      .catch(() => {
+        if (helpMenuEpoch.current !== epoch) return;
+        setHelpSubmenu((current) =>
+          current?.command === submenu.command
+            ? { ...current, loading: false }
+            : current,
+        );
+      });
+  }
+
+  // runs the command the second layer belongs to, with the picked value
+  async function handleCommandHelpSelect(value: string) {
+    if (busyRef.current || !helpSubmenu) return;
+    const { command } = helpSubmenu;
+    closeCommandHelp();
+    await runBusy(() => executeCommand(`${command} ${value}`));
+  }
+
+  // back to the first layer, the command list
+  function closeCommandHelpSubmenu() {
+    helpMenuEpoch.current += 1;
+    setHelpSubmenu(null);
   }
 
   function getPromptLabel(): string {
@@ -336,13 +409,16 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
         writeFlow,
         writeError,
         commandHelpOpen,
-        setCommandHelpOpen,
+        toggleCommandHelp,
+        helpSubmenu,
         availableCommands,
         isBusy,
         page,
         handleCommandSubmit,
         handleCommandKeyDown,
         handleCommandHelpClick,
+        handleCommandHelpSelect,
+        closeCommandHelpSubmenu,
         cancelInputMode,
         getPromptLabel,
       }}

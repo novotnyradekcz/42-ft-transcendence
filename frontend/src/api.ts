@@ -248,7 +248,7 @@ export function normalizeUser(payload: unknown): UserProfile {
     id,
     name,
     email,
-    bio: textValue(user.bio) || "No profile info yet.",
+    bio: textValue(user.bio) || "Placeholder bio.",
     avatarUrl:
       textValue(user.avatarUrl) ||
       textValue(user.avatar_url) ||
@@ -385,25 +385,22 @@ export async function getUserByName(name: string): Promise<UserProfile | null> {
   return users.find((u) => u.name === cleanName) ?? null;
 }
 
+// Only bio and avatar are editable here, so name and email aren't sent.
+// That's a UI decision, not a guarantee: any caller with a valid JWT can send
+// them anyway, so the server has to reject those fields for this to hold (#49).
+// Matters most for `name` — the auth store is keyed by username, so a rename
+// is an identity change, not a cosmetic one.
 export async function updateCurrentUserProfile(
   userId: number,
-  update: { name: string; email: string; bio: string; avatarUrl?: string },
+  update: { bio: string; avatarUrl?: string },
 ): Promise<SessionUser> {
-  const cleanName = update.name.trim();
-  const cleanEmail = update.email.trim();
   const cleanBio = update.bio.trim();
-
-  if (!cleanName || !cleanEmail) {
-    throw new Error("Name and email are required.");
-  }
 
   const user = normalizeUser(
     await requestJson<unknown>(`/users/update/${userId}`, {
       method: "PUT",
       body: JSON.stringify({
-        name: cleanName,
-        email: cleanEmail,
-        bio: cleanBio || "No profile info yet.",
+        bio: cleanBio || "Placeholder bio.",
         ...(update.avatarUrl ? { avatarUrl: update.avatarUrl } : {}),
       }),
     }),

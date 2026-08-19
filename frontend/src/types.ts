@@ -2,6 +2,8 @@ export type Page =
   | "welcome"
   | "home"
   | "help"
+  | "privacy"
+  | "terms"
   | "users"
   | "user-detail"
   | "friends"
