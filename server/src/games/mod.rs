@@ -328,9 +328,20 @@ pub async fn play_game_ws(
                                             winner_id,
                                         );
 
-                                        let p1_ach = crate::model::achievements::check_and_unlock_achievements_in_db(&mut db, p1_id).unwrap_or_default();
-                                        let p2_ach = crate::model::achievements::check_and_unlock_achievements_in_db(&mut db, p2_id).unwrap_or_default();
-
+                                        let p1_ach = match crate::model::achievements::check_and_unlock_achievements_in_db(&mut db, p1_id) {
+                                            Ok(v) => v,
+                                            Err(e) => {
+                                                eprintln!("[games] Failed to unlock achievements for p1 (user_id={}): {}", p1_id, e);
+                                                Vec::new()
+                                            }
+                                        };
+                                        let p2_ach = match crate::model::achievements::check_and_unlock_achievements_in_db(&mut db, p2_id) {
+                                            Ok(v) => v,
+                                            Err(e) => {
+                                                eprintln!("[games] Failed to unlock achievements for p2 (user_id={}): {}", p2_id, e);
+                                                Vec::new()
+                                            }
+                                        };
                                         let (p1_session, p2_session) = {
                                             let lobby_lock = pool_task.lobby.lock().unwrap();
                                             if let Some(room) = lobby_lock.rooms.get(&room_id_task) {
