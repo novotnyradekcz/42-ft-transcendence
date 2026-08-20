@@ -355,3 +355,155 @@ pub fn find_user_id_by_name(
         .first::<i32>(connection(db))
         .optional()
 }
+
+/// Reasons why a friendlist mutation will not apply
+///
+/// `Option<UserInfo>` is insufficient -> None could mean "no such user"
+/// or "there was a race on the column" eg someone made two concurrent
+/// different changes at once
+pub enum FriendlistUpdateError {
+    /// The user to be befriended does not exist
+    NotFound,
+    /// You can't befriend yourself
+    SelfReference,
+    /// A race occured - best for the client to just try again.
+    Conflict,
+    /// An unforeseen DB error
+    DatabaseError(diesel::result::Error),
+}
+
+impl From<diesel::result::Error> for FriendlistUpdateError {
+    fn from(e: diesel::result::Error) -> Self {
+        FriendlistUpdateError::DatabaseError(e)
+    }
+}
+
+/// Adds friend to list. Returns `None` if no change happened
+fn add_friend_to_list(list: &[i32], friend: i32) -> Option<Vec<i32>> {
+    if list.contains(&friend) {
+        return None;
+    }
+
+    let mut new = list.to_vec();
+    new.push(friend);
+    Some(new)
+}
+
+/// Returns `None` if exfriend was not in the list to begin with
+fn remove_exfriend_from_list(list: &[i32], exfriend: i32) -> Option<Vec<i32>> {
+    if !list.contains(&exfriend) {
+        return None;
+    }
+
+    let new: Vec<i32> = list.iter().copied().filter(|id| *id != exfriend).collect();
+    Some(new)
+}
+
+fn update_friendlist_in_db(
+    db: &mut DatabaseInitializer,
+    user_id: i32,
+    other_id: i32,
+    apply: fn(&[i32], i32) -> Option<Vec<i32>>,
+) -> Result<UserInfo, FriendlistUpdateError> {
+    use crate::schema::ftt_users::dsl::*;
+
+    if user_id == other_id {
+        return Err(FriendlistUpdateError::SelfReference);
+    }
+
+    let conn = connection(db);
+
+    let current = ftt_users
+        .filter(id.eq(user_id))
+        .select(DbUser::as_select())
+        .first::<DbUser>(conn)
+        .optional()?
+        .ok_or(FriendlistUpdateError::NotFound)?;
+
+    let other_exists = ftt_users
+        .filter(id.eq(other_id))
+        .select(id)
+        .first::<i32>(conn)
+        .optional()?
+        .is_some();
+
+    if !other_exists {
+        return Err(FriendlistUpdateError::NotFound);
+    }
+
+    // The `else` arm is the idempotency exercise - when the user already
+    // has `other` in friendlist nothing happens.
+    let Some(new) = apply(&current.friends.0, other_id) else {
+        return Ok(UserInfo::from(current));
+    };
+
+    diesel::update(
+        ftt_users
+            .filter(id.eq(user_id))
+            .filter(friends.eq(current.friends.clone())),
+    )
+    .set(friends.eq(FriendList(new)))
+    .returning(DbUser::as_returning())
+    .get_result::<DbUser>(conn)
+    .optional()?
+    .map(UserInfo::from)
+    .ok_or(FriendlistUpdateError::Conflict)
+}
+
+pub fn befriend_in_db(
+    db: &mut DatabaseInitializer,
+    user_id: i32,
+    friend_id: i32,
+) -> Result<UserInfo, FriendlistUpdateError> {
+    update_friendlist_in_db(db, user_id, friend_id, add_friend_to_list)
+}
+
+pub fn unfriend_in_db(
+    db: &mut DatabaseInitializer,
+    user_id: i32,
+    exfriend_id: i32,
+) -> Result<UserInfo, FriendlistUpdateError> {
+    update_friendlist_in_db(db, user_id, exfriend_id, remove_exfriend_from_list)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn adding_a_new_friend_appends_it() {
+        assert_eq!(add_friend_to_list(&[1, 2], 3), Some(vec![1, 2, 3]));
+    }
+
+    #[test]
+    fn adding_an_existing_friend_is_a_no_op() {
+        assert_eq!(add_friend_to_list(&[1, 2], 2), None);
+    }
+
+    #[test]
+    fn adding_to_an_empty_list_works() {
+        assert_eq!(add_friend_to_list(&[], 7), Some(vec![7]));
+    }
+
+    #[test]
+    fn removing_a_friend_drops_only_that_one() {
+        assert_eq!(remove_exfriend_from_list(&[1, 2, 3], 2), Some(vec![1, 3]));
+    }
+
+    #[test]
+    fn removing_an_absent_friend_is_a_no_op() {
+        assert_eq!(remove_exfriend_from_list(&[1, 2], 9), None);
+    }
+
+    #[test]
+    fn removing_from_an_empty_list_is_a_no_op() {
+        assert_eq!(remove_exfriend_from_list(&[], 1), None);
+    }
+
+    /// The column should never hold duplicates, but if one ever got in,
+    /// removing must clear every copy rather than leave a stale one behind.
+    #[test]
+    fn removing_clears_every_duplicate() {
+        assert_eq!(remove_exfriend_from_list(&[1, 2, 2, 3], 2), Some(vec![1, 3]));
+    }
+}
