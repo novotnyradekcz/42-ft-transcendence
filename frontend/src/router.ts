@@ -1,5 +1,13 @@
-// url to page mapping, in its own file so providers can import it
-// without tripping the only-export-components lint rule
+// The URL <-> page mapping, plus where the `back` command goes from each page.
+//
+// Only PAGE_PATHS is exhaustive — it's Record<Page, string>, so a new page
+// won't compile until it has a path. The other two are on you. PAGE_PARENTS is
+// partial on purpose (a page missing from it is a root), and pageFromPath() is
+// a hand-written chain that quietly answers "welcome" for anything it doesn't
+// recognise. Adding a page means checking both of those by hand.
+
+// separate from the providers because a file exporting components can't also
+// export plain values without tripping the only-export-components lint rule
 import type { Page } from "./types";
 
 // path for every page
@@ -53,6 +61,9 @@ export function parentPath(page: Page, isLoggedIn: boolean): string | null {
   return PAGE_PATHS[parent];
 }
 
+// the reverse of PAGE_PATHS. detail pages share a prefix with their list page,
+// so the longer /show/:id match has to be tested before the bare /show one.
+// anything unrecognised falls back to the front page rather than erroring
 export function pageFromPath(pathname: string): Page {
   if (pathname === "/" || pathname === "") return "welcome";
   if (pathname === "/menu") return "home";

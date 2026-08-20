@@ -1,3 +1,16 @@
+// Plays one match: an uploaded Lua game, run in the browser by wasmoon, against
+// an opponent matched over a websocket.
+//
+// The screen is a 40x20 character grid. The script draws into it by calling the
+// functions handed to it below, and the two players' scripts talk to each other
+// by passing strings through the server.
+//
+// The script is untrusted — anyone with an account can upload one — so
+// everything it hands back is bounded before it reaches the DOM: coordinates
+// clamped to the grid, strings truncated, colours checked against a pattern,
+// and outgoing frames length-capped. It also gets its own wasm heap, which has
+// to be closed by hand on every path that ends the game.
+
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LuaFactory, type LuaEngine } from "wasmoon";
@@ -7,11 +20,17 @@ import { PAGE_PATHS } from "../router";
 import type { GameSummary } from "../types";
 import { useWebSocket } from "../hooks/useWebSocket";
 
+// the playfield, in characters. the lua side addresses it 1-based
 const GRID_COLS = 40;
 const GRID_ROWS = 20;
+// ceiling on what one send_message() call may put on the wire
 const MAX_PAYLOAD_LEN = 2000;
+// colours go straight into a style attribute, so only names, hex and rgb-ish
+// lists get through — anything else falls back to green rather than being
+// passed along
 const SAFE_COLOR_REGEX = /^[a-zA-Z0-9#,-]+$/;
 
+// a blank playfield. also what a script's clear_screen() gets
 const createEmptyGrid = () =>
   Array.from({ length: GRID_ROWS }, () =>
     Array.from({ length: GRID_COLS }, () => ({
@@ -31,6 +50,7 @@ const flattenGrid = (rows: Cell[][]): Cell[] => {
   return flat;
 };
 
+// one character on the grid
 type Cell = {
   char: string;
   color: string;
@@ -62,13 +82,20 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
     setGrid(flattenGrid(createEmptyGrid()));
   }
 
+  // connecting -> waiting -> playing, or off to disconnected/error from any of
+  // them. what the status bar says, and whether clicks reach the script
   const [status, setStatus] = useState<
     "connecting" | "waiting" | "playing" | "disconnected" | "error"
   >("connecting");
   const [statusMessage, setStatusMessage] = useState(t("Connecting to server..."));
 
   const luaEngineRef = useRef<LuaEngine | null>(null);
+  // the grid the Lua callbacks write into. a ref, not state: a script can draw
+  // hundreds of cells per frame, and each one triggering a render would make
+  // the game unplayable. forceUpdate() publishes the ref once per frame instead.
   const gridRef = useRef<Cell[][]>(createEmptyGrid());
+  // status and t are read from inside long-lived socket callbacks, which close
+  // over the render that created them — the refs give them the current values
   const statusRef = useRef(status);
   const tRef = useRef(t);
 
@@ -84,6 +111,9 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
     setGrid(flattenGrid(gridRef.current));
   };
 
+  // wasmoon holds wasm memory outside the GC's reach, so an engine that isn't
+  // closed leaks. every path that ends a game — error, disconnect, unmount, or
+  // a new match_start — goes through here.
   const cleanupLua = () => {
     if (luaEngineRef.current) {
       try {
@@ -95,6 +125,8 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
     }
   };
 
+  // clicks are the only input a game gets. a script that throws here loses its
+  // engine rather than being left half-running
   const handleCellClick = async (x: number, y: number) => {
     if (statusRef.current !== "playing" || !luaEngineRef.current) {
       return;
@@ -144,6 +176,8 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
             const lua = await factory.createEngine();
             luaEngineRef.current = lua;
 
+            // the four functions a game script is given. draw_cell is where
+            // the untrusted values arrive, so it's where they get bounded
             lua.global.set(
               "draw_cell",
               (x: unknown, y: unknown, text: unknown, color: unknown) => {
@@ -177,12 +211,14 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
               gridRef.current = createEmptyGrid();
             });
 
+            // the script's only way to reach the other player
             lua.global.set("send_message", (payload: unknown) => {
               const str = String(payload ?? "");
               if (str.length > MAX_PAYLOAD_LEN) return;
               sendMessage({ type: "game_action", data: str });
             });
 
+            // which side this browser is playing, so one script can be both
             lua.global.set("player_index", msg.player_index);
 
             try {

@@ -1,3 +1,7 @@
+// The two bits of terminal logic that more than one handler module needs, kept
+// here so authFlow, writeFlow and commandHandlers don't have to import each
+// other in a circle.
+
 import type { AuthFlow, WriteFlow } from "../../terminalTypes";
 import type { SessionUser } from "../../types";
 import { PAGE_PATHS } from "../../router";
@@ -12,6 +16,8 @@ export function startLoginFlow(
   deps.goTo(PAGE_PATHS.login);
 }
 
+// what the prompt reads. a running flow names the step it's on, so the label
+// itself tells the user what's being asked for; otherwise it's user@host
 export function getPromptLabel(
   authFlow: AuthFlow,
   writeFlow: WriteFlow,

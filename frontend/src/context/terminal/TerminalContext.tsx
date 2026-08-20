@@ -1,3 +1,16 @@
+// The command line: what's typed, what it does, and what the prompt says.
+//
+// Only the state and the wiring live here. The work is split into three handler
+// modules — authFlow, writeFlow and commandHandlers — which this file builds
+// each render and hands a `deps` object holding everything they need.
+//
+// Submitted input goes to whichever of the three is in charge: an auth flow if
+// one is running, then a write flow, otherwise it's a command.
+//
+// Two counters guard against late answers. flowEpoch is bumped on every cancel,
+// so a request that lands after the user pressed Ctrl+C is discarded rather
+// than acted on; helpMenuEpoch does the same for the ? menu's provider list.
+
 import {
   useCallback,
   useEffect,
@@ -38,6 +51,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     [location.pathname],
   );
 
+  // starts fetching the swear list now, so the first `write` isn't waiting on it
   useEffect(() => {
     initModeration();
   }, []);
@@ -77,8 +91,11 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       ? t("Type `menu` to enter.")
       : t("Type `login` or `register` to enter."),
   ]);
+  // bumped when the input should take focus; Terminal watches it. a counter
+  // rather than a boolean, so asking twice in a row still registers
   const [focusInputSignal, setFocusInputSignal] = useState(0);
 
+  // opening /users/login directly should arm the prompt, same as typing `login`
   const [authFlow, setAuthFlow] = useState<AuthFlow>(() => {
     const p = pageFromPath(window.location.pathname);
     if (p === "login") return { mode: "login", step: "name", name: "" };
@@ -141,11 +158,14 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     else setCommandHelpOpen(true);
   }
 
+  // what the footer advertises, and what the ? popover lists
   const availableCommands = useMemo(
     () => getAvailableCommands(page, Boolean(sessionUser)),
     [page, sessionUser],
   );
 
+  // the log keeps the last nine lines; the footer shows the newest one even
+  // when the log itself is hidden
   const addLine = useCallback((line: string) => {
     setTerminalLines((lines) => [...lines.slice(-8), line]);
   }, []);
@@ -174,6 +194,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, sessionUser?.id, isRestoring]);
 
+  // leaving a page abandons whatever was being written on it
   function clearWriteModes() {
     setWriteFlow(null);
     setWriteError("");
@@ -184,6 +205,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     navigate(path);
   }
 
+  // `back` walks the PAGE_PARENTS tree, not browser history — history would
+  // take the user back through pages they cancelled out of
   function goBack() {
     clearWriteModes();
     const target = parentPath(page, Boolean(sessionUser));
@@ -254,6 +277,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // one entry point for everything typed at the prompt: an auth flow gets first
+  // refusal, then a write flow, and anything else is a command
   async function handleCommandSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const rawInput = commandInput.trim();
@@ -275,6 +300,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     });
   }
 
+  // Ctrl+C and Esc cancel, the same way they would in a real terminal
   function handleCommandKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.ctrlKey && event.key.toLowerCase() === "c") {
       // selected text means the user is copying, not cancelling
@@ -292,6 +318,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // cancels the innermost thing that's running: a flow if there is one,
+  // otherwise it's read as `back`
   function cancelInputMode() {
     // invalidate in-flight requests first, so late replies get discarded
     flowEpoch.current += 1;
@@ -351,6 +379,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     await runBusy(() => executeCommand(commandName));
   }
 
+  // opens the second layer. everything but oauth is built from data already in
+  // memory, so only that one has a loading state to fill in
   function openHelpSubmenu(commandLabel: string) {
     const submenu = buildSubmenu(commandLabel, deps);
     setHelpSubmenu(submenu);
@@ -391,6 +421,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     setHelpSubmenu(null);
   }
 
+  // the text left of the cursor, e.g. `login/password:` or `nspalevi@...:$`
   function getPromptLabel(): string {
     return promptLabel(authFlow, writeFlow, sessionUser);
   }

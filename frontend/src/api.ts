@@ -1,3 +1,12 @@
+// Every call the app makes to the server, and the only place fetch() is used.
+// Callers get back the shapes in types.ts, never a raw server payload — the
+// normalize* functions in here do that conversion, and throw if a payload is
+// missing something the UI needs.
+//
+// This is also where the session token lives. login() puts the pair in memory,
+// every request attaches it, and an access token that expired mid-session is
+// refreshed and the request replayed once, so callers never see that 401.
+
 import type {
   DiscussionThread,
   GameHistoryItem,
@@ -225,6 +234,9 @@ function normalizedStatus(status: unknown): UserProfile["status"] {
   return status === "online" ? "online" : "offline";
 }
 
+// fills in a token pair from an unchecked payload. expires_in falling back to
+// 0 is load-bearing: login() and exchangeOAuthSession() both read that 0 back
+// as "the server didn't send a usable token"
 export function normalizeJwt(payload: JwtPayload): JwtObject {
   return {
     access_token: payload.access_token || "",
@@ -364,6 +376,9 @@ export async function listUsers(): Promise<UserProfile[]> {
   return users;
 }
 
+// one user by id, written back into knownUsers so later lookups see the change.
+// a 404 comes back as null rather than throwing — asking after a user who isn't
+// there is an answer, not a failure
 export async function getUser(id: number): Promise<UserProfile | null> {
   try {
     const user = normalizeUser(await requestJson<unknown>(`/users/show/${id}`));
@@ -380,6 +395,9 @@ export async function getUser(id: number): Promise<UserProfile | null> {
   }
 }
 
+// name lookup against the cache, falling back to a full listUsers() on a miss.
+// so a miss costs a whole-list request — fine at board size, but not what the
+// call site looks like it costs
 export async function getUserByName(name: string): Promise<UserProfile | null> {
   const cleanName = name.trim();
   const cached = knownUsers.find((u) => u.name === cleanName);

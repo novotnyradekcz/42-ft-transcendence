@@ -1,5 +1,15 @@
+// The vocabulary: every command that exists, which of them each page offers,
+// and which of them a guest is allowed.
+//
+// Three separate lists, on purpose. commandDefinitions is what can be typed and
+// what `help` prints; pageCommands is the much shorter list a page advertises in
+// its footer; GUEST_COMMANDS is the gate executeCommand() applies before running
+// anything. Doing what a command does is commandHandlers.ts's job, not this file's.
+
 import type { CommandDefinition, Page } from "./types";
 
+// every command, its aliases, and the one-line help. the only list of its kind:
+// executeCommand() resolves against it, so a word that isn't here can't run
 export const commandDefinitions: CommandDefinition[] = [
   {
     command: "help",
@@ -153,6 +163,11 @@ export const commandDefinitions: CommandDefinition[] = [
   },
 ];
 
+// What each page advertises, in the order the footer prints it. Deliberately
+// not derived from commandDefinitions: this is a shortlist of what's useful
+// where you are, not everything that would be accepted. Entries carrying a
+// <placeholder> are what the `?` popover offers a second layer of choices for
+// (see opensSubmenu), so the placeholder is load-bearing, not decoration.
 const pageCommands: Record<Page, string[]> = {
   welcome: [
     "menu",
@@ -199,9 +214,9 @@ const pageCommands: Record<Page, string[]> = {
   "game-leaderboard": ["games", "history", "menu", "back"],
 };
 
-// commands for guests (not logged in)
-// the policy pages are here on purpose: they are what you agree to by
-// registering, so they have to be readable before there is an account
+// what a signed-out visitor may run. the policy pages are on the list on
+// purpose: they are what you agree to by registering, so they have to be
+// readable before there is an account
 export const GUEST_COMMANDS = [
   "login",
   "register",
@@ -251,6 +266,8 @@ export function getAvailableCommands(page: Page, isLoggedIn = false): string[] {
   return commands;
 }
 
+// splits on whitespace; the name is lowercased so `MENU` works, arguments are
+// left as typed because some of them are user names
 export function parseCommand(input: string): { name: string; args: string[] } {
   const [name = "", ...args] = input.trim().split(/\s+/);
   return {
@@ -259,6 +276,7 @@ export function parseCommand(input: string): { name: string; args: string[] } {
   };
 }
 
+// matches a typed word against one definition, by name or by any of its aliases
 export function isCommand(input: string, command: CommandDefinition): boolean {
   return command.command === input || command.aliases.includes(input);
 }

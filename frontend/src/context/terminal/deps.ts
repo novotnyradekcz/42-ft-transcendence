@@ -1,3 +1,10 @@
+// The one object the three handler modules are given.
+//
+// They're plain factory functions rather than components, so they can't use
+// hooks — everything they need is collected here instead. TerminalContext
+// rebuilds it on every render, which is what keeps the closures they return
+// from reading stale state.
+
 import type { Dispatch, SetStateAction } from "react";
 import type { NavigateFunction } from "react-router-dom";
 import type { TranslateFn, Lang } from "../language/i18n";

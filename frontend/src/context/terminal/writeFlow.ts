@@ -1,3 +1,10 @@
+// Walks the three write prompts — a new discussion, a reply, and mail — and
+// posts the result.
+//
+// Which one `write` starts depends on the page it was typed on; there is no
+// separate command per kind. Everything the user types goes through censor()
+// before it's sent.
+
 import {
   createDiscussion,
   createPost,
@@ -25,10 +32,14 @@ export function createWriteFlowHandlers(deps: TerminalDeps) {
     t,
   } = deps;
 
+  // one line of input per step, same shape as the auth flow. the last step of
+  // each mode is the one that posts
   async function handleWriteFlowInput(rawInput: string) {
     if (!writeFlow || !sessionUser) return;
 
     if (writeFlow.mode === "mail") {
+      // the recipient is checked before the message is written, so a bad name
+      // isn't discovered after typing the whole thing
       if (writeFlow.step === "recipient") {
         const recipient = await getUserByName(rawInput).catch(() => null);
         if (!recipient) {
@@ -123,6 +134,7 @@ export function createWriteFlowHandlers(deps: TerminalDeps) {
     }
   }
 
+  // `write` means something different on each page, and nothing on most of them
   function handleWriteCommand() {
     if (!sessionUser) {
       addLine(t("login first to write."));
