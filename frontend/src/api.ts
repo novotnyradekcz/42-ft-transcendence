@@ -8,7 +8,7 @@ import type {
   SessionUser,
   UserProfile,
 } from "./types";
-import {CREDENTIALS_KEY, PH_USER_IMAGE, SESSION_USER_KEY} from "./constants";
+import {CREDENTIALS_KEY, SESSION_USER_KEY} from "./constants";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -255,8 +255,7 @@ export function normalizeUser(payload: unknown): UserProfile {
     avatarUrl:
       textValue(user.avatarUrl) ||
       textValue(user.avatar_url) ||
-      textValue(user.avatar) ||
-      PH_USER_IMAGE,
+      textValue(user.avatar),
     status: normalizedStatus(user.status),
     friends: friendsValue(user.friends),
   };

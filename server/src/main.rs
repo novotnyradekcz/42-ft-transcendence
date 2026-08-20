@@ -141,7 +141,8 @@ async fn main() -> std::io::Result<()> {
                             .service(get_user)
                             .service(logout)
                             .service(show_users)
-                            .service(user_detail),
+                            .service(user_detail)
+                            .service(update_user_profile),
                     )
                     .service(
                         web::scope("/games")
