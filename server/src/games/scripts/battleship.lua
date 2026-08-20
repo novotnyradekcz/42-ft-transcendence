@@ -109,9 +109,9 @@ local function draw_board()
     -- Right Control Panel
     draw_cell(23, 4, "FLEET SETUP", "yellow")
     
-    local c1 = (current_ship_idx == 1 and not my_ready) and "yellow" or (current_ship_idx > 1 or my_ready and "green" or "white")
-    local c2 = (current_ship_idx == 2 and not my_ready) and "yellow" or (current_ship_idx > 2 or my_ready and "green" or "white")
-    local c3 = (current_ship_idx == 3 and not my_ready) and "yellow" or (my_ready and "green" or "white")
+local c1 = (current_ship_idx == 1 and not my_ready) and "yellow" or (((current_ship_idx > 1) or my_ready) and "green" or "white")
+local c2 = (current_ship_idx == 2 and not my_ready) and "yellow" or (((current_ship_idx > 2) or my_ready) and "green" or "white")
+local c3 = (current_ship_idx == 3 and not my_ready) and "yellow" or (my_ready and "green" or "white")
 
     draw_cell(22, 6, "1. Battleship (3)", c1)
     draw_cell(22, 7, "2. Cruiser    (2)", c2)
@@ -296,8 +296,9 @@ function on_network_message(payload)
     local r, c = payload:match("^fire:(%d+),(%d+)")
     r = tonumber(r)
     c = tonumber(c)
-    if r and c then
-      if my_fleet[r][c] == "S" then
+    if r and c and r >= 1 and r <= GRID_SIZE and c >= 1 and c <= GRID_SIZE then
+      local cell = my_fleet[r][c]
+      if cell == "S" then
         my_fleet[r][c] = "X"
         my_ships_left = my_ships_left - 1
         status_msg = "ENEMY HIT your ship at " .. row_names[r] .. c .. "!"
@@ -311,9 +312,15 @@ function on_network_message(payload)
           send_message("game_over:" .. ((p_idx == 1) and 2 or 1))
           return
         end
-      else
+      elseif cell == "." then
         my_fleet[r][c] = "O"
         status_msg = "Enemy missed at " .. row_names[r] .. c .. "."
+        send_message("res:" .. r .. "," .. c .. ":M")
+      elseif cell == "X" then
+        status_msg = "Enemy fired again at " .. row_names[r] .. c .. " (already hit)."
+        send_message("res:" .. r .. "," .. c .. ":H")
+      elseif cell == "O" then
+        status_msg = "Enemy fired again at " .. row_names[r] .. c .. " (already missed)."
         send_message("res:" .. r .. "," .. c .. ":M")
       end
 
@@ -325,7 +332,7 @@ function on_network_message(payload)
     local r, c, res_type = payload:match("^res:(%d+),(%d+):([HM])")
     r = tonumber(r)
     c = tonumber(c)
-    if r and c then
+    if r and c and r >= 1 and r <= GRID_SIZE and c >= 1 and c <= GRID_SIZE then
       if res_type == "H" then
         radar[r][c] = "X"
         hits_scored = hits_scored + 1
