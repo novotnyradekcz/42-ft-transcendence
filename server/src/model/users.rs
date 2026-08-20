@@ -315,6 +315,34 @@ pub fn create_user_in_db(
     Ok(UserInfo::from(inserted_user))
 }
 
+/// Update user profile.
+/// Updates only bio and/or avatar since the rest isn't mutable per our design
+pub fn update_user_profile_in_db(
+    db: &mut DatabaseInitializer,
+    user_id: i32,
+    new_bio: Option<&str>,
+    new_avatar_url: Option<&str>,
+) -> Result<Option<UserInfo>, diesel::result::Error> {
+    // Pull diesel schemas in scope 
+    use crate::schema::ftt_users::dsl::*;
+
+    // check if there is what to change
+    if new_bio.is_none() && new_avatar_url.is_none() {
+        return get_user_in_db(db, user_id);
+    }
+
+    diesel::update(ftt_users.filter(id.eq(user_id)))
+        .set((
+            new_bio.map(|value| bio.eq(value)),
+            new_avatar_url.map(|value| avatar_url.eq(value)),
+        ))
+        .returning(DbUser::as_returning())
+        .get_result::<DbUser>(connection(db))
+        .optional()
+        // Option<DbUser> --> Option<UserInfo>
+        .map(|row| row.map(UserInfo::from))
+}
+
 pub fn find_user_id_by_name(
     db: &mut DatabaseInitializer,
     user_name: &str,
