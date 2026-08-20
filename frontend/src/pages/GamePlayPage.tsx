@@ -36,12 +36,7 @@ type Cell = {
   color: string;
 };
 
-type AchievementItem = {
-  id: number;
-  name: string;
-  description: string;
-  emoji: string;
-};
+type AchievementItem = import("../types").AchievementNotification;
 
 // frames the server sends over /games/play/ws
 type GameServerMessage =
