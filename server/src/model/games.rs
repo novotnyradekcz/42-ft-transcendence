@@ -151,6 +151,7 @@ pub struct LeaderboardEntry {
     pub losses: i32,
     pub draws: i32,
     pub win_loss_ratio: f64,
+    pub latest_achievements: Vec<String>,
 }
 
 pub fn save_game_history_in_db(
@@ -265,6 +266,9 @@ struct RawLeaderboardRow {
 pub fn get_leaderboard_in_db(
     db: &mut DatabaseInitializer,
 ) -> Result<Vec<LeaderboardEntry>, diesel::result::Error> {
+    use crate::schema::ftt_achievements::dsl as ach;
+    use crate::schema::ftt_player_achievements::dsl as pa;
+
     let conn = connection(db);
 
     let sql = "
@@ -311,17 +315,40 @@ pub fn get_leaderboard_in_db(
 
     let rows = diesel::sql_query(sql).load::<RawLeaderboardRow>(conn)?;
 
+    let user_ids: Vec<i32> = rows.iter().map(|r| r.user_id).collect();
+
+    let mut emoji_map: std::collections::HashMap<i32, Vec<String>> = std::collections::HashMap::new();
+    if !user_ids.is_empty() {
+        let player_emojis: Vec<(i32, String)> = pa::ftt_player_achievements
+            .inner_join(ach::ftt_achievements)
+            .filter(pa::user_id.eq_any(&user_ids))
+            .order((pa::user_id.asc(), pa::unlocked_at.desc(), pa::achievement_id.desc()))
+            .select((pa::user_id, ach::emoji))
+            .load::<(i32, String)>(conn)?;
+
+        for (uid, emoji) in player_emojis {
+            let list = emoji_map.entry(uid).or_default();
+            if list.len() < 3 {
+                list.push(emoji);
+            }
+        }
+    }
+
     let entries = rows
         .into_iter()
         .enumerate()
-        .map(|(idx, r)| LeaderboardEntry {
-            rank: (idx + 1) as i32,
-            user_id: r.user_id,
-            user_name: r.user_name,
-            wins: r.wins,
-            losses: r.losses,
-            draws: r.draws,
-            win_loss_ratio: r.win_loss_ratio,
+        .map(|(idx, r)| {
+            let latest_achievements = emoji_map.remove(&r.user_id).unwrap_or_default();
+            LeaderboardEntry {
+                rank: (idx + 1) as i32,
+                user_id: r.user_id,
+                user_name: r.user_name,
+                wins: r.wins,
+                losses: r.losses,
+                draws: r.draws,
+                win_loss_ratio: r.win_loss_ratio,
+                latest_achievements,
+            }
         })
         .collect();
 

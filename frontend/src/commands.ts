@@ -146,6 +146,12 @@ export const commandDefinitions: CommandDefinition[] = [
     description: "View top 10 players leaderboard.",
   },
   {
+    command: "achievements",
+    aliases: ["ach", "achieve"],
+    usage: "achievements",
+    description: "View game achievements.",
+  },
+  {
     command: "log",
     aliases: ["output"],
     usage: "log",
@@ -193,10 +199,11 @@ const pageCommands: Record<Page, string[]> = {
   "discussion-detail": ["write", "discussions", "menu", "back"],
   mail: ["list", "enter <number>", "write", "menu", "back"],
   "mail-detail": ["mail", "menu", "back"],
-  games: ["list", "enter <number>", "upload", "history", "leaderboard", "menu", "back"],
+  games: ["list", "enter <number>", "upload", "history", "leaderboard", "achievements", "menu", "back"],
   "game-play": ["back"],
-  "game-history": ["games", "leaderboard", "menu", "back"],
-  "game-leaderboard": ["games", "history", "menu", "back"],
+  "game-history": ["games", "leaderboard", "achievements", "menu", "back"],
+  "game-leaderboard": ["games", "history", "achievements", "menu", "back"],
+  "game-achievements": ["games", "history", "leaderboard", "menu", "back"],
 };
 
 // commands for guests (not logged in)

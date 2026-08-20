@@ -103,7 +103,7 @@ export default function GamesPage() {
 
       <div style={{ marginTop: "1.5rem", paddingTop: "0.75rem", borderTop: "1px dashed #fff" }}>
         <p className="terminal-copy" style={{ marginBottom: "0.5rem" }}>
-          {t("Enter `history` for your game history or `leaderboard` for top 10 players:")}
+          {t("Enter `history` for match history, `leaderboard` for top players, or `achievements` for badges:")}
         </p>
         <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
           <button
@@ -119,6 +119,13 @@ export default function GamesPage() {
             onClick={() => navigate(PAGE_PATHS["game-leaderboard"])}
           >
             {t("[ leaderboard ]")}
+          </button>
+          <button
+            type="button"
+            className="terminal-button"
+            onClick={() => navigate(PAGE_PATHS["game-achievements"])}
+          >
+            {t("[ achievements ]")}
           </button>
         </div>
 

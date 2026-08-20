@@ -86,6 +86,10 @@ pub enum WsServerMessage {
     GameAction {
         data: String,
     },
+    #[serde(rename = "achievement_unlocked")]
+    AchievementUnlocked {
+        achievements: Vec<crate::model::achievements::AchievementNotification>,
+    },
     #[serde(rename = "opponent_disconnected")]
     OpponentDisconnected,
 }
@@ -323,6 +327,39 @@ pub async fn play_game_ws(
                                             p2_id,
                                             winner_id,
                                         );
+
+                                        let p1_ach = crate::model::achievements::check_and_unlock_achievements_in_db(&mut db, p1_id).unwrap_or_default();
+                                        let p2_ach = crate::model::achievements::check_and_unlock_achievements_in_db(&mut db, p2_id).unwrap_or_default();
+
+                                        let (p1_session, p2_session) = {
+                                            let lobby_lock = pool_task.lobby.lock().unwrap();
+                                            if let Some(room) = lobby_lock.rooms.get(&room_id_task) {
+                                                (
+                                                    Some(room.player1.session.clone()),
+                                                    room.player2.as_ref().map(|p| p.session.clone()),
+                                                )
+                                            } else {
+                                                (None, None)
+                                            }
+                                        };
+
+                                        if !p1_ach.is_empty() {
+                                            if let Some(mut s1) = p1_session {
+                                                let msg = serde_json::to_string(&WsServerMessage::AchievementUnlocked {
+                                                    achievements: p1_ach,
+                                                }).unwrap();
+                                                let _ = s1.text(msg).await;
+                                            }
+                                        }
+
+                                        if !p2_ach.is_empty() {
+                                            if let Some(mut s2) = p2_session {
+                                                let msg = serde_json::to_string(&WsServerMessage::AchievementUnlocked {
+                                                    achievements: p2_ach,
+                                                }).unwrap();
+                                                let _ = s2.text(msg).await;
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -395,6 +432,30 @@ pub async fn play_game_ws(
                         p2_id,
                         winner_id,
                     );
+
+                    let p1_ach = crate::model::achievements::check_and_unlock_achievements_in_db(&mut db, p1_id).unwrap_or_default();
+                    let p2_ach = crate::model::achievements::check_and_unlock_achievements_in_db(&mut db, p2_id).unwrap_or_default();
+
+                    let (p1_notify, p2_notify) = (p1_ach, p2_ach);
+
+                    if player_index != 1 && !p1_notify.is_empty() {
+                        let mut s1 = session_clone.clone();
+                        let msg = serde_json::to_string(&WsServerMessage::AchievementUnlocked {
+                            achievements: p1_notify.clone(),
+                        }).unwrap();
+                        let _ = s1.text(msg).await;
+                    }
+
+                    if let Some(ref opp) = other_player {
+                        let opp_ach = if player_index == 1 { p2_notify } else { p1_notify };
+                        if !opp_ach.is_empty() {
+                            let mut opp_session = opp.session.clone();
+                            let msg = serde_json::to_string(&WsServerMessage::AchievementUnlocked {
+                                achievements: opp_ach,
+                            }).unwrap();
+                            let _ = opp_session.text(msg).await;
+                        }
+                    }
                 }
             }
 

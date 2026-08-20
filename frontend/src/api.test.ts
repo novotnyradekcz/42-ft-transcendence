@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildBasicAuthHeader,
   createGame,
+  getAchievements,
   getGameHistory,
   getLeaderboard,
   listFriends,
@@ -770,5 +771,40 @@ describe("getLeaderboard", () => {
     const [url] = mockFetch.mock.calls[0] as [string, RequestInit];
     expect(url).toContain("/games/leaderboard");
     expect(result).toEqual(mockLeaderboard);
+  });
+});
+
+describe("getAchievements", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("happy path: fetches user achievements list", async () => {
+    const mockAchievements = [
+      {
+        id: 1,
+        name: "Playa",
+        description: "Play your first game",
+        emoji: "🎮",
+        unlocked: true,
+        unlocked_at: "2026-08-20 06:00",
+      },
+      {
+        id: 2,
+        name: "Winner",
+        description: "Win your first game",
+        emoji: "🥇",
+        unlocked: false,
+        unlocked_at: null,
+      },
+    ];
+    const mockFetch = stubFetch(200, mockAchievements);
+
+    const result = await getAchievements();
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/games/achievements");
+    expect(result).toEqual(mockAchievements);
   });
 });

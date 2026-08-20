@@ -36,6 +36,13 @@ type Cell = {
   color: string;
 };
 
+type AchievementItem = {
+  id: number;
+  name: string;
+  description: string;
+  emoji: string;
+};
+
 // frames the server sends over /games/play/ws
 type GameServerMessage =
   | { type: "match_waiting" }
@@ -46,6 +53,7 @@ type GameServerMessage =
       script: string;
     }
   | { type: "game_action"; data: string }
+  | { type: "achievement_unlocked"; achievements: AchievementItem[] }
   | { type: "opponent_disconnected" };
 
 export default function GamePlayPage({ game }: { game: GameSummary | null }) {
@@ -66,6 +74,7 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
     "connecting" | "waiting" | "playing" | "disconnected" | "error"
   >("connecting");
   const [statusMessage, setStatusMessage] = useState(t("Connecting to server..."));
+  const [unlockedToasts, setUnlockedToasts] = useState<AchievementItem[]>([]);
 
   const luaEngineRef = useRef<LuaEngine | null>(null);
   const gridRef = useRef<Cell[][]>(createEmptyGrid());
@@ -216,6 +225,10 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
                 }
               }
             }
+          } else if (msg.type === "achievement_unlocked") {
+            if (msg.achievements && msg.achievements.length > 0) {
+              setUnlockedToasts((prev) => [...prev, ...msg.achievements]);
+            }
           } else if (msg.type === "opponent_disconnected") {
             setStatus("disconnected");
             setStatusMessage(tRef.current("Opponent disconnected. Game ended."));
@@ -259,7 +272,46 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
   }, [game, sessionUser]);
 
   return (
-    <div className="game-play-container">
+    <div className="game-play-container" style={{ position: "relative" }}>
+      {unlockedToasts.length > 0 && (
+        <div
+          style={{
+            position: "absolute",
+            top: "3rem",
+            right: "1rem",
+            zIndex: 100,
+            background: "rgba(0, 0, 0, 0.95)",
+            border: "2px solid #ffff00",
+            padding: "0.75rem 1rem",
+            borderRadius: "6px",
+            maxWidth: "320px",
+            boxShadow: "0 0 12px rgba(255, 255, 0, 0.6)",
+          }}
+        >
+          {unlockedToasts.map((toast, i) => (
+            <div key={i} style={{ marginBottom: i < unlockedToasts.length - 1 ? "0.6rem" : 0 }}>
+              <p style={{ margin: 0, color: "#ffff00", fontWeight: "bold", fontSize: "0.9rem" }}>
+                🎉 {t("Achievement Unlocked!")}
+              </p>
+              <p style={{ margin: "0.2rem 0", color: "#fff", fontWeight: "bold" }}>
+                {toast.emoji} {toast.name}
+              </p>
+              <p style={{ margin: 0, color: "#ccc", fontSize: "0.85rem" }}>
+                {toast.description}
+              </p>
+            </div>
+          ))}
+          <button
+            type="button"
+            className="terminal-button"
+            style={{ marginTop: "0.6rem", width: "100%" }}
+            onClick={() => setUnlockedToasts([])}
+          >
+            {t("[ OK ]")}
+          </button>
+        </div>
+      )}
+
       <div className="game-status-bar">
         <span className="game-title">{game?.name}</span>
         <span className="game-msg">

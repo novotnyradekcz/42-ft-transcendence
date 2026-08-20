@@ -30,6 +30,7 @@ export const cs: Record<string, string> = {
   "No game history found.": "Nenalezena žádná historie her.",
   "Loading leaderboard...": "Načítání žebříčku...",
   "No leaderboard data available.": "Žádná data pro žebříček nejsou k dispozici.",
+  "Win rate": "Podíl výher",
   "Enter `history` for your game history or `leaderboard` for top 10 players:": "Zadejte `history` pro historii her nebo `leaderboard` pro žebříček 10 nejlepších hráčů:",
   "[ history ]": "[ historie ]",
   "[ leaderboard ]": "[ žebříček ]",

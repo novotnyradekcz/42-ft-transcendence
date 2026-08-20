@@ -76,16 +76,37 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    ftt_achievements (id) {
+        id -> Int4,
+        name -> Text,
+        description -> Text,
+        emoji -> Text,
+    }
+}
+
+diesel::table! {
+    ftt_player_achievements (user_id, achievement_id) {
+        user_id -> Int4,
+        achievement_id -> Int4,
+        unlocked_at -> Timestamp,
+    }
+}
+
 diesel::joinable!(ftt_games -> ftt_users (author));
 diesel::joinable!(ftt_posts -> ftt_users (author));
 diesel::joinable!(ftt_posts -> ftt_discussions (discussion_id));
 diesel::joinable!(ftt_game_history -> ftt_games (game_id));
+diesel::joinable!(ftt_player_achievements -> ftt_users (user_id));
+diesel::joinable!(ftt_player_achievements -> ftt_achievements (achievement_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
+    ftt_achievements,
     ftt_discussions,
     ftt_game_history,
     ftt_games,
     ftt_mail,
+    ftt_player_achievements,
     ftt_posts,
     ftt_token_blacklist,
     ftt_users,

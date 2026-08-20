@@ -38,13 +38,18 @@ export default function GameLeaderboardPage() {
             <li key={item.user_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <strong>{item.user_name}</strong>
+                {item.latest_achievements && item.latest_achievements.length > 0 && (
+                  <span style={{ marginLeft: "0.5rem" }} title={t("Latest achievements")}>
+                    {item.latest_achievements.join(" ")}
+                  </span>
+                )}
               </div>
               <div>
                 <small style={{ marginRight: "1rem" }}>
                   {item.wins}W / {item.losses}L / {item.draws}D
                 </small>
                 <span style={{ color: "#ffff00", fontWeight: "bold" }}>
-                  Ratio: {item.win_loss_ratio.toFixed(4)}
+                  {t("Win rate")}: {item.win_loss_ratio.toFixed(4)}
                 </span>
               </div>
             </li>

@@ -6,6 +6,7 @@ import type {
   JwtObject,
   MailMessage,
   SessionUser,
+  UserAchievement,
   UserProfile,
 } from "./types";
 import {CREDENTIALS_KEY, PH_USER_IMAGE, SESSION_USER_KEY} from "./constants";
@@ -522,6 +523,10 @@ export async function getGameHistory(): Promise<GameHistoryItem[]> {
 
 export async function getLeaderboard(): Promise<LeaderboardItem[]> {
   return requestJson<LeaderboardItem[]>("/games/leaderboard");
+}
+
+export async function getAchievements(): Promise<UserAchievement[]> {
+  return requestJson<UserAchievement[]>("/games/achievements");
 }
 
 export async function exchangeOAuthSession(): Promise<SessionUser | null> {

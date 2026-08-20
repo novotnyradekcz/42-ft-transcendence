@@ -17,7 +17,8 @@ export type Page =
   | "games"
   | "game-play"
   | "game-history"
-  | "game-leaderboard";
+  | "game-leaderboard"
+  | "game-achievements";
 
 export type UserProfile = {
   id: number;
@@ -93,6 +94,23 @@ export type LeaderboardItem = {
   losses: number;
   draws: number;
   win_loss_ratio: number;
+  latest_achievements?: string[];
+};
+
+export type UserAchievement = {
+  id: number;
+  name: string;
+  description: string;
+  emoji: string;
+  unlocked: boolean;
+  unlocked_at: string | null;
+};
+
+export type AchievementNotification = {
+  id: number;
+  name: string;
+  description: string;
+  emoji: string;
 };
 
 
