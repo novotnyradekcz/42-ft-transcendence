@@ -663,7 +663,11 @@ pub async fn get_achievements(
         }
     };
 
-    let _ = crate::model::achievements::check_and_unlock_achievements_in_db(&mut db, user_id);
+    if let Err(err) = crate::model::achievements::check_and_unlock_achievements_in_db(&mut db, user_id) {
+        return HttpResponse::InternalServerError().json(serde_json::json!({
+            "message": format!("Could not check achievements: {}", err),
+        }));
+    }
 
     match crate::model::achievements::get_user_achievements_in_db(&mut db, user_id) {
         Ok(achievements) => HttpResponse::Ok().json(achievements),
