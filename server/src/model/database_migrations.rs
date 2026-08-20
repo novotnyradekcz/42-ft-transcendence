@@ -1,5 +1,8 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
+//! Embeds the `migrations/` directory into the binary and runs whatever is
+//! pending at startup, so a fresh database needs no separate diesel CLI step.
+
 use diesel::PgConnection;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 
