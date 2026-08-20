@@ -34,15 +34,16 @@ pub fn seed_games_in_db(db: &mut DatabaseInitializer) -> Result<(), diesel::resu
         .unwrap_or(2); // fallback to ID 2 (which is admin's ID)
 
     let tic_tac_toe_lua = include_str!("../games/scripts/tic_tac_toe.lua");
+    let battleship_lua = include_str!("../games/scripts/battleship.lua");
 
     // Check if Tic-Tac-Toe game already exists
-    let existing_game_id = ftt_games
+    let existing_ttt_id = ftt_games
         .filter(name.eq("Tic-Tac-Toe"))
         .select(id)
         .first::<i32>(conn)
         .optional()?;
 
-    if let Some(existing_id) = existing_game_id {
+    if let Some(existing_id) = existing_ttt_id {
         diesel::update(ftt_games.filter(id.eq(existing_id)))
             .set((
                 author.eq(admin_id),
@@ -55,6 +56,30 @@ pub fn seed_games_in_db(db: &mut DatabaseInitializer) -> Result<(), diesel::resu
                 author.eq(admin_id),
                 name.eq("Tic-Tac-Toe"),
                 body.eq(tic_tac_toe_lua),
+            ))
+            .execute(conn)?;
+    }
+
+    // Check if Battleship game already exists
+    let existing_bs_id = ftt_games
+        .filter(name.eq("Battleship"))
+        .select(id)
+        .first::<i32>(conn)
+        .optional()?;
+
+    if let Some(existing_id) = existing_bs_id {
+        diesel::update(ftt_games.filter(id.eq(existing_id)))
+            .set((
+                author.eq(admin_id),
+                body.eq(battleship_lua),
+            ))
+            .execute(conn)?;
+    } else {
+        diesel::insert_into(ftt_games)
+            .values((
+                author.eq(admin_id),
+                name.eq("Battleship"),
+                body.eq(battleship_lua),
             ))
             .execute(conn)?;
     }

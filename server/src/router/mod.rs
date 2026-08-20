@@ -21,13 +21,13 @@ use crate::model::users::{CreateUserError, find_user_by_name_in_db};
 use crate::session::{
     LogoutRequest, extract_access_claims, invalidate_claim, is_revoked, revoke_refresh_token,
 };
-use crate::users::CreateUser;
+use crate::users::{CreateUser, UpdateProfile};
 use crate::model::{discussions, mails, users};
 use crate::AppState;
 use actix_security::http::security::{PasswordEncoder, User};
 use actix_security::permit_all;
 use actix_security::prelude::AuthenticatedUser;
-use actix_web::{get, HttpRequest, HttpResponse, post, Responder, web};
+use actix_web::{get, HttpRequest, HttpResponse, post, put, Responder, web};
 use serde_json;
 use std::sync::Arc;
 
@@ -283,6 +283,70 @@ pub async fn user_detail(
         })),
         Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
             "message": format!("Could not load user {}: {}", user_id, err),
+        })),
+    }
+}
+
+#[put("/update/{id}")]
+pub async fn update_user_profile(
+    pool: web::Data<Arc<AppState>>,
+    user: AuthenticatedUser,
+    path: web::Path<(i32,)>,
+    update: web::Json<UpdateProfile>,
+) -> impl Responder {
+    let target_id = path.into_inner().0;
+
+    if let Err(message) = update.validate() {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "message" : message,
+        }));
+    }
+
+    let username = user.into_inner().get_username().to_string();
+
+    let mut db = match pool.database.lock() {
+        Ok(db) => db,
+        Err(_) => {
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "message" : "Database lock failed."
+            }));
+        }
+    };
+
+    let session_id = match users::find_user_id_by_name(&mut db, &username) {
+        Ok(Some(id)) => id,
+        Ok(None) => {
+            return HttpResponse::Unauthorized().json(serde_json::json!({
+                "message" : "User not found in db."
+            }));
+        }
+        Err(err) => {
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": format!("User lookup failed: {}", err),
+            }));
+        }
+    };
+
+    if session_id != target_id {
+        return HttpResponse::Forbidden().json(serde_json::json!({
+            "message" : "User-mismatch, you are not editing your own profile."
+        }));
+    }
+
+    match users::update_user_profile_in_db(
+        &mut db,
+        session_id,
+        update.bio.as_deref(),
+        update.avatar_url.as_deref(),
+    ) {
+        Ok(Some(updated)) => HttpResponse::Ok().json(updated),
+        // This is just a shizo precaution. Row would need to be deleted
+        // between this and the lookup. Kept so the server does not panic.
+        Ok(None) => HttpResponse::NotFound().json(serde_json::json!({
+            "message": format!("User {} was not found.", target_id),
+        })),
+        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "message": format!("Could not update user {}: {}", target_id, err),
         })),
     }
 }
