@@ -103,21 +103,23 @@ pub fn check_and_unlock_achievements_in_db(
 
     let conn = connection(db);
 
-    // Fetch user stats from ftt_game_history
-    let user_history = gh::ftt_game_history
+    // Fetch user stats from ftt_game_history (avoid loading full history into memory)
+    let played_count = gh::ftt_game_history
         .filter(gh::player1_id.eq(target_user_id).or(gh::player2_id.eq(target_user_id)))
-        .select((gh::player1_id, gh::player2_id, gh::winner_id))
-        .load::<(i32, i32, Option<i32>)>(conn)?;
+        .count()
+        .get_result::<i64>(conn)? as i32;
 
-    let played_count = user_history.len() as i32;
-    let wins_count = user_history
-        .iter()
-        .filter(|(_, _, w)| *w == Some(target_user_id))
-        .count() as i32;
-    let losses_count = user_history
-        .iter()
-        .filter(|(_, _, w)| w.is_some() && *w != Some(target_user_id))
-        .count() as i32;
+    let wins_count = gh::ftt_game_history
+        .filter(gh::player1_id.eq(target_user_id).or(gh::player2_id.eq(target_user_id)))
+        .filter(gh::winner_id.eq(Some(target_user_id)))
+        .count()
+        .get_result::<i64>(conn)? as i32;
+
+    let losses_count = gh::ftt_game_history
+        .filter(gh::player1_id.eq(target_user_id).or(gh::player2_id.eq(target_user_id)))
+        .filter(gh::winner_id.is_not_null().and(gh::winner_id.ne(Some(target_user_id))))
+        .count()
+        .get_result::<i64>(conn)? as i32;
 
     // Fetch currently unlocked achievement IDs
     let already_unlocked: std::collections::HashSet<i32> = pa::ftt_player_achievements
