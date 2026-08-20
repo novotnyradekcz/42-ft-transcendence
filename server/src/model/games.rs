@@ -177,7 +177,7 @@ pub fn save_game_history_in_db(
         .get_result::<DbGameHistoryRecord>(conn)
 }
 
-use super::format_system_time;
+use chrono::{DateTime, Utc};
 
 pub fn get_game_history_for_user_in_db(
     db: &mut DatabaseInitializer,
@@ -215,7 +215,7 @@ pub fn get_game_history_for_user_in_db(
                 player2_name: p2_name,
                 winner_id: r.winner_id,
                 winner_name: w_name,
-                played_at: format_system_time(r.played_at),
+                played_at: DateTime::<Utc>::from(r.played_at).format("%Y-%m-%d %H:%M").to_string(),
             }
         })
         .collect();
@@ -243,8 +243,8 @@ struct RawLeaderboardRow {
 pub fn get_leaderboard_in_db(
     db: &mut DatabaseInitializer,
 ) -> Result<Vec<LeaderboardEntry>, diesel::result::Error> {
-    use crate::schema::ftt_achievements::dsl as ach;
-    use crate::schema::ftt_player_achievements::dsl as pa;
+    use crate::schema::ftt_achievements::dsl as achievements;
+    use crate::schema::ftt_player_achievements::dsl as player_achievements;
 
     let conn = connection(db);
 
@@ -296,11 +296,11 @@ pub fn get_leaderboard_in_db(
 
     let mut emoji_map: std::collections::HashMap<i32, Vec<String>> = std::collections::HashMap::new();
     if !user_ids.is_empty() {
-        let player_emojis: Vec<(i32, String)> = pa::ftt_player_achievements
-            .inner_join(ach::ftt_achievements)
-            .filter(pa::user_id.eq_any(&user_ids))
-            .order((pa::user_id.asc(), pa::unlocked_at.desc(), pa::achievement_id.desc()))
-            .select((pa::user_id, ach::emoji))
+        let player_emojis: Vec<(i32, String)> = player_achievements::ftt_player_achievements
+            .inner_join(achievements::ftt_achievements)
+            .filter(player_achievements::user_id.eq_any(&user_ids))
+            .order((player_achievements::user_id.asc(), player_achievements::unlocked_at.desc(), player_achievements::achievement_id.desc()))
+            .select((player_achievements::user_id, achievements::emoji))
             .load::<(i32, String)>(conn)?;
 
         for (uid, emoji) in player_emojis {

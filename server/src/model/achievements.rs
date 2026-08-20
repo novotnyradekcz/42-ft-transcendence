@@ -48,7 +48,7 @@ pub struct AchievementNotification {
     pub emoji: String,
 }
 
-use super::format_system_time;
+use chrono::{DateTime, Utc};
 
 pub fn get_user_achievements_in_db(
     db: &mut DatabaseInitializer,
@@ -77,7 +77,9 @@ pub fn get_user_achievements_in_db(
     let response = all_achievements
         .into_iter()
         .map(|a| {
-            let unlocked_at = unlocked_map.get(&a.id).cloned().map(format_system_time);
+            let unlocked_at = unlocked_map
+                .get(&a.id)
+                .map(|st| DateTime::<Utc>::from(*st).format("%Y-%m-%d %H:%M").to_string());
             let unlocked = unlocked_at.is_some();
             UserAchievementResponse {
                 id: a.id,
