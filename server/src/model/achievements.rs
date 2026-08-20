@@ -174,3 +174,22 @@ pub fn check_and_unlock_achievements_in_db(
 
     Ok(newly_unlocked)
 }
+
+pub fn check_game_achievements_for_players(
+    db: &mut DatabaseInitializer,
+    p1_id: i32,
+    p2_id: i32,
+) -> (Vec<AchievementNotification>, Vec<AchievementNotification>) {
+    let p1_ach = check_and_unlock_achievements_in_db(db, p1_id).unwrap_or_else(|e| {
+        eprintln!("[achievements] Failed to unlock achievements for player {p1_id}: {e}");
+        Vec::new()
+    });
+
+    let p2_ach = check_and_unlock_achievements_in_db(db, p2_id).unwrap_or_else(|e| {
+        eprintln!("[achievements] Failed to unlock achievements for player {p2_id}: {e}");
+        Vec::new()
+    });
+
+    (p1_ach, p2_ach)
+}
+
