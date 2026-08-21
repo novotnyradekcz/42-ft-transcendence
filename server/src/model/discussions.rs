@@ -1,3 +1,14 @@
+//! The `ftt_discussions` and `ftt_posts` tables.
+//!
+//! A post is tied to its thread through the `images` column, which holds the
+//! marker `discussion:<id>` rather than an image path. There is no foreign key:
+//! `discussions::discussion_marker()` builds that string and every thread query
+//! filters on it, so the two have to keep agreeing. `discussions::public_post()`
+//! strips it back out so the marker never reaches a client.
+//!
+//! `n_posts` is a counter on the discussion row rather than a COUNT, updated in
+//! the same transaction as the insert so the two can't drift apart.
+
 use diesel::prelude::*;
 use diesel::result::Error;
 use crate::discussions::{CreateDiscussion, CreatePost, DiscussionInfo};
@@ -142,6 +153,7 @@ impl<'a> NewPost<'a> {
     }
 }
 
+// a discussion plus the posts carrying its marker
 pub fn discussion_with_posts(
     conn: &mut PgConnection,
     discussion: Discussion,
@@ -177,6 +189,8 @@ pub fn get_discussion_in_db(
         .transpose()
 }
 
+// a new thread is a discussion row plus its opening post, both or neither —
+// hence the transaction, which also covers setting n_posts to 1
 pub fn create_discussion_in_db(
     db: &mut DatabaseInitializer,
     new_discussion: &CreateDiscussion,
@@ -222,6 +236,7 @@ pub fn create_discussion_in_db(
     })
 }
 
+// a reply, with the parent's n_posts bumped in the same transaction
 pub fn create_post_in_db(
     db: &mut DatabaseInitializer,
     discussion_id: i32,

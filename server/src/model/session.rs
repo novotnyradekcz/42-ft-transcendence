@@ -1,5 +1,11 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
+//! The `ftt_token_blacklist` table — the insert half of it.
+//!
+//! Revoked tokens are written here so a restart doesn't quietly hand every
+//! logged-out token its access back. Reads live in
+//! `session::load_valid_blacklisted_tokens`.
+
 use diesel::prelude::*;
 
 // Reads of the blacklist table go through `session::load_valid_blacklisted_tokens`,

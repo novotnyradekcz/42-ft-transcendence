@@ -1,3 +1,9 @@
+// The front page: the logo, and the three ways in.
+//
+// The only screen a signed-out visitor really has, so it has to explain itself
+// without assuming the user knows any commands yet. Members land here too —
+// after a logout, or by typing the root URL — hence the two states.
+
 import { useEffect, useState } from "react";
 import TerminalSection from "../components/TerminalSection";
 import { useSession } from "../context/session/useSession";
@@ -11,6 +17,8 @@ export default function WelcomePage() {
   // addLine writes is invisible to them
   const [providers, setProviders] = useState<OAuthProvider[]>([]);
 
+  // asked for rather than hardcoded, so the list can't offer a provider the
+  // server has no credentials for. skipped for members, who are already in.
   useEffect(() => {
     if (sessionUser) return;
     let cancelled = false;

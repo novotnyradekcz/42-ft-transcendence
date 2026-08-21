@@ -1,5 +1,17 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
+//! The HTTP authentication middleware: turns an `Authorization` header into a
+//! `User`, or into nothing.
+//!
+//! Both schemes the API uses are accepted — `Bearer base64(<jwt>)` and
+//! `Basic base64(user:pass)` — resolved against an in-memory store that is filled
+//! at boot from `ftt_users` and kept current by registration. The store holds the
+//! same hash the database does, so a password can be checked without a query.
+//!
+//! Note the base64 wrapper on the Bearer value: the JWT is encoded *again* inside
+//! it, which is the convention `api.ts` sends. A raw JWT is not valid base64, so
+//! sending one unwrapped fails here before any handler runs.
+
 use crate::AppState;
 use actix_security::http::security::{AuthorizationManager, RequestMatcherAuthorizer};
 use actix_security::prelude::{Argon2PasswordEncoder, Authenticator, PasswordEncoder, User};

@@ -1,3 +1,6 @@
+// The register screen. Same shape as LoginPage with an extra email step, and
+// the password step is never echoed back.
+
 import AuthPrompt from "../components/AuthPrompt";
 import TerminalSection from "../components/TerminalSection";
 import { useTerminal } from "../context/terminal/useTerminal";
@@ -6,6 +9,7 @@ import { useTranslation } from "../context/language/i18n";
 export default function RegisterPage() {
   const { authFlow, authError } = useTerminal();
   const { t } = useTranslation();
+  // narrowed by mode, so a login flow left in state can't drive this screen
   const flow = authFlow?.mode === "register" ? authFlow : null;
 
   return (

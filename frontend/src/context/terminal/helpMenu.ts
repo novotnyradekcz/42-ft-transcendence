@@ -1,6 +1,12 @@
-// second layer of the ? menu: the values a command can be completed with.
-// commands that take an argument used to just prefill the prompt and leave the
-// user to type the number, which meant reading it off the page first.
+// The second layer of the ? popover: for a command that takes an argument, the
+// list of values it can take.
+//
+// Commands like `enter 3` used to just prefill the prompt and leave the user to
+// find the number on the page. Instead this builds the choices — the rows of
+// the current list, the languages, the OAuth providers — and running one is a
+// click. The numbers are the same 1-based ones the page prints, so the two
+// always agree.
+
 import { fetchOAuthProviders } from "../../api";
 import { baseCommand } from "../../commands";
 import { LANGUAGES } from "../language/i18n";
@@ -22,6 +28,7 @@ export type HelpSubmenu = {
 // commands whose argument the menu can enumerate
 const LIST_COMMANDS = ["lang", "enter", "addfriend", "removefriend"];
 
+// whether the ? row for this command opens a second layer or just runs
 export function opensSubmenu(commandLabel: string): boolean {
   const name = baseCommand(commandLabel);
   // the provider list is fetched, so its label carries no <placeholder>
@@ -51,6 +58,7 @@ function enterOptions(deps: TerminalDeps): HelpOption[] {
   return [];
 }
 
+// the choices for one command. everything but oauth is already in memory
 export function buildSubmenu(
   commandLabel: string,
   deps: TerminalDeps,
@@ -82,6 +90,7 @@ export function buildSubmenu(
   return { ...base, options: [], loading: true };
 }
 
+// the one submenu that needs the network, filled in after buildSubmenu returns
 export async function loadOAuthOptions(): Promise<HelpOption[]> {
   const providers = await fetchOAuthProviders();
   return providers.map((provider) => ({

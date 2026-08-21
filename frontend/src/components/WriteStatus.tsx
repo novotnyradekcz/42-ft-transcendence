@@ -1,3 +1,8 @@
+// The banner a page shows while a write flow is running on it.
+//
+// Same job as AuthPrompt: the typing happens in the command line, so the page's
+// only role is to say what's being asked for and how to get out of it.
+
 import { useTranslation } from "../context/language/i18n";
 
 export default function WriteStatus({

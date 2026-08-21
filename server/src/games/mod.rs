@@ -1,5 +1,20 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
+//! Match play over WebSockets: matchmaking, relaying moves, and recording results.
+//!
+//! One `Lobby` holds every room. A player asking to play either joins the room
+//! already waiting on that game id or opens a new one; the second arrival starts
+//! the match, and both sides are sent the same Lua script to run locally.
+//!
+//! The server does not run the game or referee it. It relays opaque strings
+//! between the two clients and inspects exactly one thing — a `game_over:` prefix
+//! — so it knows when to write the result. Leaving mid-match is recorded as a
+//! forfeit for whoever stayed.
+//!
+//! Two rules hold throughout the socket task: never hold the lobby mutex across an
+//! `.await`, and check `conn_id` before acting on a room, since a reconnecting
+//! player leaves the old task running against a room it no longer owns.
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use actix_ws::{Session, Message};
@@ -20,6 +35,8 @@ pub struct GameInfo {
     pub body: String,
 }
 
+// conn_id is what distinguishes this connection from an earlier one by the same
+// user, so a reconnect can be told apart from the tab it replaced
 #[derive(Clone)]
 pub struct Player {
     pub user_id: i32,
@@ -40,9 +57,9 @@ pub struct Room {
 }
 
 pub struct Lobby {
-    // Maps room_id -> Room
+    // every room, live or waiting
     pub rooms: HashMap<String, Room>,
-    // Maps game_id -> waiting room_id
+    // at most one room per game may be waiting for a second player
     pub waiting_rooms: HashMap<i32, String>,
 }
 
@@ -116,7 +133,9 @@ pub async fn play_game_ws(
     let (auth_creds, selected_protocol) = extract_auth_from_protocols(&req)
         .ok_or_else(|| ErrorUnauthorized("Missing authentication subprotocol"))?;
  
-    // Validate credentials passed via the auth subprotocol (expects Basic Auth)
+    // Bearer is what the frontend sends; Basic is only a fallback for a session
+    // with no token yet. Either way the identity it resolves has to match the
+    // user_id in the query string — see validate_credentials.
     let user = validate_credentials(&pool, user_id, &auth_creds)?;
     let user_name = user.name;
 
@@ -136,7 +155,8 @@ pub async fn play_game_ws(
     let mut session_clone = session.clone();
     let conn_id = CONN_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-    // Lock lobby and matchmake
+    // matchmaking runs entirely under the lock and touches no network, so the
+    // whole decision is made before anything is awaited
     let mut lobby_lock = pool.lobby.lock().unwrap();
 
     let mut start_match = None;
@@ -147,7 +167,8 @@ pub async fn play_game_ws(
         // We found a waiting room!
         if let Some(room) = lobby_lock.rooms.get_mut(&waiting_id) {
             if room.player1.user_id == user_id {
-                // Same user reconnecting to their own waiting room: replace player 1's session
+                // the same user opening a second tab, not an opponent: take the
+                // room over rather than matching them against themselves
                 let old_session = room.player1.session.clone();
                 room.player1 = Player {
                     user_id,
@@ -263,7 +284,8 @@ pub async fn play_game_ws(
             }
         }
 
-        // Message receiver loop
+        // from here on the only job is relaying. the payload is never parsed —
+        // it means whatever the two copies of the script agree it means
         while let Some(Ok(msg)) = msg_stream.recv().await {
             match msg {
                 Message::Ping(bytes) => {
@@ -286,6 +308,9 @@ pub async fn play_game_ws(
                                             Some(room.player1.session.clone())
                                         };
 
+                                        // the one prefix the server reads. guarded by
+                                        // is_finished so both clients announcing the
+                                        // same result still writes one row
                                         let game_over_info = if data.starts_with("game_over:") && !room.is_finished {
                                             room.is_finished = true;
                                             let val = &data["game_over:".len()..];
@@ -336,7 +361,8 @@ pub async fn play_game_ws(
             }
         }
 
-        // Clean up connection
+        // teardown. only the connection that currently owns the room may tear it
+        // down — an older task for a reconnected player must not
         let cleanup_action = {
             let mut lobby_lock = pool_task.lobby.lock().unwrap();
             if let Some(room) = lobby_lock.rooms.get(&room_id_task) {

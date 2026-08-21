@@ -1,3 +1,7 @@
+// What TerminalProvider exposes. Roughly three groups: the command line itself,
+// the flow state for whatever multi-step prompt is running, and the handlers
+// the input and the ? popover call into.
+
 import type {
   Dispatch,
   FormEvent,
@@ -10,7 +14,6 @@ import type { Page } from "../../types";
 
 export type { AuthFlow, WriteFlow };
 
-// shape of the terminal context
 export interface TerminalContextValue {
   // current text in the command input
   commandInput: string;

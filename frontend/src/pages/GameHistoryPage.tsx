@@ -1,3 +1,9 @@
+// Your past matches, newest first.
+//
+// Win or loss is worked out here rather than sent by the server, because the
+// rows are neutral — they name both players and the winner, and which of those
+// is "you" depends on who is asking.
+
 import { useEffect, useState } from "react";
 import { getGameHistory } from "../api";
 import TerminalSection from "../components/TerminalSection";
@@ -5,13 +11,20 @@ import { useSession } from "../context/session/useSession";
 import { useTranslation } from "../context/language/i18n";
 import type { GameHistoryItem } from "../types";
 
+// fetches for itself instead of going through DataContext: /games/history is
+// scoped to the caller's token and read nowhere else, and the rows carry their
+// own player names, so no user list is needed
 export default function GameHistoryPage() {
   const { sessionUser } = useSession();
   const { t } = useTranslation();
   const [history, setHistory] = useState<GameHistoryItem[]>([]);
+  // starts false for guests: no request goes out for them, so a spinner would
+  // never resolve
   const [loading, setLoading] = useState(() => Boolean(sessionUser));
   const [error, setError] = useState("");
 
+  // guests never get here through the UI, but the check keeps a direct URL from
+  // firing a request that would only 401
   useEffect(() => {
     if (!sessionUser) return;
 
@@ -36,6 +49,8 @@ export default function GameHistoryPage() {
     );
   }
 
+  // win/loss is relative to whoever is signed in, so it's decided here rather
+  // than sent by the server
   const getResultBadge = (item: GameHistoryItem) => {
     if (item.winner_id === null) {
       return <span style={{ color: "yellow", fontWeight: "bold" }}>[{t("DRAW")}]</span>;
@@ -46,6 +61,7 @@ export default function GameHistoryPage() {
     return <span style={{ color: "#ff4444", fontWeight: "bold" }}>[{t("LOSS")}]</span>;
   };
 
+  // the row names both players without saying which one is you
   const getOpponentName = (item: GameHistoryItem) => {
     if (item.player1_id === sessionUser.id) {
       return item.player2_name;

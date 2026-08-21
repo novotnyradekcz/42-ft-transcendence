@@ -1,5 +1,8 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
+//! The user shapes that cross the HTTP boundary: what registration accepts, and
+//! what the API gives back. The database side is `model::users`.
+
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
@@ -59,6 +62,8 @@ impl CreateUser {
     }
 }
 
+// what every user-facing route returns. no password field, so a hash cannot be
+// serialised into a response by accident
 #[derive(Serialize, Deserialize, Debug)]
 pub struct UserInfo {
     pub id: i32,

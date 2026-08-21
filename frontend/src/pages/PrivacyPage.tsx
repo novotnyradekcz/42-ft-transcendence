@@ -1,10 +1,14 @@
+// The privacy policy, as static text.
+//
+// Reachable without a session on purpose — it's part of what you agree to by
+// registering, so it has to be readable before there's an account.
+
 import TerminalSection from "../components/TerminalSection";
 import { useTranslation } from "../context/language/i18n";
 
-// Reachable without a session
-// The body is deliberately English-only — legal wording is not something the
-// UI dictionary should be paraphrasing into three languages. The notice below
-// says so, and that notice is translated.
+// the body is deliberately English-only: legal wording isn't something the UI
+// dictionary should be paraphrasing into three languages. the notice saying so
+// is the one part that is translated
 export default function PrivacyPage() {
   const { t } = useTranslation();
 

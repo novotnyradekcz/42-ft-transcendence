@@ -1,3 +1,10 @@
+// Walks the login and register prompts, one field per submitted line.
+//
+// The last step is the only one that talks to the server. The user can cancel
+// while that request is in flight, and it may still succeed — so the epoch
+// check below logs the resulting session straight back out rather than leaving
+// them signed in after they pressed Ctrl+C.
+
 import { PAGE_PATHS } from "../../router";
 import type { TerminalDeps } from "./deps";
 import { errMsg } from "../../errors";
@@ -26,6 +33,8 @@ export function createAuthFlowHandlers(deps: TerminalDeps) {
     return true;
   }
 
+  // one line of input = one step. the early steps just record the answer and
+  // move on; the password step is what actually submits
   async function handleAuthFlowInput(rawInput: string) {
     if (!authFlow) return;
 
@@ -45,11 +54,13 @@ export function createAuthFlowHandlers(deps: TerminalDeps) {
         navigate(PAGE_PATHS.home);
         addLine(t("logged in as {name}.", { name: nextUser.name }));
       } catch (error) {
+        // a cancelled flow shouldn't report a failure the user isn't waiting on
         if (flowEpoch.current !== loginEpoch) return;
         setAuthError(errMsg(error, t("Login failed.")));
         addLine(
           t("login failed. press Ctrl+C or Esc to quit, or enter name again."),
         );
+        // back to the first step rather than dropped, so a typo can be retried
         setAuthFlow({ mode: "login", step: "name", name: "" });
       }
       return;
