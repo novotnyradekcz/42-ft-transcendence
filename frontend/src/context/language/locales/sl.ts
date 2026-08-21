@@ -48,7 +48,7 @@ export const sl: Record<string, string> = {
   "friends - saved users and online status":
     "friends - shranjeni uporabniki in stanje povezave",
   "mail - non-live personal messages": "mail - osebna sporočila brez živega klepeta",
-  "games - empty for now": "games - zaenkrat prazno",
+  "games - you can play with your mates": "games - lahko igraš s prijatelji",
   "logout - end this session": "logout - končaj to sejo",
   "login / register - account access": "login / register - dostop do računa",
   "No users available.": "Ni razpoložljivih uporabnikov.",
