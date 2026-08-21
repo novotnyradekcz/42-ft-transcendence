@@ -142,7 +142,9 @@ async fn main() -> std::io::Result<()> {
                             .service(logout)
                             .service(show_users)
                             .service(user_detail)
-                            .service(update_user_profile),
+                            .service(update_user_profile)
+                            .service(add_friend)
+                            .service(remove_exfriend),
                     )
                     .service(
                         web::scope("/games")

@@ -6,17 +6,17 @@ use crate::games::CreateGame;
 use crate::mails::{CreateMail, MailQuery};
 use crate::model::games::{create_game_in_db, get_game_in_db, list_games_in_db};
 use crate::model::users::{create_user_in_db, get_user_in_db, list_users_in_db};
-use crate::model::users::{CreateUserError, find_user_by_name_in_db};
+use crate::model::users::{CreateUserError, find_user_by_name_in_db, FriendlistUpdateError};
 use crate::session::{
     LogoutRequest, extract_access_claims, invalidate_claim, is_revoked, revoke_refresh_token,
 };
-use crate::users::{CreateUser, UpdateProfile};
-use crate::model::{discussions, mails, users};
+use crate::users::{AddFriend, CreateUser, UpdateProfile, UserInfo};
+use crate::model::{discussions, mails, users, DatabaseInitializer};
 use crate::AppState;
 use actix_security::http::security::{PasswordEncoder, User};
 use actix_security::permit_all;
 use actix_security::prelude::AuthenticatedUser;
-use actix_web::{get, HttpRequest, HttpResponse, post, put, Responder, web};
+use actix_web::{delete, get, HttpRequest, HttpResponse, post, put, Responder, web};
 use serde_json;
 use std::sync::Arc;
 
@@ -338,6 +338,128 @@ pub async fn update_user_profile(
             "message": format!("Could not update user {}: {}", target_id, err),
         })),
     }
+}
+
+/// Authorizes user against the caller id
+///
+/// Identity comes from JWT, never the path.
+fn authorize_self(
+    db: &mut DatabaseInitializer,
+    username: &str,
+    target_id: i32,
+) -> Result<i32, HttpResponse> {
+    let session_id = match users::find_user_id_by_name(db, username) {
+        Ok(Some(id)) => id,
+        Ok(None) => {
+            return Err(HttpResponse::Unauthorized().json(
+                    serde_json::json!({
+                        "message" : "Your user was not found"
+                    })
+            ));
+        }
+        Err(err) => {
+            return Err(HttpResponse::InternalServerError().json(
+                    serde_json::json! ({
+                        "message" : format!("User lookup failed: {}", err)
+                    })
+            ));
+        }
+    };
+
+    if session_id != target_id {
+        return Err(HttpResponse::Forbidden().json(serde_json::json!({
+            "message" : "Control freak, there is a user missmatch. You can only manage your own friends."
+        })));
+    }
+
+    Ok(session_id)
+}
+
+/// Maps a friend-list result onto a response. Shared by both handlers so the
+/// two cannot drift apart.
+fn handle_friendlist_response(result: Result<UserInfo, FriendlistUpdateError>) -> HttpResponse {
+    match result {
+        Ok(updated) => HttpResponse::Ok().json(updated),
+        Err(FriendlistUpdateError::NotFound) => {
+            HttpResponse::NotFound().json(serde_json::json!({
+                "message" : "No such user."
+            }))
+        }
+        Err(FriendlistUpdateError::SelfReference) => {
+            HttpResponse::BadRequest().json(serde_json::json!({
+                "message" : "You can't befriend yourself"
+            }))
+        }
+        // Written for the person who clicked, not for the log: the frontend
+        // shows this string to them verbatim.
+        Err(FriendlistUpdateError::Conflict) => {
+            HttpResponse::Conflict().json(serde_json::json!({
+                "message" : "Your friendlist changed just a tiny moment ago. Please try again."
+            }))
+        }
+        Err(FriendlistUpdateError::DatabaseError(err)) => {
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "message" : format!("Could not update friendlist: {}", err)
+            }))
+        }
+    }
+}
+
+#[post("/{id}/friends")]
+pub async fn add_friend(
+    pool: web::Data<Arc<AppState>>,
+    user: AuthenticatedUser,
+    path: web::Path<(i32,)>,
+    body: web::Json<AddFriend>,
+) -> impl Responder {
+    let target_id = path.into_inner().0;
+    let username = user.into_inner().get_username().to_string();
+
+    let mut db = match pool.database.lock() {
+        Ok(db) => db,
+        Err(_) => {
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "message" : "Database lock failed."
+            }));
+        }
+    };
+
+    let session_id = match authorize_self(&mut db, &username, target_id) {
+        Ok(id) => id,
+        Err(err) => return err,
+    };
+
+    handle_friendlist_response(
+            users::befriend_in_db(&mut db, session_id, body.friend_id))
+}
+
+#[delete("/{id}/friends/{fid}")]
+pub async fn remove_exfriend(
+    pool: web::Data<Arc<AppState>>,
+    user: AuthenticatedUser,
+    path: web::Path<(i32, i32)>,
+) -> impl Responder { 
+    let (target_id, exfriend_id) = path.into_inner();
+    let username = user.into_inner().get_username().to_string();
+
+    let mut db =  match pool.database.lock() {
+        Ok(db) => db,
+        Err(_) => {
+            return HttpResponse::InternalServerError().json(
+                serde_json::json!({
+                "message" : "Database lock failed."
+                })
+            );
+        }
+    };
+
+    let session_id = match authorize_self(&mut db, &username, target_id) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    
+    handle_friendlist_response(
+            users::unfriend_in_db(&mut db, session_id, exfriend_id))
 }
 
 #[get("/show")]

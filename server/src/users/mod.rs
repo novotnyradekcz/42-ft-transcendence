@@ -123,6 +123,18 @@ fn validate_avatar_url(payload: &str) -> Result<(), &'static str> {
     Ok(())
 }
 
+/// The body of `POST /users/{id}/friends`
+///
+/// Intentionally omits a `validate()` func since there isn't much to
+/// catch - self-reference would need the caller's ID, which is not in
+/// scope here, and checking for existence would need the db.
+/// Both checks run in the model layer.
+#[derive(Deserialize)]
+pub struct AddFriend {
+    #[serde(rename = "friendId")]
+    pub friend_id: i32,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
