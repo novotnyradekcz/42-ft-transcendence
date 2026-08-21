@@ -366,7 +366,7 @@ pub enum FriendlistUpdateError {
     NotFound,
     /// You can't befriend yourself
     SelfReference,
-    /// A race occured - best for the client to just try again.
+    /// A race occurred - best for the client to just try again.
     Conflict,
     /// An unforeseen DB error
     DatabaseError(diesel::result::Error),
