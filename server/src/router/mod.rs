@@ -342,7 +342,7 @@ pub async fn update_user_profile(
 
 /// Authorizes user against the caller id
 ///
-/// Identity comse from JWT, never the path.
+/// Identity comes from JWT, never the path.
 fn authorize_self(
     db: &mut DatabaseInitializer,
     username: &str,
