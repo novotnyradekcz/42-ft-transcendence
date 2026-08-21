@@ -89,9 +89,8 @@ pub fn find_or_create_oauth_user(
         .optional()?;
 
     if let Some(user) = existing {
-        // fill in an email we didn't have before (GitHub often gives none on
-        // the first login). only ever fills a blank, never overwrites
         if user.email.is_empty() && !profile.email.is_empty() {
+            // FIXME: user always has to have email
             diesel::update(ftt_users.filter(id.eq(user.id)))
                 .set(email.eq(&profile.email))
                 .execute(conn)?;
