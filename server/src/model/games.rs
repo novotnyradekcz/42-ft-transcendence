@@ -364,9 +364,9 @@ pub fn get_leaderboard_in_db(
 
     rows.sort_by(|a, b| {
         b.win_loss_ratio
-            .partial_cmp(&a.win_loss_ratio)
-            .unwrap_or(std::cmp::Ordering::Equal)
+            .total_cmp(&a.win_loss_ratio)
             .then_with(|| b.wins.cmp(&a.wins))
+            .then_with(|| a.user_id.cmp(&b.user_id))
     });
 
     rows.truncate(10);
