@@ -85,10 +85,7 @@ pub async fn oauth_start(
         .collect();
 
     // keyed by provider so two tabs mid-login don't clobber each other
-    if session
-        .insert(state_key(&provider_id), &state)
-        .is_err()
-    {
+    if session.insert(state_key(&provider_id), &state).is_err() {
         return oauth_failed(&pool, "Could not start the OAuth flow");
     }
 
@@ -212,16 +209,18 @@ pub async fn oauth_callback(
         .send()
         .await
     {
-        Ok(mut resp) if resp.status().is_success() => match resp.json::<serde_json::Value>().await {
-            Ok(v) => v,
-            Err(e) => {
-                log::error!("{provider_id} profile was not valid JSON: {e}");
-                return oauth_failed(
-                    &pool,
-                    &format!("Unexpected profile response from {}", provider.spec.label),
-                );
+        Ok(mut resp) if resp.status().is_success() => {
+            match resp.json::<serde_json::Value>().await {
+                Ok(v) => v,
+                Err(e) => {
+                    log::error!("{provider_id} profile was not valid JSON: {e}");
+                    return oauth_failed(
+                        &pool,
+                        &format!("Unexpected profile response from {}", provider.spec.label),
+                    );
+                }
             }
-        },
+        }
         Ok(resp) => {
             log::error!(
                 "{provider_id} refused the profile request: HTTP {}",
@@ -371,18 +370,6 @@ fn parse_profile(provider: &OAuthProvider, raw: &serde_json::Value) -> Option<OA
                 .get("login")
                 .and_then(|v| v.as_str())
                 .map(str::to_string)
-                .unwrap_or_else(|| id.clone());
-            (id, login)
-        }
-        // no username here: `sub` is the id, and the name is the best handle
-        "google" => {
-            let id = raw.get("sub").and_then(json_id)?;
-            let login = raw
-                .get("name")
-                .and_then(|v| v.as_str())
-                .map(str::to_string)
-                .or_else(|| email.split('@').next().map(str::to_string))
-                .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| id.clone());
             (id, login)
         }

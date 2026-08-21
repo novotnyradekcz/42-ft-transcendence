@@ -9,9 +9,9 @@ use diesel::pg::PgValue;
 use diesel::prelude::*;
 use diesel::serialize::{self, IsNull, Output, ToSql};
 use diesel::sql_types::Text;
+use rand::Rng;
 use std::convert::From;
 use std::io::Write;
-use rand::Rng;
 
 /// `Vec<i32>` stored in PostgreSQL as a JSON text array (e.g. `[1,2,3]`).
 /// Implements Diesel's `FromSql`/`ToSql` so it maps transparently to a TEXT column.
@@ -73,7 +73,7 @@ pub fn find_or_create_oauth_user(
     db: &mut DatabaseInitializer,
     profile: &OAuthProfile,
     encoder: &Argon2PasswordEncoder,
-    ) -> Result <DbUser, diesel::result::Error> {
+) -> Result<DbUser, diesel::result::Error> {
     use crate::schema::ftt_users::dsl::*;
 
     let conn = connection(db);
@@ -113,8 +113,7 @@ pub fn find_or_create_oauth_user(
         .is_some()
     {
         attempt += 1;
-        candidate = format!("{}-{}-{}", 
-            profile.login, profile.provider, attempt);
+        candidate = format!("{}-{}-{}", profile.login, profile.provider, attempt);
     }
 
     let unreachable_secret: String = rand::thread_rng()
@@ -323,7 +322,7 @@ pub fn update_user_profile_in_db(
     new_bio: Option<&str>,
     new_avatar_url: Option<&str>,
 ) -> Result<Option<UserInfo>, diesel::result::Error> {
-    // Pull diesel schemas in scope 
+    // Pull diesel schemas in scope
     use crate::schema::ftt_users::dsl::*;
 
     // check if there is what to change
@@ -504,6 +503,9 @@ mod tests {
     /// removing must clear every copy rather than leave a stale one behind.
     #[test]
     fn removing_clears_every_duplicate() {
-        assert_eq!(remove_exfriend_from_list(&[1, 2, 2, 3], 2), Some(vec![1, 3]));
+        assert_eq!(
+            remove_exfriend_from_list(&[1, 2, 2, 3], 2),
+            Some(vec![1, 3])
+        );
     }
 }

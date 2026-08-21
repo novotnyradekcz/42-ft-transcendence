@@ -1,11 +1,11 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
 use super::database_migrations::run_migrations;
+use crate::model::games::seed_games_in_db;
+use crate::model::users::seed_users_in_db;
 use diesel::prelude::*;
 use dotenvy::dotenv;
 use std::env;
-use crate::model::users::seed_users_in_db;
-use crate::model::games::seed_games_in_db;
 
 #[allow(dead_code)]
 pub struct ServerEnvironment {
@@ -53,7 +53,12 @@ impl DatabaseInitializer {
 
     pub fn connect(&mut self) {
         let mut connection = PgConnection::establish(self.server_environment.database_url.as_str())
-            .unwrap_or_else(|e| panic!("Error: Database does not probably running, Can't connect to {} due error: {}", self.server_environment.database_url, e));
+            .unwrap_or_else(|e| {
+                panic!(
+                    "Error: Database does not probably running, Can't connect to {} due error: {}",
+                    self.server_environment.database_url, e
+                )
+            });
         run_migrations(&mut connection);
         self.database_connected = true;
         self.connection = Some(connection);
@@ -79,15 +84,6 @@ pub const PROVIDER_SPECS: &[ProviderSpec] = &[
         token_url: "https://api.intra.42.fr/oauth/token",
         profile_url: "https://api.intra.42.fr/v2/me",
         scope: "public",
-    },
-    // no username, and its id is the string `sub` — see parse_profile
-    ProviderSpec {
-        id: "google",
-        label: "Google",
-        authorize_url: "https://accounts.google.com/o/oauth2/v2/auth",
-        token_url: "https://oauth2.googleapis.com/token",
-        profile_url: "https://www.googleapis.com/oauth2/v3/userinfo",
-        scope: "openid email profile",
     },
     ProviderSpec {
         id: "github",
@@ -134,7 +130,7 @@ impl OAuthConfig {
         let providers = PROVIDER_SPECS
             .iter()
             .map(|spec| {
-                // 42 -> OAUTH_42_*, google -> OAUTH_GOOGLE_*
+                // 42 -> OAUTH_42_*, github -> OAUTH_GITHUB_*
                 let prefix = format!("OAUTH_{}", spec.id.to_uppercase());
                 OAuthProvider {
                     spec,
@@ -146,10 +142,7 @@ impl OAuthConfig {
                     client_secret: env::var(format!("{prefix}_CLIENT_SECRET"))
                         .ok()
                         .unwrap_or_default(),
-                    redirect_uri: format!(
-                        "{redirect_base}/api/auth/{}/callback",
-                        spec.id
-                    ),
+                    redirect_uri: format!("{redirect_base}/api/auth/{}/callback", spec.id),
                 }
             })
             .collect();
