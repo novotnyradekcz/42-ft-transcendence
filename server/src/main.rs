@@ -32,6 +32,7 @@ use crate::session::load_valid_blacklisted_tokens;
 use crate::status::{status_ws, StatusRegistry};
 use model::database_initializer::{initialize_db, OAuthConfig};
 
+use actix_governor::{Governor, GovernorConfigBuilder};
 use actix_security::http::security::middleware::SecurityTransform;
 use actix_security::http::security::Argon2PasswordEncoder;
 use actix_security::prelude::{JwtAuthenticator, JwtConfig, JwtTokenService, User};
@@ -97,11 +98,17 @@ async fn main() -> std::io::Result<()> {
         token_blacklist,
         oauth: OAuthConfig::from_env(),
     });
+    let governor_conf = GovernorConfigBuilder::default()
+        .requests_per_second(1)
+        .burst_size(5)
+        .finish()
+        .unwrap();
 
     init_user_store(users);
 
     HttpServer::new(move || {
         App::new()
+            .wrap(Governor::new(&governor_conf))
             .app_data(Data::new(state.clone()))
             // Public: registration must be reachable without credentials.
             .service(create_user)
