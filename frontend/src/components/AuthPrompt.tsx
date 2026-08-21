@@ -1,3 +1,9 @@
+// The checklist shown on the login and register screens: which fields have been
+// answered, which one the prompt is asking for now, and which are still to come.
+//
+// It renders no inputs — the answers are typed into the command line, and
+// TerminalContext walks the flow. This is only the read-out of where it's up to.
+
 import { useTranslation } from "../context/language/i18n";
 
 // one step of the login or register flow
@@ -10,8 +16,7 @@ export type AuthStep = {
   value?: string;
 };
 
-// shared body of the login and register screens, a checklist of the steps
-// the prompt is walking through
+// shared by both screens; they differ only in the steps they pass in
 export default function AuthPrompt({
   steps,
   current,
@@ -23,6 +28,8 @@ export default function AuthPrompt({
   error: string;
 }) {
   const { t } = useTranslation();
+  // -1 while the flow isn't running, which the state below reads as "nothing
+  // answered yet" and leaves every step pending
   const currentIndex = steps.findIndex((step) => step.key === current);
 
   return (

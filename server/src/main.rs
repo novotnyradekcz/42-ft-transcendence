@@ -1,5 +1,15 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved.
 
+//! Boots the server: builds the shared state, then mounts the routes.
+//!
+//! The route table below is also the security boundary, and where a service sits
+//! in it is the whole of its access control. Registration, token refresh, the
+//! health probe, both WebSocket scopes and the OAuth flow are mounted *outside*
+//! `SecurityTransform` — each for a reason noted at the line — and everything in
+//! the final `scope("")` requires a valid JWT. Moving a service between those two
+//! groups is what decides whether it needs authentication, so it is not a
+//! cosmetic edit.
+
 mod authenticator;
 mod discussions;
 mod games;
@@ -31,6 +41,8 @@ use actix_web::{cookie, web, App, HttpServer};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex, RwLock};
 
+// shared by every handler. the mutexes are the reason handlers keep their
+// critical sections short and never hold one across an `.await`
 #[allow(dead_code)]
 struct AppState {
     database: Mutex<DatabaseInitializer>,
@@ -52,6 +64,8 @@ async fn main() -> std::io::Result<()> {
     let lobby = Lobby::new();
     let encoder = Argon2PasswordEncoder::new();
     let dbusers = get_all_users_from_db(&mut db).expect("Users from DB failed.");
+    // the in-memory user store starts as a copy of the table, carrying the same
+    // Argon2 hashes, so the two can't disagree about a password
     let users: Vec<User> = dbusers
         .iter()
         .map(|user| {
@@ -59,6 +73,8 @@ async fn main() -> std::io::Result<()> {
                 .roles(&["USER".into()])
         })
         .collect();
+    // 10 minute access tokens, 1 day refresh. short access tokens are what make
+    // the blacklist affordable — a revoked one is only carried until it expires
     let jwt_config = JwtConfig::new(&db.server_environment.get_jwt_hash())
         .issuer("fttranscendence")
         .audience("api-users")
@@ -141,7 +157,10 @@ async fn main() -> std::io::Result<()> {
                             .service(get_user)
                             .service(logout)
                             .service(show_users)
-                            .service(user_detail),
+                            .service(user_detail)
+                            .service(update_user_profile)
+                            .service(add_friend)
+                            .service(remove_exfriend),
                     )
                     .service(
                         web::scope("/games")

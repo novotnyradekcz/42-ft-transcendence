@@ -1,3 +1,12 @@
+// Who is currently online, over a websocket.
+//
+// The server tracks presence by connection: this socket being open is what
+// makes the user online, and closing it is what makes them offline — so the
+// socket is the feature, not just its transport.
+//
+// Nothing is pushed. The client pings on a timer and the server answers with
+// the full list each time, which is also what bounds how stale the UI can be.
+
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useWebSocket } from "../../hooks/useWebSocket";
 import { useSession } from "../session/useSession";

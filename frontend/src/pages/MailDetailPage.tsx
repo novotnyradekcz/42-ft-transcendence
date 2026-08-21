@@ -1,13 +1,18 @@
+// One message, in full.
+
 import TerminalSection from "../components/TerminalSection";
 import { useData } from "../context/data/useData";
 import { useSession } from "../context/session/useSession";
 import { useTranslation } from "../context/language/i18n";
 
+// reads what `enter` put in DataContext, not the :id in the URL, so opening
+// /mail/show/<id> directly renders the empty state
 export default function MailDetailPage() {
   const { selectedMail: message } = useData();
   const { knownUsers } = useSession();
   const { t } = useTranslation();
 
+  // both ends are stored as ids
   const userName = (id: number) =>
     knownUsers.find((u) => u.id === id)?.name ?? `user#${id}`;
 

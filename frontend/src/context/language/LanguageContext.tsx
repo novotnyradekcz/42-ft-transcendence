@@ -1,6 +1,10 @@
-// kept separate from i18n.ts because fast refresh needs components
-// and non-components in different files
+// Holds the chosen language and hands down the t() function built from it.
+//
+// The choice is remembered in localStorage — not sessionStorage like the login,
+// since a language preference should outlive the session.
 
+// the provider is kept apart from i18n.ts because fast refresh wants components
+// and plain values in different files
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   I18nContext,
@@ -14,16 +18,17 @@ import {
 } from "./i18n";
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  // start with saved language
   const [lang, setLangState] = useState<Lang>(() => readLang());
 
-  // save language and update html lang attribute
+  // both halves of remembering it: the stored value the next visit reads back,
+  // and the html lang attribute screen readers and the browser go by
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, lang);
     document.documentElement.lang = lang;
   }, [lang]);
 
-  // only recompute when lang changes
+  // rebuilt only when the language changes — t() is passed to every component,
+  // so a new identity each render would re-render all of them
   const value = useMemo<I18nContextValue>(() => {
     const dict = dictionaries[lang];
     const t: TranslateFn = (key, vars) => interpolate(dict[key] ?? key, vars);

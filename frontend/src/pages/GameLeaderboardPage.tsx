@@ -1,3 +1,9 @@
+// The top ten players, by win/loss ratio.
+//
+// A server-side aggregate over every game played, not one of the board
+// collections — so it's fetched here rather than through DataContext, and the
+// rows arrive with their user names already joined in.
+
 import { useEffect, useState } from "react";
 import { getLeaderboard } from "../api";
 import TerminalSection from "../components/TerminalSection";
@@ -7,9 +13,13 @@ import type { LeaderboardItem } from "../types";
 export default function GameLeaderboardPage() {
   const { t } = useTranslation();
   const [leaderboard, setLeaderboard] = useState<LeaderboardItem[]>([]);
+  // starts true: unlike the history page this loads for everyone, so the
+  // request is always on its way by first paint
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  // t is a dependency only because it supplies the fallback message; changing
+  // language therefore refetches, which is harmless and keeps the deps honest
   useEffect(() => {
     getLeaderboard()
       .then((data) => {

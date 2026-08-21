@@ -1,3 +1,6 @@
+// The data context object and its hook, split from DataContext.tsx so that file
+// exports only a component.
+
 import { createContext, useContext } from "react";
 import type { DataContextValue } from "./types";
 

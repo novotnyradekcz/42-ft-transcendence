@@ -1,9 +1,21 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
+//! The `ftt_games` and `ftt_game_history` tables: stored Lua scripts, finished
+//! matches, and the leaderboard.
+//!
+//! A game *is* its Lua source, kept in a TEXT column. The server only stores it
+//! and hands it to both players — running it is the browser's job, so nothing
+//! here parses or trusts it.
+//!
+//! The leaderboard is raw SQL rather than the Diesel DSL because it has to count
+//! each match twice, once from each player's side, before it can total anything.
+
 use crate::games::GameInfo;
 use crate::model::database_initializer::{connection, DatabaseInitializer};
 use diesel::prelude::*;
 
+// installs the bundled Tic-Tac-Toe, updating it in place if it's already there,
+// so an edited script ships on the next boot instead of inserting a duplicate
 pub fn seed_games_in_db(db: &mut DatabaseInitializer) -> Result<(), diesel::result::Error> {
     use crate::schema::ftt_games::dsl::*;
     use crate::schema::ftt_users::dsl as users_dsl;
@@ -22,15 +34,16 @@ pub fn seed_games_in_db(db: &mut DatabaseInitializer) -> Result<(), diesel::resu
         .unwrap_or(2); // fallback to ID 2 (which is admin's ID)
 
     let tic_tac_toe_lua = include_str!("../games/scripts/tic_tac_toe.lua");
+    let battleship_lua = include_str!("../games/scripts/battleship.lua");
 
     // Check if Tic-Tac-Toe game already exists
-    let existing_game_id = ftt_games
+    let existing_ttt_id = ftt_games
         .filter(name.eq("Tic-Tac-Toe"))
         .select(id)
         .first::<i32>(conn)
         .optional()?;
 
-    if let Some(existing_id) = existing_game_id {
+    if let Some(existing_id) = existing_ttt_id {
         diesel::update(ftt_games.filter(id.eq(existing_id)))
             .set((
                 author.eq(admin_id),
@@ -43,6 +56,30 @@ pub fn seed_games_in_db(db: &mut DatabaseInitializer) -> Result<(), diesel::resu
                 author.eq(admin_id),
                 name.eq("Tic-Tac-Toe"),
                 body.eq(tic_tac_toe_lua),
+            ))
+            .execute(conn)?;
+    }
+
+    // Check if Battleship game already exists
+    let existing_bs_id = ftt_games
+        .filter(name.eq("Battleship"))
+        .select(id)
+        .first::<i32>(conn)
+        .optional()?;
+
+    if let Some(existing_id) = existing_bs_id {
+        diesel::update(ftt_games.filter(id.eq(existing_id)))
+            .set((
+                author.eq(admin_id),
+                body.eq(battleship_lua),
+            ))
+            .execute(conn)?;
+    } else {
+        diesel::insert_into(ftt_games)
+            .values((
+                author.eq(admin_id),
+                name.eq("Battleship"),
+                body.eq(battleship_lua),
             ))
             .execute(conn)?;
     }
@@ -179,6 +216,8 @@ pub fn save_game_history_in_db(
 
 use chrono::{DateTime, Utc};
 
+// every match the user played, newest first. names are joined in here so the
+// client needs no user list to render a row
 pub fn get_game_history_for_user_in_db(
     db: &mut DatabaseInitializer,
     user_id: i32,
@@ -223,7 +262,9 @@ pub fn get_game_history_for_user_in_db(
     Ok(result)
 }
 
-// Using raw SQL query here for better performance for when there are many users and games played
+// raw SQL: a match stores one row with two players, so the standings need it
+// unpacked into one row per player before anything can be grouped. that's the
+// UNION ALL below, and it doesn't express well in the Diesel DSL
 #[derive(QueryableByName, Debug)]
 struct RawLeaderboardRow {
     #[diesel(sql_type = diesel::sql_types::Integer)]
@@ -240,6 +281,8 @@ struct RawLeaderboardRow {
     pub win_loss_ratio: f64,
 }
 
+// top ten by win ratio, ranked here rather than in SQL so rank is 1-based and
+// contiguous even when the query ties
 pub fn get_leaderboard_in_db(
     db: &mut DatabaseInitializer,
 ) -> Result<Vec<LeaderboardEntry>, diesel::result::Error> {

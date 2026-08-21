@@ -1,3 +1,10 @@
+//! The mail shapes that cross the HTTP boundary, and the conversion from a stored
+//! row.
+//!
+//! `CreateMail` takes the recipient either as an id or as a name in `to`, because
+//! the terminal client asks the user for a name and shouldn't have to resolve it
+//! into an id before it can send. The router resolves whichever one arrives.
+
 use crate::model::mails::Mail;
 use serde::{Deserialize, Serialize};
 
@@ -10,6 +17,7 @@ pub struct CreateMail {
     pub body: String,
 }
 
+// ?userId=, whose inbox to read
 #[derive(Deserialize)]
 pub struct MailQuery {
     #[serde(rename = "userId")]

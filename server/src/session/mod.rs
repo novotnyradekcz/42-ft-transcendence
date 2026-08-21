@@ -1,5 +1,17 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
+//! Token revocation: reading the access token off a request, and retiring the
+//! tokens that logout or a refresh has spent.
+//!
+//! A JWT is valid until it expires, so ending a session early means keeping a list
+//! of the ones that no longer count. That list lives in two places — a `HashSet`
+//! for the hot path, and `ftt_token_blacklist` so it survives a restart — and both
+//! are written together.
+//!
+//! Every reader and writer has to key an entry the same way: the token's `jti`
+//! when it has one, otherwise the *decoded* JWT. Disagreeing about that key is how
+//! revocation silently stops working, which has happened here before.
+
 use std::collections::HashSet;
 use std::io::Error;
 use std::sync::Arc;

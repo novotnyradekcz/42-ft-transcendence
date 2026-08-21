@@ -1,5 +1,13 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
+//! The `ftt_users` table: registration, lookup, seeding, and the OAuth upsert.
+//!
+//! Two things worth knowing before editing. Friends are stored as a JSON array in
+//! a TEXT column instead of a join table, which is what `FriendList` below exists
+//! to marshal in and out. And passwords are salted Argon2 hashes, so they can only
+//! ever be *compared* by the encoder — never matched with a SQL `=`. See the note
+//! on `find_user_by_name_in_db` for what that mistake cost last time.
+
 use crate::model::database_initializer::{connection, DatabaseInitializer};
 use crate::users::{CreateUser, UserInfo};
 use actix_security::prelude::{Argon2PasswordEncoder, PasswordEncoder};
@@ -69,6 +77,9 @@ pub struct OAuthProfile {
     pub email: String,
 }
 
+// looks a user up by (provider, provider_user_id) and creates one if there's no
+// match. the name may already be taken by a local account, so it's suffixed until
+// it's free rather than failing the login
 pub fn find_or_create_oauth_user(
     db: &mut DatabaseInitializer,
     profile: &OAuthProfile,
@@ -117,6 +128,8 @@ pub fn find_or_create_oauth_user(
             profile.login, profile.provider, attempt);
     }
 
+    // an OAuth account has no password, but the column needs one. a random
+    // secret nobody holds means the row can never be logged into with Basic auth
     let unreachable_secret: String = rand::thread_rng()
         .sample_iter(&rand::distributions::Alphanumeric)
         .take(48)
@@ -171,6 +184,8 @@ pub enum CreateUserError {
     DatabaseError(diesel::result::Error),
 }
 
+// test/admin/guest, inserted only when missing, so a redeploy keeps whatever
+// those accounts have accumulated
 pub fn seed_users_in_db(db: &mut DatabaseInitializer) -> Result<(), diesel::result::Error> {
     use crate::schema::ftt_users::dsl::*;
     let encoder = Argon2PasswordEncoder::new();
@@ -315,6 +330,34 @@ pub fn create_user_in_db(
     Ok(UserInfo::from(inserted_user))
 }
 
+/// Update user profile.
+/// Updates only bio and/or avatar since the rest isn't mutable per our design
+pub fn update_user_profile_in_db(
+    db: &mut DatabaseInitializer,
+    user_id: i32,
+    new_bio: Option<&str>,
+    new_avatar_url: Option<&str>,
+) -> Result<Option<UserInfo>, diesel::result::Error> {
+    // Pull diesel schemas in scope 
+    use crate::schema::ftt_users::dsl::*;
+
+    // check if there is what to change
+    if new_bio.is_none() && new_avatar_url.is_none() {
+        return get_user_in_db(db, user_id);
+    }
+
+    diesel::update(ftt_users.filter(id.eq(user_id)))
+        .set((
+            new_bio.map(|value| bio.eq(value)),
+            new_avatar_url.map(|value| avatar_url.eq(value)),
+        ))
+        .returning(DbUser::as_returning())
+        .get_result::<DbUser>(connection(db))
+        .optional()
+        // Option<DbUser> --> Option<UserInfo>
+        .map(|row| row.map(UserInfo::from))
+}
+
 pub fn find_user_id_by_name(
     db: &mut DatabaseInitializer,
     user_name: &str,
@@ -326,4 +369,156 @@ pub fn find_user_id_by_name(
         .select(users::id)
         .first::<i32>(connection(db))
         .optional()
+}
+
+/// Reasons why a friendlist mutation will not apply
+///
+/// `Option<UserInfo>` is insufficient -> None could mean "no such user"
+/// or "there was a race on the column" eg someone made two concurrent
+/// different changes at once
+pub enum FriendlistUpdateError {
+    /// The user to be befriended does not exist
+    NotFound,
+    /// You can't befriend yourself
+    SelfReference,
+    /// A race occurred - best for the client to just try again.
+    Conflict,
+    /// An unforeseen DB error
+    DatabaseError(diesel::result::Error),
+}
+
+impl From<diesel::result::Error> for FriendlistUpdateError {
+    fn from(e: diesel::result::Error) -> Self {
+        FriendlistUpdateError::DatabaseError(e)
+    }
+}
+
+/// Adds friend to list. Returns `None` if no change happened
+fn add_friend_to_list(list: &[i32], friend: i32) -> Option<Vec<i32>> {
+    if list.contains(&friend) {
+        return None;
+    }
+
+    let mut new = list.to_vec();
+    new.push(friend);
+    Some(new)
+}
+
+/// Returns `None` if exfriend was not in the list to begin with
+fn remove_exfriend_from_list(list: &[i32], exfriend: i32) -> Option<Vec<i32>> {
+    if !list.contains(&exfriend) {
+        return None;
+    }
+
+    let new: Vec<i32> = list.iter().copied().filter(|id| *id != exfriend).collect();
+    Some(new)
+}
+
+fn update_friendlist_in_db(
+    db: &mut DatabaseInitializer,
+    user_id: i32,
+    other_id: i32,
+    apply: fn(&[i32], i32) -> Option<Vec<i32>>,
+) -> Result<UserInfo, FriendlistUpdateError> {
+    use crate::schema::ftt_users::dsl::*;
+
+    if user_id == other_id {
+        return Err(FriendlistUpdateError::SelfReference);
+    }
+
+    let conn = connection(db);
+
+    let current = ftt_users
+        .filter(id.eq(user_id))
+        .select(DbUser::as_select())
+        .first::<DbUser>(conn)
+        .optional()?
+        .ok_or(FriendlistUpdateError::NotFound)?;
+
+    let other_exists = ftt_users
+        .filter(id.eq(other_id))
+        .select(id)
+        .first::<i32>(conn)
+        .optional()?
+        .is_some();
+
+    if !other_exists {
+        return Err(FriendlistUpdateError::NotFound);
+    }
+
+    // The `else` arm is the idempotency exercise - when the user already
+    // has `other` in friendlist nothing happens.
+    let Some(new) = apply(&current.friends.0, other_id) else {
+        return Ok(UserInfo::from(current));
+    };
+
+    diesel::update(
+        ftt_users
+            .filter(id.eq(user_id))
+            .filter(friends.eq(current.friends.clone())),
+    )
+    .set(friends.eq(FriendList(new)))
+    .returning(DbUser::as_returning())
+    .get_result::<DbUser>(conn)
+    .optional()?
+    .map(UserInfo::from)
+    .ok_or(FriendlistUpdateError::Conflict)
+}
+
+pub fn befriend_in_db(
+    db: &mut DatabaseInitializer,
+    user_id: i32,
+    friend_id: i32,
+) -> Result<UserInfo, FriendlistUpdateError> {
+    update_friendlist_in_db(db, user_id, friend_id, add_friend_to_list)
+}
+
+pub fn unfriend_in_db(
+    db: &mut DatabaseInitializer,
+    user_id: i32,
+    exfriend_id: i32,
+) -> Result<UserInfo, FriendlistUpdateError> {
+    update_friendlist_in_db(db, user_id, exfriend_id, remove_exfriend_from_list)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn adding_a_new_friend_appends_it() {
+        assert_eq!(add_friend_to_list(&[1, 2], 3), Some(vec![1, 2, 3]));
+    }
+
+    #[test]
+    fn adding_an_existing_friend_is_a_no_op() {
+        assert_eq!(add_friend_to_list(&[1, 2], 2), None);
+    }
+
+    #[test]
+    fn adding_to_an_empty_list_works() {
+        assert_eq!(add_friend_to_list(&[], 7), Some(vec![7]));
+    }
+
+    #[test]
+    fn removing_a_friend_drops_only_that_one() {
+        assert_eq!(remove_exfriend_from_list(&[1, 2, 3], 2), Some(vec![1, 3]));
+    }
+
+    #[test]
+    fn removing_an_absent_friend_is_a_no_op() {
+        assert_eq!(remove_exfriend_from_list(&[1, 2], 9), None);
+    }
+
+    #[test]
+    fn removing_from_an_empty_list_is_a_no_op() {
+        assert_eq!(remove_exfriend_from_list(&[], 1), None);
+    }
+
+    /// The column should never hold duplicates, but if one ever got in,
+    /// removing must clear every copy rather than leave a stale one behind.
+    #[test]
+    fn removing_clears_every_duplicate() {
+        assert_eq!(remove_exfriend_from_list(&[1, 2, 2, 3], 2), Some(vec![1, 3]));
+    }
 }

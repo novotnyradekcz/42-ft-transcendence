@@ -1,3 +1,13 @@
+// The whole screen: a fixed banner, the routed page in the middle, and the
+// pinned command line at the bottom.
+//
+// Also where the routes live, as two separate tables rather than one guarded
+// one — without a session the board pages are never mounted at all, so a typed
+// URL or the Back button can't reach them.
+//
+// It holds no state of its own. Everything it renders comes from the providers,
+// and everything typed into it goes back out through TerminalContext.
+
 import { useEffect, useRef, type MouseEvent } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useData } from "../context/data/useData";
@@ -25,15 +35,16 @@ import RegisterPage from "../pages/RegisterPage";
 import UserDetailPage from "../pages/UserDetailPage";
 import UsersPage from "../pages/UsersPage";
 import WelcomePage from "../pages/WelcomePage";
+
 export default function Terminal() {
   const commandInputRef = useRef<HTMLInputElement>(null);
+  // the scrolling region, so the log can be kept pinned to the bottom
   const bodyRef = useRef<HTMLElement>(null);
 
   const location = useLocation();
   const page = pageFromPath(location.pathname);
 
   const { sessionUser, isHydrating } = useSession();
-  // selectedGame needed by GamePlayPage route
   const { selectedGame } = useData();
   const { t } = useTranslation();
 
@@ -77,6 +88,8 @@ export default function Terminal() {
     }
   }, [terminalLines, logVisible]);
 
+  // clicking the footer puts the caret back in the prompt, the way clicking a
+  // terminal window does. a click that was really a text selection is left alone
   function handleCommandAreaClick(event: MouseEvent<HTMLElement>) {
     const target = event.target as HTMLElement;
     if (window.getSelection()?.toString()) return;

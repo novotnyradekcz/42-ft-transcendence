@@ -15,7 +15,7 @@ import {
   register,
   restoreSession,
 } from "./api";
-import { CREDENTIALS_KEY, PH_USER_IMAGE, SESSION_USER_KEY } from "./constants";
+import { CREDENTIALS_KEY, SESSION_USER_KEY } from "./constants";
 
 const BASE_USER = {
   id: 1,
@@ -95,17 +95,18 @@ describe("normalizeUser", () => {
     expect(user.friends).toEqual([2, 3]);
   });
 
-  it("happy path: uses PH_USER_IMAGE when avatar fields are all empty", () => {
+  // The placeholder is a render-time concern, not a value. 
+  it("leaves avatarUrl empty when all avatar fields are empty", () => {
     const user = normalizeUser({
       ...BASE_USER,
       avatar_url: "",
       avatarUrl: "",
       avatar: "",
     });
-    expect(user.avatarUrl).toBe(PH_USER_IMAGE);
+    expect(user.avatarUrl).toBe("");
   });
 
-  it("happy path: uses PH_USER_IMAGE when avatar fields are missing", () => {
+  it("leaves avatarUrl empty when avatar fields are missing", () => {
     const noAvatar = {
       id: 1,
       name: "alice",
@@ -115,7 +116,7 @@ describe("normalizeUser", () => {
       friends: [2, 3],
     };
     const user = normalizeUser(noAvatar);
-    expect(user.avatarUrl).toBe(PH_USER_IMAGE);
+    expect(user.avatarUrl).toBe("");
   });
 
   it("happy path: prefers avatarUrl over avatar_url", () => {

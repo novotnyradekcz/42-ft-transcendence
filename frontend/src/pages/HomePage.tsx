@@ -1,3 +1,7 @@
+// The board menu, shown once you're signed in. A table of contents and nothing
+// more — it names the sections, and the footer's `available:` line is what says
+// how to reach them.
+
 import TerminalSection from "../components/TerminalSection";
 import { useSession } from "../context/session/useSession";
 import { useTranslation } from "../context/language/i18n";

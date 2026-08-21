@@ -1,3 +1,12 @@
+// Your own profile, and the only editable screen in the app.
+//
+// Only the bio and the avatar can be changed. Name and email identify the
+// account — the auth store is keyed by username — so they're shown but not
+// editable, and the server has to refuse them too for that to actually hold.
+//
+// A picked avatar is shrunk and previewed but not sent until the form is
+// submitted, so nothing is saved by accident.
+
 import { type ChangeEvent, type FormEvent, useState } from "react";
 import { updateCurrentUserProfile } from "../api";
 import { AVATAR_MAX_PX, avatarToData } from "../avatar";
@@ -8,6 +17,7 @@ import { useSession } from "../context/session/useSession";
 import { useTerminal } from "../context/terminal/useTerminal";
 import { useTranslation } from "../context/language/i18n";
 
+// named only to keep the handler signature below readable
 type FormSubmitEvent = FormEvent<HTMLFormElement>;
 
 export default function ProfilePage() {
@@ -50,6 +60,8 @@ export default function ProfilePage() {
     }
   }
 
+  // the only place anything is actually saved. refreshUsers() afterwards is so
+  // everyone else's rows pick up the change, and is allowed to fail
   async function handleSubmit(event: FormSubmitEvent) {
     event.preventDefault();
     setMessage("");

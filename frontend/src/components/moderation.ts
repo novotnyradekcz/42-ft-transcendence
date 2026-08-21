@@ -1,3 +1,12 @@
+// Swear filter for anything the user writes — mail, discussions, replies.
+//
+// The word list is a plain text file served from /public rather than a bundled
+// constant, so it can be edited without a rebuild. That's also why censor() is
+// async: the first call may still be waiting on that fetch.
+//
+// Client-side only, so it's a courtesy and not a control — anything that
+// matters has to be filtered again on the server.
+
 // cached word list
 let wordList: string[] | null = null;
 // in-flight fetch, so we don't fetch twice
@@ -30,7 +39,8 @@ export function initModeration(): void {
   void loadWordList();
 }
 
-// builds a regex matching any of the words
+// builds a regex matching any of the words. escaped because the file is
+// hand-edited and a stray `(` would otherwise throw at match time
 function buildPattern(words: string[]): RegExp | null {
   if (words.length === 0) {
     return null;
@@ -42,7 +52,9 @@ function buildPattern(words: string[]): RegExp | null {
   return new RegExp(`\\b(?:${escaped})\\b`, "gi");
 }
 
-// replaces swear words with asterisks
+// replaces swear words with asterisks, keeping the length so the shape of the
+// sentence survives. \b anchors mean only whole words match — "class" is safe,
+// and by the same token "cl@ss" gets through.
 export async function censor(text: string): Promise<string> {
   const words = await loadWordList();
   const pattern = buildPattern(words);

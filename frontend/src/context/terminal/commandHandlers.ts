@@ -1,3 +1,13 @@
+// What every command actually does.
+//
+// executeCommand() resolves the typed word against the table in commands.ts —
+// so an unknown word can't reach anything here — then applies the guest gate,
+// then dispatches. Most commands are just a navigation; the ones with arguments
+// (`enter`, `addfriend`, `removefriend`) get their own function below.
+//
+// Nothing here throws. A command that fails writes a line to the log and
+// returns, because the prompt has to stay usable.
+
 import {
   addFriend as apiAddFriend,
   displayName,
@@ -55,6 +65,8 @@ export function createCommandHandlers(
     refreshUsers,
   } = deps;
 
+  // the whole dispatch table. order matters only for the two gates at the top:
+  // an unknown command, and a command the current session isn't allowed
   async function executeCommand(rawInput: string, echo = true) {
     closeCommandHelp();
     if (echo) addLine(`> ${rawInput}`);
@@ -227,6 +239,7 @@ export function createCommandHandlers(
       return;
     }
 
+    // everything left is a plain navigation
     const directPaths: Partial<Record<string, string>> = {
       // both reachable without a session, they are in GUEST_COMMANDS
       privacy: PAGE_PATHS.privacy,
@@ -265,6 +278,9 @@ export function createCommandHandlers(
     }
   }
 
+  // `enter <n>` opens the nth row of whatever list the page is showing, so what
+  // it does depends entirely on where it was typed. the number is 1-based to
+  // match the printed list
   async function handleEnterCommand(indexValue?: string) {
     const index = Number(indexValue) - 1;
     if (!indexValue || Number.isNaN(index) || index < 0) {
@@ -351,6 +367,8 @@ export function createCommandHandlers(
     addLine(t("enter is not available on this page."));
   }
 
+  // addfriend/removefriend take either a list number or a name, and on a user
+  // page they take nothing at all and act on whoever is open
   async function handleFriendCommand(
     action: "addfriend" | "removefriend",
     targetValue?: string,
@@ -370,6 +388,7 @@ export function createCommandHandlers(
     await applyFriendChange(action, target.id);
   }
 
+  // a number indexes the list on screen, anything else is looked up as a name
   async function resolveFriendTarget(targetValue?: string) {
     if (!targetValue && page === "user-detail") return selectedUser;
     if (!targetValue) return null;
@@ -388,6 +407,9 @@ export function createCommandHandlers(
   ) {
     if (!sessionUser) return;
     const adding = action === "addfriend";
+    // the friend endpoints answer with a receipt, not a profile, so the local
+    // list is updated from what was just sent. refreshUsers() afterwards is for
+    // everyone else's rows and is allowed to fail
     try {
       await (adding ? apiAddFriend : apiRemoveFriend)(sessionUser.id, userId);
       updateSessionUser({

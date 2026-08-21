@@ -1,3 +1,9 @@
+// The installed games, and the control that uploads a new one.
+//
+// A game is a Lua script stored as text on the server and run in the browser by
+// GamePlayPage, so "installing" one is just reading the .lua file and POSTing
+// its contents — there is nothing to compile or unpack.
+
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { createGame } from "../api";
 import TerminalSection from "../components/TerminalSection";
@@ -21,9 +27,11 @@ export default function GamesPage() {
   const [statusMsg, setStatusMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
+  // games carry an author id, not a name
   const userName = (id: number) =>
     knownUsers.find((u) => u.id === id)?.name ?? `user#${id}`;
 
+  // opens the file picker, from the button and from the `upload` command alike
   const triggerUpload = () => {
     if (!sessionUser) {
       const msg = t("login first to upload games.");
@@ -34,6 +42,11 @@ export default function GamesPage() {
     fileInputRef.current?.click();
   };
 
+  // The `upload` command has to reach a file input, and a file picker only
+  // opens from a real user gesture on the element itself — so the command
+  // fires a window event and this page, which owns the input, answers it.
+  // sessionUser is the only dependency that matters: triggerUpload closes over
+  // it, and re-subscribing on every render would churn the listener.
   useEffect(() => {
     const handleTrigger = () => {
       triggerUpload();
@@ -43,6 +56,9 @@ export default function GamesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionUser]);
 
+  // Checked again here even though triggerUpload() already did: the input can
+  // also be reached by clicking it, and a session can end while the OS picker
+  // is open.
   const handleFileUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -82,6 +98,7 @@ export default function GamesPage() {
       addLine(msg);
     } finally {
       setUploading(false);
+      // cleared so picking the same file again still fires a change event
       event.target.value = "";
     }
   };
