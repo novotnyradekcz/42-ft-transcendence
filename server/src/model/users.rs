@@ -505,6 +505,25 @@ pub fn unfriend_in_db(
     update_friendlist_in_db(db, user_id, exfriend_id, remove_exfriend_from_list)
 }
 
+/// Adds new achievements to list, deduplicating IDs. Returns `None` if no change happened.
+fn unlock_achievements_list(current: &[i32], to_unlock: &[i32]) -> Option<Vec<i32>> {
+    let mut updated = current.to_vec();
+    let mut modified = false;
+
+    for &ach_id in to_unlock {
+        if !updated.contains(&ach_id) {
+            updated.push(ach_id);
+            modified = true;
+        }
+    }
+
+    if modified {
+        Some(updated)
+    } else {
+        None
+    }
+}
+
 pub fn unlock_achievements_in_db(
     db: &mut DatabaseInitializer,
     user_id: i32,
@@ -526,17 +545,7 @@ pub fn unlock_achievements_in_db(
             return Ok(());
         };
 
-        let mut updated = current_user.achievements.0.clone();
-        let mut modified = false;
-
-        for &ach_id in to_unlock {
-            if !updated.contains(&ach_id) {
-                updated.push(ach_id);
-                modified = true;
-            }
-        }
-
-        if modified {
+        if let Some(updated) = unlock_achievements_list(&current_user.achievements.0, to_unlock) {
             diesel::update(ftt_users.filter(id.eq(user_id)))
                 .set(achievements.eq(AchievementList(updated)))
                 .execute(conn)?;
@@ -586,4 +595,36 @@ mod tests {
     fn removing_clears_every_duplicate() {
         assert_eq!(remove_exfriend_from_list(&[1, 2, 2, 3], 2), Some(vec![1, 3]));
     }
+
+    #[test]
+    fn unlocking_a_new_achievement_appends_it() {
+        assert_eq!(
+            unlock_achievements_list(&[1, 2], &[3]),
+            Some(vec![1, 2, 3])
+        );
+    }
+
+    #[test]
+    fn unlocking_an_already_unlocked_achievement_is_a_no_op() {
+        assert_eq!(unlock_achievements_list(&[1, 2], &[2]), None);
+    }
+
+    #[test]
+    fn unlocking_with_empty_to_unlock_is_a_no_op() {
+        assert_eq!(unlock_achievements_list(&[1, 2], &[]), None);
+    }
+
+    #[test]
+    fn unlocking_with_duplicate_ids_deduplicates_them() {
+        assert_eq!(
+            unlock_achievements_list(&[1], &[2, 2, 3, 2]),
+            Some(vec![1, 2, 3])
+        );
+    }
+
+    #[test]
+    fn unlocking_duplicates_of_already_unlocked_achievements_is_a_no_op() {
+        assert_eq!(unlock_achievements_list(&[1, 2], &[1, 1, 2]), None);
+    }
 }
+
