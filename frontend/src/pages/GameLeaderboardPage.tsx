@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from "react";
 import { getLeaderboard } from "../api";
+import { errMsg } from "../errors";
 import TerminalSection from "../components/TerminalSection";
 import { useTranslation } from "../context/language/i18n";
 import type { LeaderboardItem } from "../types";
@@ -27,7 +28,7 @@ export default function GameLeaderboardPage() {
         setError("");
       })
       .catch((err) => {
-        setError(err instanceof Error ? err.message : t("Could not load leaderboard."));
+        setError(errMsg(err, "Could not load leaderboard.", t));
       })
       .finally(() => {
         setLoading(false);

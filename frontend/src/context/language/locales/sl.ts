@@ -232,4 +232,106 @@ export const sl: Record<string, string> = {
   "Connection to server closed.": "Povezava s strežnikom je bila prekinjena.",
   "WebSocket connection error.": "Napaka povezave WebSocket.",
   "Exit Game": "Izhod iz igre",
+
+  // produced in the browser: thrown by api.ts, or the fallback used when a
+  // failure carries no message. a couple double as server strings — same
+  // English, so one key serves both
+  "Name, email, and password are required.":
+    "Ime, e-pošta in geslo so obvezni.",
+  "Name and password are required.": "Ime in geslo sta obvezna.",
+  "Name contains the unsupported NULL char.": "Ime vsebuje nepodprt znak NULL.",
+  "Login failed: server returned an invalid token.":
+    "Prijava je spodletela: strežnik je vrnil neveljaven žeton.",
+  "Invalid user payload.": "Neveljavni podatki uporabnika.",
+  "Invalid user list payload.": "Neveljavni podatki seznama uporabnikov.",
+  "Account created, but signing in failed. Enter your password to log in.":
+    "Račun je bil ustvarjen, a prijava ni uspela. Vnesite geslo za prijavo.",
+  "could not load discussions.": "razprav ni bilo mogoče naložiti.",
+  "could not load games.": "iger ni bilo mogoče naložiti.",
+  "could not refresh users.": "seznama uporabnikov ni bilo mogoče osvežiti.",
+  "Could not load match history.":
+    "Zgodovine dvobojev ni bilo mogoče naložiti.",
+  "Could not load leaderboard.": "Lestvice ni bilo mogoče naložiti.",
+  "could not upload game.": "igre ni bilo mogoče naložiti.",
+
+  // messages the server sends back. keys are the English the server emits,
+  // matched exactly — see errMsg in errors.ts
+  // a receipt, not display text: api.ts compares it, nothing calls t() on it
+  "Logged out successfully": "Odjava je bila uspešna",
+  "Email contains the unsupported NULL char.": "E-pošta vsebuje nepodprt znak NULL.",
+  "Could not load users.": "Seznama uporabnikov ni bilo mogoče naložiti.",
+  "Could not load user.": "Uporabnika ni bilo mogoče naložiti.",
+  "User lookup failed.": "Iskanje uporabnika je spodletelo.",
+  "Could not lookup user.": "Uporabnika ni bilo mogoče poiskati.",
+  "Could not update user.": "Uporabnika ni bilo mogoče posodobiti.",
+  "Could not update friendlist.":
+    "Seznama prijateljev ni bilo mogoče posodobiti.",
+  "Could not load discussions.": "Razprav ni bilo mogoče naložiti.",
+  "Could not load discussion.": "Razprave ni bilo mogoče naložiti.",
+  "Could not create discussion.": "Razprave ni bilo mogoče ustvariti.",
+  "Could not create post.": "Objave ni bilo mogoče ustvariti.",
+  "Could not load mail.": "Pošte ni bilo mogoče naložiti.",
+  "Could not resolve recipient.": "Prejemnika ni bilo mogoče razrešiti.",
+  "Could not create mail.": "Pošte ni bilo mogoče ustvariti.",
+  "Could not load games.": "Iger ni bilo mogoče naložiti.",
+  "Could not load game.": "Igre ni bilo mogoče naložiti.",
+  "Could not create game.": "Igre ni bilo mogoče ustvariti.",
+  "Could not load game history.": "Zgodovine iger ni bilo mogoče naložiti.",
+  "User not found.": "Uporabnik ni bil najden.",
+  "Discussion not found.": "Razprava ni bila najdena.",
+  "Mail not found.": "Pošta ni bila najdena.",
+  "Recipient not found.": "Prejemnik ni bil najden.",
+  "Game not found.": "Igra ni bila najdena.",
+  "A user with that name or email already exists.":
+    "Uporabnik s tem imenom ali e-poštnim naslovom že obstaja.",
+  "Authenticated user not found in database.":
+    "Prijavljenega uporabnika ni v bazi podatkov.",
+  "Avatar data do not match the declared type.":
+    "Podatki avatarja se ne ujemajo z navedeno vrsto.",
+  "Avatar image is too large.": "Slika avatarja je prevelika.",
+  "Avatar is ill-encoded, not valid base64.":
+    "Avatar je napačno kodiran, ni veljaven base64.",
+  "Avatar must be a PNG or JPEG": "Avatar mora biti PNG ali JPEG",
+  "Bio contains the unsupported NULL char.": "Bio vsebuje nepodprt znak NULL.",
+  "Control freak, there is a user missmatch. You can only manage your own friends.":
+    "Uporabnik se ne ujema. Upravljate lahko samo svoje prijatelje.",
+  "Could not complete the login": "Prijave ni bilo mogoče dokončati",
+  "Could not start the OAuth flow": "Prijave prek OAuth ni bilo mogoče začeti",
+  "Could not start your session": "Vaše seje ni bilo mogoče začeti",
+  "Database lock failed.": "Zaklepanje baze podatkov je spodletelo.",
+  "Database lock poisoned.": "Zaklep baze podatkov je pokvarjen.",
+  "Discussion author is required.": "Avtor razprave je obvezen.",
+  "Discussion title and body are required.":
+    "Naslov in besedilo razprave sta obvezna.",
+  "Discussion was not found.": "Razprave ni bilo mogoče najti.",
+  "Email is required.": "E-pošta je obvezna.",
+  "Game name must be between 1 and 100 characters.":
+    "Ime igre mora imeti med 1 in 100 znaki.",
+  "Game script body cannot be empty.": "Skripta igre ne sme biti prazna.",
+  "Game script body exceeds maximum allowed size of 100 KB.":
+    "Skripta igre presega največjo dovoljeno velikost 100 KB.",
+  "Invalid OAuth state — start the login again":
+    "Neveljavno stanje OAuth — začnite prijavo znova",
+  "Invalid or expired access token": "Neveljaven ali potekel dostopni žeton",
+  "Mail recipient is required.": "Prejemnik pošte je obvezen.",
+  "Mail sender is required.": "Pošiljatelj pošte je obvezen.",
+  "Mail title and body are required.": "Naslov in besedilo pošte sta obvezna.",
+  "Missing authorization code": "Manjka avtorizacijska koda",
+  "Name is required.": "Ime je obvezno.",
+  "No OAuth session to exchange": "Ni seje OAuth za izmenjavo",
+  "No such user.": "Tak uporabnik ne obstaja.",
+  "Password is required.": "Geslo je obvezno.",
+  "Post author is required.": "Avtor objave je obvezen.",
+  "Post body is required.": "Besedilo objave je obvezno.",
+  "The length of your bio is bigger than the set limit.":
+    "Vaš bio je daljši od dovoljene omejitve.",
+  "Unexisting user": "Uporabnik ne obstaja",
+  "User does not exist": "Uporabnik ne obstaja",
+  "User not found in db.": "Uporabnika ni v bazi podatkov.",
+  "User-mismatch, you are not editing your own profile.":
+    "Uporabnik se ne ujema, ne urejate svojega profila.",
+  "You can't befriend yourself": "Sami s seboj se ne morete prijateljiti",
+  "Your friendlist changed just a tiny moment ago. Please try again.":
+    "Vaš seznam prijateljev se je pravkar spremenil. Poskusite znova.",
+  "Your user was not found": "Vašega uporabnika ni bilo mogoče najti",
 };

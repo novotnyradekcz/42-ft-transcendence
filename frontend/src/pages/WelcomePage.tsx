@@ -47,7 +47,7 @@ FT_TRANSCENDENCE`}
         <p className="terminal-copy">{t("Type `menu` to enter the board.")}</p>
       ) : (
         <>
-          {oauthError && <p className="terminal-error">{oauthError}</p>}
+          {oauthError && <p className="terminal-error">{t(oauthError)}</p>}
           <p className="terminal-copy">
             {t("Members only. Sign in to enter the board.")}
           </p>

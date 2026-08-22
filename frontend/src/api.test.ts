@@ -12,9 +12,18 @@ import {
   logout,
   normalizeUser,
   register,
+  RegisteredNotSignedInError,
   restoreSession,
 } from "./api";
-import { CREDENTIALS_KEY, SESSION_USER_KEY } from "./constants";
+import { CREDENTIALS_KEY, MAX_NAME_LEN, SESSION_USER_KEY } from "./constants";
+
+// the header carries utf-8 bytes, so reading one back is atob and a decode.
+// atob alone only agrees with the encoder for pure ascii
+function decodeBasic(header: string): string {
+  const binary = atob(header.slice("Basic ".length));
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
 
 const BASE_USER = {
   id: 1,
@@ -81,6 +90,25 @@ describe("buildBasicAuthHeader", () => {
     const header = buildBasicAuthHeader("user name", "p@$$w0rd!");
     const decoded = atob(header.slice("Basic ".length));
     expect(decoded).toBe("user name:p@$$w0rd!");
+  });
+
+  // btoa() throws above U+00FF, which used to kill the sign-in before it sent
+  it("edge case: a name outside Latin-1 encodes instead of throwing", () => {
+    const header = buildBasicAuthHeader("Typíčořřč$~#~#$", "s3cr3t");
+    expect(decodeBasic(header)).toBe("Typíčořřč$~#~#$:s3cr3t");
+  });
+
+  // the quiet half: never threw, just sent a lone 0xE9 the server read as a
+  // bad password
+  it("edge case: a Latin-1 accent is sent as UTF-8, not as a bare byte", () => {
+    const header = buildBasicAuthHeader("José", "pw");
+    expect(header).not.toBe("Basic " + btoa("José:pw"));
+    expect(decodeBasic(header)).toBe("José:pw");
+  });
+
+  it("edge case: a non-ASCII password round-trips, colon and all", () => {
+    const header = buildBasicAuthHeader("bob", "pä:ss🔑");
+    expect(decodeBasic(header)).toBe("bob:pä:ss🔑");
   });
 });
 
@@ -571,6 +599,61 @@ describe("register", () => {
     await expect(
       register("alice", "alice@example.com", "s3cr3t"),
     ).rejects.toThrow("400");
+  });
+
+  it("edge case: a non-ASCII name registers and signs in", async () => {
+    const fetch = stubRegisterThenLogin();
+
+    await register("Typíčořřč$~#~#$", "pico@42.fr", "s3cr3t");
+
+    // call 0 is the POST, call 1 is the sign-in that carries the credentials
+    const [, init] = fetch.mock.calls[1] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(decodeBasic(headers["Authorization"])).toBe(
+      "Typíčořřč$~#~#$:s3cr3t",
+    );
+  });
+
+  it("edge case: an over-long name is refused before the POST", async () => {
+    const fetch = stubRegisterThenLogin();
+
+    await expect(
+      register("a".repeat(MAX_NAME_LEN + 1), "alice@example.com", "s3cr3t"),
+    ).rejects.toThrow(`${MAX_NAME_LEN} characters or fewer`);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("edge case: a NULL char in the name is refused before the POST", async () => {
+    const fetch = stubRegisterThenLogin();
+
+    await expect(
+      register("ali\0ce", "alice@example.com", "s3cr3t"),
+    ).rejects.toThrow("NULL char");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  // the account is created either way, so this must not read as "registration
+  // failed"
+  it("edge case: a created account with a failed sign-in is its own error", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        statusText: "Created",
+        json: () => Promise.resolve(REGISTER_RECEIPT),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        statusText: "Unauthorized",
+        json: () => Promise.resolve(null),
+      });
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(
+      register("alice", "alice@example.com", "s3cr3t"),
+    ).rejects.toBeInstanceOf(RegisteredNotSignedInError);
   });
 });
 

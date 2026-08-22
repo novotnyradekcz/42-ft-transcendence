@@ -17,7 +17,7 @@ import type {
   SessionUser,
   UserProfile,
 } from "./types";
-import {CREDENTIALS_KEY, SESSION_USER_KEY} from "./constants";
+import {CREDENTIALS_KEY, MAX_NAME_LEN, SESSION_USER_KEY} from "./constants";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -61,6 +61,10 @@ export class ApiRequestError extends Error {
   }
 }
 
+// the account was created but the sign-in after it wasn't. the name is taken
+// from here on, so callers send the user to log in, not back to registration
+export class RegisteredNotSignedInError extends Error {}
+
 // pulls the message field out of a json error body
 async function errorDetail(response: Response): Promise<string> {
   try {
@@ -76,8 +80,14 @@ async function errorDetail(response: Response): Promise<string> {
 }
 
 // encodes name and password as a basic auth header, only used by login
+// utf-8 first, because btoa() takes bytes rather than text: without it a name
+// above U+00FF throws, and one below it sends a lone byte the server rejects
 export function buildBasicAuthHeader(name: string, password: string): string {
-  return "Basic " + btoa(`${name}:${password}`);
+  const bytes = new TextEncoder().encode(`${name}:${password}`);
+  // a byte at a time, spreading a long array into fromCharCode can overflow
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return "Basic " + btoa(binary);
 }
 
 // current credentials, read by SessionContext to persist them after login
@@ -317,6 +327,22 @@ export async function login(
   return { ...user, status: "online" };
 }
 
+// the server's name rules, checked here to save the round trip. the problem to
+// show, or null. registration only — an older account still has to log in
+export function nameProblem(name: string): string | null {
+  const cleanName = name.trim();
+  if (!cleanName) return "Name is required.";
+  // code points, like the server's chars().count()
+  if ([...cleanName].length > MAX_NAME_LEN) {
+    return `Name must be ${MAX_NAME_LEN} characters or fewer.`;
+  }
+  // Postgres has no NULL char, so the server refuses one too
+  if (cleanName.includes("\0")) {
+    return "Name contains the unsupported NULL char.";
+  }
+  return null;
+}
+
 export async function register(
   name: string,
   email: string,
@@ -328,6 +354,8 @@ export async function register(
   if (!cleanName || !cleanEmail || !password) {
     throw new Error("Name, email, and password are required.");
   }
+  const problem = nameProblem(cleanName);
+  if (problem) throw new Error(problem);
 
   // register only answers with a receipt, so log in after to get the profile
   await requestJson<unknown>("/register", {
@@ -335,7 +363,16 @@ export async function register(
     body: JSON.stringify({ name: cleanName, email: cleanEmail, password }),
   });
 
-  return login(cleanName, password);
+  // the account exists from here on, so a failure below is a failed sign-in,
+  // not a failed registration — the name is already taken, by themselves
+  try {
+    return await login(cleanName, password);
+  } catch (error) {
+    throw new RegisteredNotSignedInError(
+      "Account created, but signing in failed. Enter your password to log in.",
+      { cause: error },
+    );
+  }
 }
 
 // clears the in-memory credentials, SessionContext handles sessionStorage
