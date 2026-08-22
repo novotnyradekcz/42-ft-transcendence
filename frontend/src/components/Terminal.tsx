@@ -19,6 +19,7 @@ import GamePlayPage from "../pages/GamePlayPage";
 import DiscussionDetailPage from "../pages/DiscussionDetailPage";
 import DiscussionsPage from "../pages/DiscussionsPage";
 import FriendsPage from "../pages/FriendsPage";
+import GameAchievementsPage from "../pages/GameAchievementsPage";
 import GameHistoryPage from "../pages/GameHistoryPage";
 import GameLeaderboardPage from "../pages/GameLeaderboardPage";
 import GamesPage from "../pages/GamesPage";
@@ -148,6 +149,7 @@ export default function Terminal() {
               <Route path="/games/show" element={<GamesPage />} />
               <Route path="/games/history" element={<GameHistoryPage />} />
               <Route path="/games/leaderboard" element={<GameLeaderboardPage />} />
+              <Route path="/games/achievements" element={<GameAchievementsPage />} />
               <Route
                 path="/games/play/:id"
                 element={<GamePlayPage game={selectedGame} />}

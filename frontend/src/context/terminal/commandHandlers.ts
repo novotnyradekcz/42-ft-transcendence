@@ -252,17 +252,20 @@ export function createCommandHandlers(
       games: PAGE_PATHS.games,
       history: PAGE_PATHS["game-history"],
       leaderboard: PAGE_PATHS["game-leaderboard"],
+      achievements: PAGE_PATHS["game-achievements"],
     };
 
     const nextPath = directPaths[command];
 
-    if ((command === "profile" || command === "friends" || command === "history") && !sessionUser) {
+    if ((command === "profile" || command === "friends" || command === "history" || command === "achievements") && !sessionUser) {
       addLine(
         command === "profile"
           ? t("login first to view your profile.")
           : command === "history"
             ? t("login first to view your match history.")
-            : t("login first to view friends."),
+            : command === "achievements"
+              ? t("login first to view your achievements.")
+              : t("login first to view friends."),
       );
       startLoginFlow(deps);
       return;

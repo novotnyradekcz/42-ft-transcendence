@@ -835,6 +835,50 @@ pub async fn get_leaderboard(pool: web::Data<Arc<AppState>>) -> impl Responder {
     }
 }
 
+#[get("/achievements")]
+pub async fn get_achievements(
+    pool: web::Data<Arc<AppState>>,
+    user: AuthenticatedUser,
+) -> impl Responder {
+    let username = user.into_inner().get_username().to_string();
+
+    let mut db = match pool.database.lock() {
+        Ok(db) => db,
+        Err(_) => {
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Database lock poisoned.",
+            }))
+        }
+    };
+
+    let user_id = match users::find_user_id_by_name(&mut db, &username) {
+        Ok(Some(id)) => id,
+        Ok(None) => {
+            return HttpResponse::Unauthorized().json(serde_json::json!({
+                "message": "Authenticated user not found in database.",
+            }))
+        }
+        Err(err) => {
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": format!("Could not lookup user: {}", err),
+            }))
+        }
+    };
+
+    if let Err(err) = crate::model::achievements::check_and_unlock_achievements_in_db(&mut db, user_id) {
+        return HttpResponse::InternalServerError().json(serde_json::json!({
+            "message": format!("Could not check achievements: {}", err),
+        }));
+    }
+
+    match crate::model::achievements::get_user_achievements_in_db(&mut db, user_id) {
+        Ok(achievements) => HttpResponse::Ok().json(achievements),
+        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "message": format!("Could not load achievements: {}", err),
+        })),
+    }
+}
+
 // liveness only: no database, no auth, so it still answers when the DB is down
 #[get("/health")]
 pub async fn health() -> impl Responder {

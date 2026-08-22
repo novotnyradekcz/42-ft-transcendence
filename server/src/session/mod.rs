@@ -173,7 +173,7 @@ pub fn load_valid_blacklisted_tokens(db: &mut DatabaseInitializer) -> HashSet<St
     diesel::delete(ftt_token_blacklist.filter(expires_at.le(now)))
         .execute(conn)
         .unwrap_or_else(|e| {
-            eprintln!(
+            log::warn!(
                 "[session] Failed to delete expired blacklisted tokens from DB: {}",
                 e
             );
@@ -185,7 +185,7 @@ pub fn load_valid_blacklisted_tokens(db: &mut DatabaseInitializer) -> HashSet<St
         .select(token_key)
         .load::<String>(conn)
         .unwrap_or_else(|e| {
-            eprintln!("[session] Failed to load blacklisted tokens from DB: {}", e);
+            log::warn!("[session] Failed to load blacklisted tokens from DB: {}", e);
             vec![]
         })
         .into_iter()
@@ -228,7 +228,7 @@ fn insert_blacklisted_token_in_db(db: &mut DatabaseInitializer, key: &str, expir
         .do_nothing()
         .execute(conn)
         .unwrap_or_else(|e| {
-            eprintln!("[session] Failed to persist blacklisted token to DB: {}", e);
+            log::error!("[session] Failed to persist blacklisted token to DB: {}", e);
             0
         });
 }
