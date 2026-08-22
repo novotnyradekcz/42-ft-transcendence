@@ -513,33 +513,37 @@ pub fn unlock_achievements_in_db(
     use crate::schema::ftt_users::dsl::*;
     let conn = connection(db);
 
-    let current = ftt_users
-        .filter(id.eq(user_id))
-        .select(DbUser::as_select())
-        .first::<DbUser>(conn)
-        .optional()?;
+    conn.transaction::<_, diesel::result::Error, _>(|conn| {
+        // .for_update() locks this user's row until the transaction finishes
+        let current = ftt_users
+            .filter(id.eq(user_id))
+            .for_update()
+            .select(DbUser::as_select())
+            .first::<DbUser>(conn)
+            .optional()?;
 
-    let Some(current_user) = current else {
-        return Ok(());
-    };
+        let Some(current_user) = current else {
+            return Ok(());
+        };
 
-    let mut updated = current_user.achievements.0.clone();
-    let mut modified = false;
+        let mut updated = current_user.achievements.0.clone();
+        let mut modified = false;
 
-    for &ach_id in to_unlock {
-        if !updated.contains(&ach_id) {
-            updated.push(ach_id);
-            modified = true;
+        for &ach_id in to_unlock {
+            if !updated.contains(&ach_id) {
+                updated.push(ach_id);
+                modified = true;
+            }
         }
-    }
 
-    if modified {
-        diesel::update(ftt_users.filter(id.eq(user_id)))
-            .set(achievements.eq(AchievementList(updated)))
-            .execute(conn)?;
-    }
+        if modified {
+            diesel::update(ftt_users.filter(id.eq(user_id)))
+                .set(achievements.eq(AchievementList(updated)))
+                .execute(conn)?;
+        }
 
-    Ok(())
+        Ok(())
+    })
 }
 
 #[cfg(test)]
