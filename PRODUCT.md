@@ -66,7 +66,7 @@ Upon opening the website, users are greeted with a simple interface reminescent 
   - Show achievements and progression.
   - Leaderboard integration.
 
-- **Minor:** Implement remote authentication with OAuth 2.0 (Google, GitHub, 42, etc.).
+- **Minor:** Implement remote authentication with OAuth 2.0 (GitHub, 42, etc.).
 
 - **Minor:** Implement a complete 2FA (Two-Factor Authentication) system for the users.
 

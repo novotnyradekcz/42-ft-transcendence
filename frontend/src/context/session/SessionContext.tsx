@@ -73,7 +73,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isHydrating]);
 
   // mirrors the session into sessionStorage. skipped when api.ts holds no
   // credentials, since a stored user with no token can't make a request

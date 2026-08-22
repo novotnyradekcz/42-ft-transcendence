@@ -23,8 +23,8 @@ export default function PrivacyPage() {
         <h3>1. Who runs this board</h3>
         <p className="terminal-copy">
           ft_transcendence is a student project built at 42. It is not a
-          commercial service. It is operated by us, the students who wrote it, and
-          it exists so that we can be graded on it.
+          commercial service. It is operated by us, the students who wrote it,
+          and it exists so that we can be graded on it.
         </p>
       </section>
 
@@ -58,7 +58,7 @@ export default function PrivacyPage() {
       </section>
 
       <section className="legal-block">
-        <h3>3. Signing in with 42, Google or GitHub</h3>
+        <h3>3. Signing in with 42 or GitHub</h3>
         <p className="terminal-copy">
           If you sign in through an external provider, we never see your
           password for that provider. We ask each one for the minimum we need to
@@ -68,9 +68,6 @@ export default function PrivacyPage() {
           <li>
             <span>42 Intra</span> — the <code>public</code> scope, giving us
             your login and email
-          </li>
-          <li>
-            <span>Google</span> — <code>openid email profile</code>
           </li>
           <li>
             <span>GitHub</span> — <code>read:user user:email</code>
@@ -111,21 +108,21 @@ export default function PrivacyPage() {
       <section className="legal-block">
         <h3>5. What we use it for</h3>
         <p className="terminal-copy">
-		  Only to run the board: to sign you in, to show your profile to other
-		  members, to deliver your mail, and to display what you post. We do not
-		  sell it, share it with advertisers, or use it to build a profile of
-		  you. There is no automated decision-making.
+          Only to run the board: to sign you in, to show your profile to other
+          members, to deliver your mail, and to display what you post. We do not
+          sell it, share it with advertisers, or use it to build a profile of
+          you. There is no automated decision-making.
         </p>
       </section>
 
       <section className="legal-block">
         <h3>6. Who can see it</h3>
         <p className="terminal-copy">
-          Your name, avatar, bio and online status are visible to every signed-in
-          member. Discussion posts are public to members. Mail is visible to its
-		  sender and its recipient. Your email address is shown on the member
-		  list, so treat it as visible to other members. Nothing on this board is
-		  visible to the open internet without an account.
+          Your name, avatar, bio and online status are visible to every
+          signed-in member. Discussion posts are public to members. Mail is
+          visible to its sender and its recipient. Your email address is shown
+          on the member list, so treat it as visible to other members. Nothing
+          on this board is visible to the open internet without an account.
         </p>
       </section>
 
@@ -134,8 +131,8 @@ export default function PrivacyPage() {
         <p className="terminal-copy">
           For as long as the account exists, and as long as the project is being
           run and graded. Because this is a student project, the whole database
-          may be reset without notice. Do not store anything here that you
-		  would be sorry to lose.
+          may be reset without notice. Do not store anything here that you would
+          be sorry to lose.
         </p>
       </section>
 
@@ -162,8 +159,8 @@ export default function PrivacyPage() {
       <section className="legal-block">
         <h3>10. Changes</h3>
         <p className="terminal-copy">
-          If this policy changes, the date at the top changes with it. Continuing
-          to use the board means you accept the current version.
+          If this policy changes, the date at the top changes with it.
+          Continuing to use the board means you accept the current version.
         </p>
       </section>
     </TerminalSection>
