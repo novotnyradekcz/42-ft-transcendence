@@ -46,7 +46,7 @@ export default function ProfilePage() {
       })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [sessionUser?.id]);
 
   if (!sessionUser) {
     return <TerminalSection title={t("Profile")}>{t("Not logged in.")}</TerminalSection>;

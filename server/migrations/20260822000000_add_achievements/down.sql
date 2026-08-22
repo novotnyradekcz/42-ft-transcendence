@@ -1,2 +1,2 @@
 -- ftt_users: drop achievements column
-ALTER TABLE ftt_users DROP COLUMN achievements;
+ALTER TABLE ftt_users DROP COLUMN IF EXISTS achievements;
