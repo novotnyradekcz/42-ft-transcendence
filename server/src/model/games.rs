@@ -7,8 +7,8 @@
 //! and hands it to both players — running it is the browser's job, so nothing
 //! here parses or trusts it.
 //!
-//! The leaderboard uses Diesel DSL to query match records and calculates player
-//! standings in memory.
+//! The leaderboard queries user records and match history using Diesel ORM's
+//! query builder, aggregating and ranking the top standings in application logic.
 
 use crate::games::GameInfo;
 use crate::model::database_initializer::{connection, DatabaseInitializer};
@@ -200,10 +200,10 @@ pub fn save_game_history_in_db(
     player2_id: i32,
     winner_id: Option<i32>,
 ) -> Result<DbGameHistoryRecord, diesel::result::Error> {
-    use crate::schema::ftt_game_history::dsl as gh;
+    use crate::schema::ftt_game_history::dsl as game_history;
 
     let conn = connection(db);
-    diesel::insert_into(gh::ftt_game_history)
+    diesel::insert_into(game_history::ftt_game_history)
         .values(&NewGameHistoryRecord {
             game_id,
             game_name,
@@ -221,13 +221,13 @@ pub fn get_game_history_for_user_in_db(
     db: &mut DatabaseInitializer,
     user_id: i32,
 ) -> Result<Vec<GameHistoryResponse>, diesel::result::Error> {
-    use crate::schema::ftt_game_history::dsl as gh;
+    use crate::schema::ftt_game_history::dsl as game_history;
     use crate::schema::ftt_users::dsl as users;
 
     let conn = connection(db);
-    let records = gh::ftt_game_history
-        .filter(gh::player1_id.eq(user_id).or(gh::player2_id.eq(user_id)))
-        .order(gh::played_at.desc())
+    let records = game_history::ftt_game_history
+        .filter(game_history::player1_id.eq(user_id).or(game_history::player2_id.eq(user_id)))
+        .order(game_history::played_at.desc())
         .select(DbGameHistoryRecord::as_select())
         .load::<DbGameHistoryRecord>(conn)?;
 
@@ -261,63 +261,52 @@ pub fn get_game_history_for_user_in_db(
     Ok(result)
 }
 
-// top ten by win ratio, ranked by win_loss_ratio DESC, then wins DESC
+// Top ten by win ratio, constructed using Diesel DSL queries and in-memory aggregation.
 pub fn get_leaderboard_in_db(
     db: &mut DatabaseInitializer,
 ) -> Result<Vec<LeaderboardEntry>, diesel::result::Error> {
-    use crate::schema::ftt_achievements::dsl as achievements;
-    use crate::schema::ftt_game_history::dsl as gh;
-    use crate::schema::ftt_player_achievements::dsl as player_achievements;
-    use crate::schema::ftt_users::dsl as users_dsl;
+    use crate::schema::ftt_game_history::dsl as game_history;
+    use crate::schema::ftt_users::dsl as users;
 
     let conn = connection(db);
 
-    // 1. Fetch game history
-    let game_records: Vec<(i32, i32, Option<i32>)> = gh::ftt_game_history
-        .select((gh::player1_id, gh::player2_id, gh::winner_id))
+    let all_users = users::ftt_users
+        .select((users::id, users::name))
+        .load::<(i32, String)>(conn)?;
+
+    let user_names: std::collections::HashMap<i32, String> = all_users.into_iter().collect();
+
+    let history = game_history::ftt_game_history
+        .select((game_history::player1_id, game_history::player2_id, game_history::winner_id))
         .load::<(i32, i32, Option<i32>)>(conn)?;
 
     #[derive(Default)]
-    struct UserStats {
+    struct PlayerStats {
         wins: i32,
         losses: i32,
         draws: i32,
     }
 
-    // 2. Aggregate stats for each player
-    let mut stats_map: std::collections::HashMap<i32, UserStats> = std::collections::HashMap::new();
+    let mut stats_map: std::collections::HashMap<i32, PlayerStats> =
+        std::collections::HashMap::new();
 
-    for (p1, p2, winner) in game_records {
-        let s1 = stats_map.entry(p1).or_default();
-        match winner {
-            Some(w) if w == p1 => s1.wins += 1,
-            Some(_) => s1.losses += 1,
-            None => s1.draws += 1,
+    for (p1_id, p2_id, winner_id) in history {
+        let p1_stat = stats_map.entry(p1_id).or_default();
+        match winner_id {
+            Some(w) if w == p1_id => p1_stat.wins += 1,
+            Some(_) => p1_stat.losses += 1,
+            None => p1_stat.draws += 1,
         }
 
-        let s2 = stats_map.entry(p2).or_default();
-        match winner {
-            Some(w) if w == p2 => s2.wins += 1,
-            Some(_) => s2.losses += 1,
-            None => s2.draws += 1,
+        let p2_stat = stats_map.entry(p2_id).or_default();
+        match winner_id {
+            Some(w) if w == p2_id => p2_stat.wins += 1,
+            Some(_) => p2_stat.losses += 1,
+            None => p2_stat.draws += 1,
         }
     }
 
-    let user_ids: Vec<i32> = stats_map.keys().copied().collect();
-
-    // 3. Fetch user names
-    let user_names: std::collections::HashMap<i32, String> = if user_ids.is_empty() {
-        std::collections::HashMap::new()
-    } else {
-        users_dsl::ftt_users
-            .filter(users_dsl::id.eq_any(&user_ids))
-            .select((users_dsl::id, users_dsl::name))
-            .load::<(i32, String)>(conn)?
-            .into_iter()
-            .collect()
-    };
-
-    struct CalculatedStats {
+    struct LeaderboardTemp {
         user_id: i32,
         user_name: String,
         wins: i32,
@@ -326,62 +315,37 @@ pub fn get_leaderboard_in_db(
         win_loss_ratio: f64,
     }
 
-    let mut ranked_players: Vec<CalculatedStats> = stats_map
+    let mut rows: Vec<LeaderboardTemp> = stats_map
         .into_iter()
-        .filter_map(|(uid, s)| {
-            let name = user_names.get(&uid)?.clone();
-            let total = s.wins + s.losses;
-            let ratio = if total == 0 {
+        .filter_map(|(user_id, s)| {
+            let name = user_names.get(&user_id)?.clone();
+            let total_decided = s.wins + s.losses;
+            let win_loss_ratio = if total_decided == 0 {
                 0.0
             } else {
-                ((s.wins as f64 / total as f64) * 10000.0).round() / 10000.0
+                (s.wins as f64 / total_decided as f64 * 10000.0).round() / 10000.0
             };
-            Some(CalculatedStats {
-                user_id: uid,
+            Some(LeaderboardTemp {
+                user_id,
                 user_name: name,
                 wins: s.wins,
                 losses: s.losses,
                 draws: s.draws,
-                win_loss_ratio: ratio,
+                win_loss_ratio,
             })
         })
         .collect();
 
-    // Sort by win_loss_ratio DESC, wins DESC
-    ranked_players.sort_by(|a, b| {
+    rows.sort_by(|a, b| {
         b.win_loss_ratio
-            .partial_cmp(&a.win_loss_ratio)
-            .unwrap_or(std::cmp::Ordering::Equal)
+            .total_cmp(&a.win_loss_ratio)
             .then_with(|| b.wins.cmp(&a.wins))
+            .then_with(|| a.user_id.cmp(&b.user_id))
     });
 
-    ranked_players.truncate(10);
+    rows.truncate(10);
 
-    let top_user_ids: Vec<i32> = ranked_players.iter().map(|p| p.user_id).collect();
-
-    // 4. Fetch latest achievements for top 10 players
-    let mut emoji_map: std::collections::HashMap<i32, Vec<String>> = std::collections::HashMap::new();
-    if !top_user_ids.is_empty() {
-        let player_emojis: Vec<(i32, String)> = player_achievements::ftt_player_achievements
-            .inner_join(achievements::ftt_achievements)
-            .filter(player_achievements::user_id.eq_any(&top_user_ids))
-            .order((
-                player_achievements::user_id.asc(),
-                player_achievements::unlocked_at.desc(),
-                player_achievements::achievement_id.desc(),
-            ))
-            .select((player_achievements::user_id, achievements::emoji))
-            .load::<(i32, String)>(conn)?;
-
-        for (uid, emoji) in player_emojis {
-            let list = emoji_map.entry(uid).or_default();
-            if list.len() < 3 {
-                list.push(emoji);
-            }
-        }
-    }
-
-    let entries = ranked_players
+    let entries = rows
         .into_iter()
         .enumerate()
         .map(|(idx, r)| {
