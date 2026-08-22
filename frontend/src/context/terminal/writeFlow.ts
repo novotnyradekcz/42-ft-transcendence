@@ -81,7 +81,7 @@ export function createWriteFlowHandlers(deps: TerminalDeps) {
         (await refreshForPage("mail")).forEach(addLine);
         addLine(t("mail sent to {name}.", { name: recipientName }));
       } catch (error) {
-        setWriteError(errMsg(error, t("Could not send mail.")));
+        setWriteError(errMsg(error, "Could not send mail.", t));
         addLine(
           t("mail failed. press Ctrl+C/Esc to quit, or enter message again."),
         );
@@ -107,7 +107,7 @@ export function createWriteFlowHandlers(deps: TerminalDeps) {
         navigate(`/discussions/show/${discussion.id}`);
         addLine(t("discussion posted."));
       } catch (error) {
-        setWriteError(errMsg(error, t("Could not write discussion.")));
+        setWriteError(errMsg(error, "Could not write discussion.", t));
         addLine(
           t("discussion failed. press Ctrl+C/Esc to quit, or enter post again."),
         );
@@ -127,7 +127,7 @@ export function createWriteFlowHandlers(deps: TerminalDeps) {
       (await refreshForPage("discussions")).forEach(addLine);
       addLine(t("reply posted."));
     } catch (error) {
-      setWriteError(errMsg(error, t("Could not post reply.")));
+      setWriteError(errMsg(error, "Could not post reply.", t));
       addLine(
         t("reply failed. press Ctrl+C/Esc to quit, or enter reply again."),
       );

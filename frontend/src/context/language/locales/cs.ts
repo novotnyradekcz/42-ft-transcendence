@@ -239,4 +239,108 @@ export const cs: Record<string, string> = {
   "Connection to server closed.": "Připojení k serveru bylo ukončeno.",
   "WebSocket connection error.": "Chyba připojení WebSocket.",
   "Exit Game": "Ukončit hru",
+
+  // produced in the browser: thrown by api.ts, or the fallback used when a
+  // failure carries no message. a couple double as server strings — same
+  // English, so one key serves both
+  "Name, email, and password are required.":
+    "Jméno, e-mail a heslo jsou povinné.",
+  "Name and password are required.": "Jméno a heslo jsou povinné.",
+  "Name contains the unsupported NULL char.":
+    "Jméno obsahuje nepodporovaný znak NULL.",
+  "Login failed: server returned an invalid token.":
+    "Přihlášení selhalo: server vrátil neplatný token.",
+  "Invalid user payload.": "Neplatná data uživatele.",
+  "Invalid user list payload.": "Neplatná data seznamu uživatelů.",
+  "Account created, but signing in failed. Enter your password to log in.":
+    "Účet byl vytvořen, ale přihlášení se nezdařilo. Zadejte heslo pro přihlášení.",
+  "could not load discussions.": "diskuze se nepodařilo načíst.",
+  "could not load games.": "hry se nepodařilo načíst.",
+  "could not refresh users.": "seznam uživatelů se nepodařilo obnovit.",
+  "Could not load match history.": "Historii zápasů se nepodařilo načíst.",
+  "Could not load leaderboard.": "Žebříček se nepodařilo načíst.",
+  "could not upload game.": "hru se nepodařilo nahrát.",
+
+  // messages the server sends back. keys are the English the server emits,
+  // matched exactly — see errMsg in errors.ts
+  // a receipt, not display text: api.ts compares it, nothing calls t() on it
+  "Logged out successfully": "Odhlášení proběhlo úspěšně",
+  "Email contains the unsupported NULL char.": "E-mail obsahuje nepodporovaný znak NULL.",
+  "Could not load users.": "Seznam uživatelů se nepodařilo načíst.",
+  "Could not load user.": "Uživatele se nepodařilo načíst.",
+  "User lookup failed.": "Vyhledání uživatele selhalo.",
+  "Could not lookup user.": "Uživatele se nepodařilo vyhledat.",
+  "Could not update user.": "Uživatele se nepodařilo aktualizovat.",
+  "Could not update friendlist.": "Seznam přátel se nepodařilo aktualizovat.",
+  "Could not load discussions.": "Diskuze se nepodařilo načíst.",
+  "Could not load discussion.": "Diskuzi se nepodařilo načíst.",
+  "Could not create discussion.": "Diskuzi se nepodařilo vytvořit.",
+  "Could not create post.": "Příspěvek se nepodařilo vytvořit.",
+  "Could not load mail.": "Poštu se nepodařilo načíst.",
+  "Could not resolve recipient.": "Příjemce se nepodařilo najít.",
+  "Could not create mail.": "Poštu se nepodařilo vytvořit.",
+  "Could not load games.": "Hry se nepodařilo načíst.",
+  "Could not load game.": "Hru se nepodařilo načíst.",
+  "Could not create game.": "Hru se nepodařilo vytvořit.",
+  "Could not load game history.": "Historii her se nepodařilo načíst.",
+  "User not found.": "Uživatel nebyl nalezen.",
+  "Discussion not found.": "Diskuze nebyla nalezena.",
+  "Mail not found.": "Pošta nebyla nalezena.",
+  "Recipient not found.": "Příjemce nebyl nalezen.",
+  "Game not found.": "Hra nebyla nalezena.",
+  "A user with that name or email already exists.":
+    "Uživatel s tímto jménem nebo e-mailem už existuje.",
+  "Authenticated user not found in database.":
+    "Přihlášený uživatel nebyl v databázi nalezen.",
+  "Avatar data do not match the declared type.":
+    "Data avataru neodpovídají deklarovanému typu.",
+  "Avatar image is too large.": "Obrázek avataru je příliš velký.",
+  "Avatar is ill-encoded, not valid base64.":
+    "Avatar je špatně zakódovaný, není to platný base64.",
+  "Avatar must be a PNG or JPEG": "Avatar musí být PNG nebo JPEG",
+  "Bio contains the unsupported NULL char.":
+    "Bio obsahuje nepodporovaný znak NULL.",
+  "Control freak, there is a user missmatch. You can only manage your own friends.":
+    "Uživatel nesouhlasí. Spravovat můžete jen vlastní přátele.",
+  "Could not complete the login": "Přihlášení se nepodařilo dokončit",
+  "Could not start the OAuth flow":
+    "Přihlášení přes OAuth se nepodařilo zahájit",
+  "Could not start your session": "Vaši relaci se nepodařilo zahájit",
+  "Database lock failed.": "Zámek databáze selhal.",
+  "Database lock poisoned.": "Zámek databáze je poškozený.",
+  "Discussion author is required.": "Autor diskuze je povinný.",
+  "Discussion title and body are required.":
+    "Název a text diskuze jsou povinné.",
+  "Discussion was not found.": "Diskuze nebyla nalezena.",
+  "Email is required.": "E-mail je povinný.",
+  "Game name must be between 1 and 100 characters.":
+    "Název hry musí mít 1 až 100 znaků.",
+  "Game script body cannot be empty.": "Skript hry nesmí být prázdný.",
+  "Game script body exceeds maximum allowed size of 100 KB.":
+    "Skript hry překračuje maximální povolenou velikost 100 KB.",
+  "Invalid OAuth state — start the login again":
+    "Neplatný stav OAuth — začněte přihlášení znovu",
+  "Invalid or expired access token": "Neplatný nebo vypršelý přístupový token",
+  "Mail recipient is required.": "Příjemce pošty je povinný.",
+  "Mail sender is required.": "Odesílatel pošty je povinný.",
+  "Mail title and body are required.": "Předmět a text pošty jsou povinné.",
+  "Missing authorization code": "Chybí autorizační kód",
+  "Name is required.": "Jméno je povinné.",
+  "No OAuth session to exchange":
+    "Není k dispozici žádná relace OAuth k výměně",
+  "No such user.": "Takový uživatel neexistuje.",
+  "Password is required.": "Heslo je povinné.",
+  "Post author is required.": "Autor příspěvku je povinný.",
+  "Post body is required.": "Text příspěvku je povinný.",
+  "The length of your bio is bigger than the set limit.":
+    "Vaše bio je delší než povolený limit.",
+  "Unexisting user": "Uživatel neexistuje",
+  "User does not exist": "Uživatel neexistuje",
+  "User not found in db.": "Uživatel nebyl v databázi nalezen.",
+  "User-mismatch, you are not editing your own profile.":
+    "Uživatel nesouhlasí, neupravujete vlastní profil.",
+  "You can't befriend yourself": "Sami sobě přítelem být nemůžete",
+  "Your friendlist changed just a tiny moment ago. Please try again.":
+    "Váš seznam přátel se právě před chvílí změnil. Zkuste to prosím znovu.",
+  "Your user was not found": "Váš uživatel nebyl nalezen",
 };

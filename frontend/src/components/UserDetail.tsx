@@ -3,6 +3,7 @@
 
 import { useState } from "react";
 import { addFriend, removeFriend } from "../api";
+import { errMsg } from "../errors";
 import AvatarImage from "./AvatarImage";
 import TerminalSection from "./TerminalSection";
 import { useData } from "../context/data/useData";
@@ -57,7 +58,7 @@ export default function UserDetail() {
       }
       await refreshUsers().catch(() => {});
     } catch (e) {
-      addLine(e instanceof Error ? e.message : t("could not update friends."));
+      addLine(errMsg(e, "could not update friends.", t));
     } finally {
       setBusy(false);
     }

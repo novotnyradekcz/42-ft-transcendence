@@ -298,7 +298,7 @@ export function createCommandHandlers(
         setSelectedUser(await getUser(user.id));
         navigate(`/users/show/${user.id}`);
       } catch (e) {
-        addLine(errMsg(e, t("could not load user.")));
+        addLine(errMsg(e, "could not load user.", t));
       }
       return;
     }
@@ -313,7 +313,7 @@ export function createCommandHandlers(
         setSelectedDiscussion(await getDiscussion(discussion.id));
         navigate(`/discussions/show/${discussion.id}`);
       } catch (e) {
-        addLine(errMsg(e, t("could not load discussion.")));
+        addLine(errMsg(e, "could not load discussion.", t));
       }
       return;
     }
@@ -328,7 +328,7 @@ export function createCommandHandlers(
         setSelectedMail(await getMail(message.id));
         navigate(`/mail/show/${message.id}`);
       } catch (e) {
-        addLine(errMsg(e, t("could not load mail.")));
+        addLine(errMsg(e, "could not load mail.", t));
       }
       return;
     }
@@ -343,7 +343,7 @@ export function createCommandHandlers(
         setSelectedUser(await getUser(user.id));
         navigate(`/users/show/${user.id}`);
       } catch (e) {
-        addLine(errMsg(e, t("could not load user.")));
+        addLine(errMsg(e, "could not load user.", t));
       }
       return;
     }
@@ -429,7 +429,8 @@ export function createCommandHandlers(
       addLine(
         errMsg(
           e,
-          adding ? t("could not add friend.") : t("could not remove friend."),
+          adding ? "could not add friend." : "could not remove friend.",
+          t,
         ),
       );
     }

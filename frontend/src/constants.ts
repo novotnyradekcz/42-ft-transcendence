@@ -10,3 +10,6 @@ export const CREDENTIALS_KEY = "ft_transcendence.credentials";
 
 // sessionStorage key for the stored SessionUser
 export const SESSION_USER_KEY = "ft_transcendence.sessionUser";
+
+// longest name registration accepts, kept in step with the server's own limit
+export const MAX_NAME_LEN = 20;
