@@ -15,6 +15,7 @@ import {
   restoreSession,
 } from "./api";
 import { CREDENTIALS_KEY, SESSION_USER_KEY } from "./constants";
+import type { UserProfile } from "./types";
 
 const BASE_USER = {
   id: 1,
@@ -174,7 +175,7 @@ describe("normalizeUser", () => {
 });
 
 describe("listFriends", () => {
-  const allUsers = [
+  const allUsers: UserProfile[] = [
     {
       id: 1,
       name: "alice",
@@ -183,6 +184,7 @@ describe("listFriends", () => {
       avatarUrl: "",
       status: "online" as const,
       friends: [],
+      achievements: [],
     },
     {
       id: 2,
@@ -192,6 +194,7 @@ describe("listFriends", () => {
       avatarUrl: "",
       status: "offline" as const,
       friends: [],
+      achievements: [],
     },
     {
       id: 3,
@@ -201,6 +204,7 @@ describe("listFriends", () => {
       avatarUrl: "",
       status: "offline" as const,
       friends: [],
+      achievements: [],
     },
   ];
 
