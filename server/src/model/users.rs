@@ -17,9 +17,9 @@ use diesel::pg::PgValue;
 use diesel::prelude::*;
 use diesel::serialize::{self, IsNull, Output, ToSql};
 use diesel::sql_types::Text;
+use rand::Rng;
 use std::convert::From;
 use std::io::Write;
-use rand::Rng;
 
 /// `Vec<i32>` stored in PostgreSQL as a JSON text array (e.g. `[1,2,3]`).
 /// Implements Diesel's `FromSql`/`ToSql` so it maps transparently to a TEXT column.
@@ -56,8 +56,6 @@ pub struct DbUser {
     pub bio: String,
     pub avatar_url: String,
     pub friends: FriendList,
-    pub provider: String,
-    pub provider_user_id: String,
 }
 
 #[derive(Insertable)]
@@ -77,6 +75,18 @@ pub struct OAuthProfile {
     pub email: String,
 }
 
+pub enum OAuthUserError {
+    /// The address already belongs to an account this login cannot prove it owns.
+    EmailTaken,
+    DatabaseError(diesel::result::Error),
+}
+
+impl From<diesel::result::Error> for OAuthUserError {
+    fn from(e: diesel::result::Error) -> Self {
+        OAuthUserError::DatabaseError(e)
+    }
+}
+
 // looks a user up by (provider, provider_user_id) and creates one if there's no
 // match. the name may already be taken by a local account, so it's suffixed until
 // it's free rather than failing the login
@@ -84,10 +94,12 @@ pub fn find_or_create_oauth_user(
     db: &mut DatabaseInitializer,
     profile: &OAuthProfile,
     encoder: &Argon2PasswordEncoder,
-    ) -> Result <DbUser, diesel::result::Error> {
+) -> Result<DbUser, OAuthUserError> {
     use crate::schema::ftt_users::dsl::*;
 
     let conn = connection(db);
+
+    let email_normalized = profile.email.trim().to_lowercase();
 
     let existing = ftt_users
         .filter(
@@ -100,18 +112,27 @@ pub fn find_or_create_oauth_user(
         .optional()?;
 
     if let Some(user) = existing {
-        // fill in an email we didn't have before (GitHub often gives none on
-        // the first login). only ever fills a blank, never overwrites
-        if user.email.is_empty() && !profile.email.is_empty() {
+        if user.email.is_empty() && !email_normalized.is_empty() {
+            // FIXME: user always has to have email
             diesel::update(ftt_users.filter(id.eq(user.id)))
-                .set(email.eq(&profile.email))
+                .set(email.eq(&email_normalized))
                 .execute(conn)?;
             return Ok(DbUser {
-                email: profile.email.clone(),
+                email: email_normalized.clone(),
                 ..user
             });
         }
         return Ok(user);
+    }
+    let email_taken = ftt_users
+        .filter(email.eq(&email_normalized))
+        .select(id)
+        .first::<i32>(conn)
+        .optional()?
+        .is_some();
+
+    if email_taken {
+        return Err(OAuthUserError::EmailTaken);
     }
 
     let mut candidate = profile.login.clone();
@@ -124,8 +145,7 @@ pub fn find_or_create_oauth_user(
         .is_some()
     {
         attempt += 1;
-        candidate = format!("{}-{}-{}", 
-            profile.login, profile.provider, attempt);
+        candidate = format!("{}-{}-{}", profile.login, profile.provider, attempt);
     }
 
     // an OAuth account has no password, but the column needs one. a random
@@ -139,7 +159,7 @@ pub fn find_or_create_oauth_user(
     let inserted: DbUser = diesel::insert_into(ftt_users)
         .values(&NewOAuthUser {
             name: &candidate,
-            email: &profile.email,
+            email: &email_normalized,
             password: &encoder.encode(&unreachable_secret),
             provider: &profile.provider,
             provider_user_id: &profile.provider_user_id,
@@ -306,9 +326,11 @@ pub fn create_user_in_db(
 
     let conn = connection(db);
 
+    let email_normalized = new_user.email.trim().to_lowercase();
+
     // Reject if name or email is already taken
     let existing = ftt_users
-        .filter(name.eq(&new_user.name).or(email.eq(&new_user.email)))
+        .filter(name.eq(&new_user.name).or(email.eq(&email_normalized)))
         .select(DbUser::as_select())
         .first(conn)
         .optional()?;
@@ -321,7 +343,7 @@ pub fn create_user_in_db(
     let inserted_user: DbUser = diesel::insert_into(ftt_users)
         .values(&NewUser {
             name: &new_user.name,
-            email: &new_user.email,
+            email: &email_normalized,
             password: encoded_password,
         })
         .returning(DbUser::as_returning())
@@ -338,7 +360,7 @@ pub fn update_user_profile_in_db(
     new_bio: Option<&str>,
     new_avatar_url: Option<&str>,
 ) -> Result<Option<UserInfo>, diesel::result::Error> {
-    // Pull diesel schemas in scope 
+    // Pull diesel schemas in scope
     use crate::schema::ftt_users::dsl::*;
 
     // check if there is what to change
@@ -519,6 +541,9 @@ mod tests {
     /// removing must clear every copy rather than leave a stale one behind.
     #[test]
     fn removing_clears_every_duplicate() {
-        assert_eq!(remove_exfriend_from_list(&[1, 2, 2, 3], 2), Some(vec![1, 3]));
+        assert_eq!(
+            remove_exfriend_from_list(&[1, 2, 2, 3], 2),
+            Some(vec![1, 3])
+        );
     }
 }

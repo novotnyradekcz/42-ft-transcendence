@@ -18,7 +18,9 @@
 
 use crate::authenticator::{get_user_from_store, register_user, TokenResponse};
 use crate::model::database_initializer::OAuthProvider;
-use crate::model::users::{find_or_create_oauth_user, get_user_in_db, OAuthProfile};
+use crate::model::users::{
+    find_or_create_oauth_user, get_user_in_db, OAuthProfile, OAuthUserError,
+};
 use crate::AppState;
 use actix_security::prelude::User;
 use actix_session::Session;
@@ -101,10 +103,7 @@ pub async fn oauth_start(
         .collect();
 
     // keyed by provider so two tabs mid-login don't clobber each other
-    if session
-        .insert(state_key(&provider_id), &state)
-        .is_err()
-    {
+    if session.insert(state_key(&provider_id), &state).is_err() {
         return oauth_failed(&pool, "Could not start the OAuth flow");
     }
 
@@ -196,7 +195,7 @@ pub async fn oauth_callback(
         Ok(mut resp) if resp.status().is_success() => match resp.json::<AccessToken>().await {
             Ok(t) => t,
             Err(e) => {
-                log::error!("{provider_id} token response was not the expected shape: {e}");
+                log::warn!("{provider_id} token response was not the expected shape: {e}");
                 return oauth_failed(
                     &pool,
                     &format!("Unexpected response from {}", provider.spec.label),
@@ -204,7 +203,7 @@ pub async fn oauth_callback(
             }
         },
         Ok(resp) => {
-            log::error!(
+            log::warn!(
                 "{provider_id} rejected the code exchange: HTTP {}",
                 resp.status()
             );
@@ -214,7 +213,7 @@ pub async fn oauth_callback(
             );
         }
         Err(e) => {
-            log::error!("could not reach {provider_id} for the code exchange: {e}");
+            log::warn!("could not reach {provider_id} for the code exchange: {e}");
             return oauth_failed(&pool, &format!("Could not reach {}", provider.spec.label));
         }
     };
@@ -228,18 +227,20 @@ pub async fn oauth_callback(
         .send()
         .await
     {
-        Ok(mut resp) if resp.status().is_success() => match resp.json::<serde_json::Value>().await {
-            Ok(v) => v,
-            Err(e) => {
-                log::error!("{provider_id} profile was not valid JSON: {e}");
-                return oauth_failed(
-                    &pool,
-                    &format!("Unexpected profile response from {}", provider.spec.label),
-                );
+        Ok(mut resp) if resp.status().is_success() => {
+            match resp.json::<serde_json::Value>().await {
+                Ok(v) => v,
+                Err(e) => {
+                    log::warn!("{provider_id} profile was not valid JSON: {e}");
+                    return oauth_failed(
+                        &pool,
+                        &format!("Unexpected profile response from {}", provider.spec.label),
+                    );
+                }
             }
-        },
+        }
         Ok(resp) => {
-            log::error!(
+            log::warn!(
                 "{provider_id} refused the profile request: HTTP {}",
                 resp.status()
             );
@@ -249,7 +250,7 @@ pub async fn oauth_callback(
             );
         }
         Err(e) => {
-            log::error!("could not reach {provider_id} for the profile: {e}");
+            log::warn!("could not reach {provider_id} for the profile: {e}");
             return oauth_failed(&pool, &format!("Could not reach {}", provider.spec.label));
         }
     };
@@ -257,7 +258,7 @@ pub async fn oauth_callback(
     let mut profile = match parse_profile(provider, &raw_profile) {
         Some(p) => p,
         None => {
-            log::error!("{provider_id} profile lacked a usable id: {raw_profile}");
+            log::warn!("{provider_id} profile lacked a usable id: {raw_profile}");
             return oauth_failed(
                 &pool,
                 &format!("Unexpected profile response from {}", provider.spec.label),
@@ -265,12 +266,33 @@ pub async fn oauth_callback(
         }
     };
 
-    // GitHub hides private emails from /user. The frontend rejects a user
-    // with no email, so go fetch the real one.
-    if profile.email.is_empty() && provider.spec.id == "github" {
+    // GitHub's /user withholds a private address, but /user/emails still has
+    // it. This only ever *attempts* to improve the value — the guard below is
+    // what decides whether we got one.
+    if profile.email.trim().is_empty() && provider.spec.id == "github" {
         if let Some(email) = github_primary_email(&client, &token.access_token).await {
             profile.email = email;
         }
+    }
+
+    // No row without an email. It is the one field that can recognise the same
+    // human across providers, so a blank one silently duplicates accounts.
+    //
+    // Deliberately after the fallback rather than inside it: Some(..) from the
+    // fetch means it returned something, not that it returned an address.
+    if profile.email.trim().is_empty() {
+        log::warn!(
+            "{provider_id} gave no usable email for login {}",
+            profile.login
+        );
+        return oauth_failed(
+            &pool,
+            &format!(
+                "{} did not give us a verified email address \u{2014} check that you \
+                 granted the email permission and that your account has one.",
+                provider.spec.label
+            ),
+        );
     }
 
     // scoped: never hold the db lock across an .await
@@ -281,7 +303,12 @@ pub async fn oauth_callback(
             .expect("oauth_callback expects DatabaseInitializer");
         match find_or_create_oauth_user(&mut db, &profile, &pool.encoder) {
             Ok(u) => u,
-            Err(e) => {
+            Err(OAuthUserError::EmailTaken) => {
+                return oauth_failed(&pool, &format!(
+                    "There is already a User with that email. Try logging in with your password instead of {}",
+                    provider.spec.label))
+            }
+            Err(OAuthUserError::DatabaseError(e)) => {
                 log::error!("could not resolve the {provider_id} identity to a user: {e}");
                 return oauth_failed(&pool, "Could not complete the login");
             }
@@ -315,7 +342,7 @@ pub async fn oauth_session(pool: web::Data<Arc<AppState>>, session: Session) -> 
     let user_id = match session.remove_as::<i32>("user_id").and_then(|r| r.ok()) {
         Some(id) => id,
         None => {
-            return HttpResponse::Unauthorized().json(serde_json::json!({
+            return HttpResponse::NoContent().json(serde_json::json!({
                 "message": "No OAuth session to exchange",
             }));
         }
@@ -390,18 +417,6 @@ fn parse_profile(provider: &OAuthProvider, raw: &serde_json::Value) -> Option<OA
                 .unwrap_or_else(|| id.clone());
             (id, login)
         }
-        // no username here: `sub` is the id, and the name is the best handle
-        "google" => {
-            let id = raw.get("sub").and_then(json_id)?;
-            let login = raw
-                .get("name")
-                .and_then(|v| v.as_str())
-                .map(str::to_string)
-                .or_else(|| email.split('@').next().map(str::to_string))
-                .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| id.clone());
-            (id, login)
-        }
         _ => return None,
     };
 
@@ -435,11 +450,11 @@ async fn github_primary_email(client: &awc::Client, access_token: &str) -> Optio
         .insert_header(("Accept", "application/json"))
         .send()
         .await
-        .map_err(|e| log::error!("could not reach GitHub for the email list: {e}"))
+        .map_err(|e| log::warn!("could not reach GitHub for the email list: {e}"))
         .ok()?;
 
     if !response.status().is_success() {
-        log::error!(
+        log::warn!(
             "GitHub refused the email list: HTTP {} (is the user:email scope granted?)",
             response.status()
         );
@@ -449,7 +464,7 @@ async fn github_primary_email(client: &awc::Client, access_token: &str) -> Optio
     let emails = response
         .json::<serde_json::Value>()
         .await
-        .map_err(|e| log::error!("GitHub email list was not valid JSON: {e}"))
+        .map_err(|e| log::warn!("GitHub email list was not valid JSON: {e}"))
         .ok()?;
 
     let entries = emails.as_array()?;
