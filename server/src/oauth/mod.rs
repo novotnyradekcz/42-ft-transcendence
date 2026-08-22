@@ -27,7 +27,6 @@ use actix_session::Session;
 use actix_web::{get, web, HttpResponse, Responder};
 use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
-// use std::fmt::format;
 use std::sync::Arc;
 use url::Url;
 
@@ -219,7 +218,6 @@ pub async fn oauth_callback(
         }
     };
 
-    // FIXME: This should be refactored
     // a Value because the three providers agree on nothing
     let raw_profile: serde_json::Value = match client
         .get(provider.spec.profile_url)
