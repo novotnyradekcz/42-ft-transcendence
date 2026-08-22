@@ -69,11 +69,23 @@ pub struct OAuthProfile {
     pub email: String,
 }
 
+pub enum OAuthUserError {
+    /// The address already belongs to an account this login cannot prove it owns.
+    EmailTaken,
+    DatabaseError(diesel::result::Error),
+}
+
+impl From<diesel::result::Error> for OAuthUserError {
+    fn from(e: diesel::result::Error) -> Self {
+        OAuthUserError::DatabaseError(e)
+    }
+}
+
 pub fn find_or_create_oauth_user(
     db: &mut DatabaseInitializer,
     profile: &OAuthProfile,
     encoder: &Argon2PasswordEncoder,
-) -> Result<DbUser, diesel::result::Error> {
+) -> Result<DbUser, OAuthUserError> {
     use crate::schema::ftt_users::dsl::*;
 
     let conn = connection(db);
@@ -100,6 +112,16 @@ pub fn find_or_create_oauth_user(
             });
         }
         return Ok(user);
+    }
+    let email_taken = ftt_users
+        .filter(email.eq(&profile.email))
+        .select(id)
+        .first::<i32>(conn)
+        .optional()?
+        .is_some();
+
+    if email_taken {
+        return Err(OAuthUserError::EmailTaken);
     }
 
     let mut candidate = profile.login.clone();

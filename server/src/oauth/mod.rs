@@ -2,13 +2,16 @@
 
 use crate::authenticator::{get_user_from_store, register_user, TokenResponse};
 use crate::model::database_initializer::OAuthProvider;
-use crate::model::users::{find_or_create_oauth_user, get_user_in_db, OAuthProfile};
+use crate::model::users::{
+    find_or_create_oauth_user, get_user_in_db, OAuthProfile, OAuthUserError,
+};
 use crate::AppState;
 use actix_security::prelude::User;
 use actix_session::Session;
 use actix_web::{get, web, HttpResponse, Responder};
 use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
+// use std::fmt::format;
 use std::sync::Arc;
 use url::Url;
 
@@ -286,7 +289,12 @@ pub async fn oauth_callback(
             .expect("oauth_callback expects DatabaseInitializer");
         match find_or_create_oauth_user(&mut db, &profile, &pool.encoder) {
             Ok(u) => u,
-            Err(e) => {
+            Err(OAuthUserError::EmailTaken) => {
+                return oauth_failed(&pool, &format!(
+                    "There is already a User with that email. Try logging in with your password instead of {}",
+                    provider.spec.label))
+            }
+            Err(OAuthUserError::DatabaseError(e)) => {
                 log::error!("could not resolve the {provider_id} identity to a user: {e}");
                 return oauth_failed(&pool, "Could not complete the login");
             }
