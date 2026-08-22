@@ -104,14 +104,14 @@ def login(
     if ssl_ctx is None:
         ssl_ctx = make_insecure_ssl_context()
 
-    req = urllib.request.Request(login_url, method="POST")
+    req = urllib.request.Request(login_url, method="GET")
     req.add_header("Authorization", build_basic_auth_header(username, password))
-    req.add_header("Content-Type", "application/json")
     req.add_header("Accept", "application/json")
 
     try:
         with urllib.request.urlopen(req, context=ssl_ctx) as response:
             body = json.loads(response.read())
+            print(f"body '{body}'")
     except urllib.error.HTTPError as exc:
         raise RuntimeError(
             f"Login failed — HTTP {exc.code}: {exc.reason}"
