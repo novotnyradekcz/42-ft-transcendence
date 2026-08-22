@@ -344,7 +344,7 @@ pub async fn oauth_session(pool: web::Data<Arc<AppState>>, session: Session) -> 
     let user_id = match session.remove_as::<i32>("user_id").and_then(|r| r.ok()) {
         Some(id) => id,
         None => {
-            return HttpResponse::Unauthorized().json(serde_json::json!({
+            return HttpResponse::NoContent().json(serde_json::json!({
                 "message": "No OAuth session to exchange",
             }));
         }

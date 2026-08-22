@@ -56,8 +56,6 @@ pub struct DbUser {
     pub bio: String,
     pub avatar_url: String,
     pub friends: FriendList,
-    pub provider: String,
-    pub provider_user_id: String,
 }
 
 #[derive(Insertable)]
