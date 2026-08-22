@@ -90,6 +90,8 @@ pub fn find_or_create_oauth_user(
 
     let conn = connection(db);
 
+    let email_normalized = profile.email.trim().to_lowercase();
+
     let existing = ftt_users
         .filter(
             provider
@@ -101,20 +103,20 @@ pub fn find_or_create_oauth_user(
         .optional()?;
 
     if let Some(user) = existing {
-        if user.email.is_empty() && !profile.email.is_empty() {
+        if user.email.is_empty() && !email_normalized.is_empty() {
             // FIXME: user always has to have email
             diesel::update(ftt_users.filter(id.eq(user.id)))
-                .set(email.eq(&profile.email))
+                .set(email.eq(&email_normalized))
                 .execute(conn)?;
             return Ok(DbUser {
-                email: profile.email.clone(),
+                email: email_normalized.clone(),
                 ..user
             });
         }
         return Ok(user);
     }
     let email_taken = ftt_users
-        .filter(email.eq(&profile.email))
+        .filter(email.eq(&email_normalized))
         .select(id)
         .first::<i32>(conn)
         .optional()?
@@ -146,7 +148,7 @@ pub fn find_or_create_oauth_user(
     let inserted: DbUser = diesel::insert_into(ftt_users)
         .values(&NewOAuthUser {
             name: &candidate,
-            email: &profile.email,
+            email: &email_normalized,
             password: &encoder.encode(&unreachable_secret),
             provider: &profile.provider,
             provider_user_id: &profile.provider_user_id,
@@ -311,9 +313,11 @@ pub fn create_user_in_db(
 
     let conn = connection(db);
 
+    let email_normalized = new_user.email.trim().to_lowercase();
+
     // Reject if name or email is already taken
     let existing = ftt_users
-        .filter(name.eq(&new_user.name).or(email.eq(&new_user.email)))
+        .filter(name.eq(&new_user.name).or(email.eq(&email_normalized)))
         .select(DbUser::as_select())
         .first(conn)
         .optional()?;
@@ -326,7 +330,7 @@ pub fn create_user_in_db(
     let inserted_user: DbUser = diesel::insert_into(ftt_users)
         .values(&NewUser {
             name: &new_user.name,
-            email: &new_user.email,
+            email: &email_normalized,
             password: encoded_password,
         })
         .returning(DbUser::as_returning())
