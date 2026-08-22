@@ -7,7 +7,7 @@
 // A picked avatar is shrunk and previewed but not sent until the form is
 // submitted, so nothing is saved by accident.
 
-import { type ChangeEvent, type FormEvent, useState } from "react";
+import { type ChangeEvent, type FormEvent, useEffect, useState } from "react";
 import { updateCurrentUserProfile } from "../api";
 import { AVATAR_MAX_PX, avatarToData } from "../avatar";
 import { AchievementsList } from "../achievements";
@@ -22,7 +22,7 @@ import { useTranslation } from "../context/language/i18n";
 type FormSubmitEvent = FormEvent<HTMLFormElement>;
 
 export default function ProfilePage() {
-  const { sessionUser, updateSessionUser, refreshUsers } = useSession();
+  const { sessionUser, updateSessionUser, refreshUsers, refreshSessionUser } = useSession();
   const { statusOf } = useStatus();
   const { addLine } = useTerminal();
   const { t } = useTranslation();
@@ -33,6 +33,20 @@ export default function ProfilePage() {
   const [avatarUrl, setAvatarUrl] = useState(sessionUser?.avatarUrl ?? "");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+
+  // refetch latest session user profile on mount (e.g. newly unlocked achievements)
+  useEffect(() => {
+    if (!sessionUser) return;
+    refreshSessionUser()
+      .then((fresh) => {
+        if (fresh) {
+          setBio(fresh.bio);
+          setAvatarUrl(fresh.avatarUrl);
+        }
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!sessionUser) {
     return <TerminalSection title={t("Profile")}>{t("Not logged in.")}</TerminalSection>;

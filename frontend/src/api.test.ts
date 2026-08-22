@@ -6,6 +6,7 @@ import {
   createGame,
   getGameHistory,
   getLeaderboard,
+  getUser,
   listFriends,
   listUsers,
   login,
@@ -779,3 +780,26 @@ describe("getLeaderboard", () => {
     expect(result).toEqual(mockLeaderboard);
   });
 });
+
+describe("getUser", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("happy path: fetches single user profile with achievements by ID", async () => {
+    const userPayload = {
+      ...BASE_USER,
+      achievements: [1, 2, 3],
+    };
+    const mockFetch = stubFetch(200, userPayload);
+
+    const user = await getUser(1);
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/users/show/1");
+    expect(user?.id).toBe(1);
+    expect(user?.achievements).toEqual([1, 2, 3]);
+  });
+});
+

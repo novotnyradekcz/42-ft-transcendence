@@ -65,6 +65,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     logout: contextLogout,
     updateSessionUser,
     refreshUsers,
+    refreshSessionUser,
   } = useSession();
 
   const {
@@ -228,6 +229,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     contextLogout,
     updateSessionUser,
     refreshUsers,
+    refreshSessionUser,
     discussions,
     mail,
     games,

@@ -35,6 +35,7 @@ export interface TerminalDeps {
   contextLogout: () => void;
   updateSessionUser: (user: SessionUser) => void;
   refreshUsers: () => Promise<void>;
+  refreshSessionUser: () => Promise<SessionUser | null>;
 
   // data
   discussions: DiscussionThread[];

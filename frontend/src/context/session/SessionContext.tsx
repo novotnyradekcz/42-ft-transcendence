@@ -14,6 +14,7 @@ import { CREDENTIALS_KEY, SESSION_USER_KEY } from "../../constants";
 import {
   exchangeOAuthSession,
   getCredentials,
+  getUser,
   listUsers,
   login as apiLogin,
   logout as apiLogout,
@@ -138,6 +139,27 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   async function refreshUsers(): Promise<void> {
     const users = await listUsers();
     setKnownUsers(users);
+    if (sessionUser) {
+      const freshSelf = users.find((u) => u.id === sessionUser.id);
+      if (freshSelf) {
+        updateSessionUser(freshSelf);
+      }
+    }
+  }
+
+  // refetches the signed-in user's latest profile from backend and updates sessionUser
+  async function refreshSessionUser(): Promise<SessionUser | null> {
+    if (!sessionUser) return null;
+    try {
+      const freshUser = await getUser(sessionUser.id);
+      if (freshUser) {
+        updateSessionUser(freshUser);
+        return freshUser;
+      }
+    } catch {
+      // keep existing sessionUser on network failure
+    }
+    return sessionUser;
   }
 
   return (
@@ -152,6 +174,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         logout,
         updateSessionUser,
         refreshUsers,
+        refreshSessionUser,
       }}
     >
       {children}

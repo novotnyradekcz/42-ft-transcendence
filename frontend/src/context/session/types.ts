@@ -23,4 +23,6 @@ export interface SessionContextValue {
   updateSessionUser(user: SessionUser): void;
   // refetches /users/show into knownUsers
   refreshUsers(): Promise<void>;
+  // refetches the signed-in user's latest profile from backend and updates sessionUser
+  refreshSessionUser(): Promise<SessionUser | null>;
 }
