@@ -245,16 +245,11 @@ pub async fn play_game_ws(
 
         // If we just joined as Player 2, trigger match start for both
         if let Some((p1, p2)) = start_match {
-            // Load game script from DB
+            // Load game script from DB and unlock achievements
             let game = {
                 let mut db_lock = pool_task.database.lock().unwrap();
-                get_game_in_db(&mut db_lock, game_id).ok().flatten()
-            };
-
-            if let Some(g) = game {
-                // Unlock 'Started a game' achievement
-                {
-                    let mut db_lock = pool_task.database.lock().unwrap();
+                let game = get_game_in_db(&mut db_lock, game_id).ok().flatten();
+                if game.is_some() {
                     if let Err(e) = crate::model::users::unlock_achievements_in_db(&mut db_lock, p1.user_id, &[1]) {
                         let player_id = p1.user_id;
                         let player_name = &p1.name;
@@ -266,6 +261,10 @@ pub async fn play_game_ws(
                         log::warn!("Failed to unlock achievement 1 for user {player_id} {player_name}: {e}");
                     }
                 }
+                game
+            };
+
+            if let Some(g) = game {
 
                 // Save game_name into the room
                 {
