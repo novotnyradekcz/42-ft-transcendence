@@ -201,7 +201,7 @@ pub fn save_game_history_in_db(
     use crate::schema::ftt_game_history::dsl as gh;
 
     let conn = connection(db);
-    diesel::insert_into(gh::ftt_game_history)
+    let res = diesel::insert_into(gh::ftt_game_history)
         .values(&NewGameHistoryRecord {
             game_id,
             game_name,
@@ -210,7 +210,15 @@ pub fn save_game_history_in_db(
             winner_id,
         })
         .returning(DbGameHistoryRecord::as_returning())
-        .get_result::<DbGameHistoryRecord>(conn)
+        .get_result::<DbGameHistoryRecord>(conn)?;
+
+    let _ = crate::model::users::unlock_achievements_in_db(db, player1_id, &[2]);
+    let _ = crate::model::users::unlock_achievements_in_db(db, player2_id, &[2]);
+    if let Some(w_id) = winner_id {
+        let _ = crate::model::users::unlock_achievements_in_db(db, w_id, &[3]);
+    }
+
+    Ok(res)
 }
 
 // SystemTime -> "YYYY-MM-DD HH:MM". done by hand because the crate pulls in no

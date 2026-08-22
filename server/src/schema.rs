@@ -61,6 +61,7 @@ diesel::table! {
         friends -> Text,
         provider_user_id -> Text,
         provider -> Text,
+        achievements -> Text,
     }
 }
 

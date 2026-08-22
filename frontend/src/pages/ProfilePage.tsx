@@ -10,6 +10,7 @@
 import { type ChangeEvent, type FormEvent, useState } from "react";
 import { updateCurrentUserProfile } from "../api";
 import { AVATAR_MAX_PX, avatarToData } from "../avatar";
+import { AchievementsList } from "../achievements";
 import AvatarImage from "../components/AvatarImage";
 import TerminalSection from "../components/TerminalSection";
 import { useStatus } from "../context/status/useStatus";
@@ -104,6 +105,10 @@ export default function ProfilePage() {
             <dd>{t(statusOf(sessionUser.id))}</dd>
             <dt>{t("Bio")}</dt>
             <dd>{sessionUser.bio}</dd>
+            <dt>{t("Achievements")}</dt>
+            <dd>
+              <AchievementsList achievementIds={sessionUser.achievements} />
+            </dd>
           </dl>
           <form className="profile-form" onSubmit={handleSubmit}>
             {/* Name and email are listed above and stay there: they identify

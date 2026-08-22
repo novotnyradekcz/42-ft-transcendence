@@ -45,6 +45,28 @@ impl ToSql<Text, diesel::pg::Pg> for FriendList {
     }
 }
 
+#[derive(Debug, Clone, AsExpression, FromSqlRow, PartialEq, Eq)]
+#[diesel(sql_type = Text)]
+pub struct AchievementList(pub Vec<i32>);
+
+impl FromSql<Text, diesel::pg::Pg> for AchievementList {
+    fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
+        let s = <String as FromSql<Text, diesel::pg::Pg>>::from_sql(bytes)?;
+        let vec: Vec<i32> = serde_json::from_str(&s)
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+        Ok(AchievementList(vec))
+    }
+}
+
+impl ToSql<Text, diesel::pg::Pg> for AchievementList {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, diesel::pg::Pg>) -> serialize::Result {
+        let s = serde_json::to_string(&self.0)
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+        out.write_all(s.as_bytes())?;
+        Ok(IsNull::No)
+    }
+}
+
 #[derive(Queryable, Selectable, Clone)]
 #[diesel(table_name = crate::schema::ftt_users)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
@@ -58,6 +80,7 @@ pub struct DbUser {
     pub friends: FriendList,
     pub provider: String,
     pub provider_user_id: String,
+    pub achievements: AchievementList,
 }
 
 #[derive(Insertable)]
@@ -173,6 +196,7 @@ impl From<DbUser> for UserInfo {
             // status is a runtime value, not persisted — default to offline
             status: "offline".to_string(),
             friends: item.friends.0,
+            achievements: item.achievements.0,
         }
     }
 }
@@ -479,6 +503,43 @@ pub fn unfriend_in_db(
     exfriend_id: i32,
 ) -> Result<UserInfo, FriendlistUpdateError> {
     update_friendlist_in_db(db, user_id, exfriend_id, remove_exfriend_from_list)
+}
+
+pub fn unlock_achievements_in_db(
+    db: &mut DatabaseInitializer,
+    user_id: i32,
+    to_unlock: &[i32],
+) -> Result<(), diesel::result::Error> {
+    use crate::schema::ftt_users::dsl::*;
+    let conn = connection(db);
+
+    let current = ftt_users
+        .filter(id.eq(user_id))
+        .select(DbUser::as_select())
+        .first::<DbUser>(conn)
+        .optional()?;
+
+    let Some(current_user) = current else {
+        return Ok(());
+    };
+
+    let mut updated = current_user.achievements.0.clone();
+    let mut modified = false;
+
+    for &ach_id in to_unlock {
+        if !updated.contains(&ach_id) {
+            updated.push(ach_id);
+            modified = true;
+        }
+    }
+
+    if modified {
+        diesel::update(ftt_users.filter(id.eq(user_id)))
+            .set(achievements.eq(AchievementList(updated)))
+            .execute(conn)?;
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

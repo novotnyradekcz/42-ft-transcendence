@@ -49,6 +49,7 @@ type UserPayload = {
   avatar?: string;
   status?: string;
   friends?: unknown;
+  achievements?: unknown;
 };
 
 export class ApiRequestError extends Error {
@@ -270,6 +271,7 @@ export function normalizeUser(payload: unknown): UserProfile {
       textValue(user.avatar),
     status: normalizedStatus(user.status),
     friends: friendsValue(user.friends),
+    achievements: friendsValue(user.achievements),
   };
 }
 

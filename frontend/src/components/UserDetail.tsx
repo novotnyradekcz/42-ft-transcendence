@@ -3,6 +3,7 @@
 
 import { useState } from "react";
 import { addFriend, removeFriend } from "../api";
+import { AchievementsList } from "../achievements";
 import AvatarImage from "./AvatarImage";
 import TerminalSection from "./TerminalSection";
 import { useData } from "../context/data/useData";
@@ -79,6 +80,10 @@ export default function UserDetail() {
             <dd>{t(statusOf(user.id))}</dd>
             <dt>{t("Bio")}</dt>
             <dd>{user.bio}</dd>
+            <dt>{t("Achievements")}</dt>
+            <dd>
+              <AchievementsList achievementIds={user.achievements} />
+            </dd>
           </dl>
           {canManageFriendship && (
             <div className="friend-actions">

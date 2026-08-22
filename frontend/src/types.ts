@@ -37,6 +37,7 @@ export type UserProfile = {
   avatarUrl: string;
   status: "online" | "offline";
   friends: number[];
+  achievements: number[];
 };
 
 // the token pair exactly as /users/login and /users/refresh_token return it.

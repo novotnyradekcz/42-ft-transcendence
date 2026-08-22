@@ -24,6 +24,7 @@ const BASE_USER = {
   avatar_url: "",
   status: "online",
   friends: [2, 3],
+  achievements: [1, 2],
 };
 
 // what POST /register answers with, a receipt rather than a user
@@ -92,6 +93,7 @@ describe("normalizeUser", () => {
     expect(user.email).toBe("alice@example.com");
     expect(user.bio).toBe("test bio");
     expect(user.friends).toEqual([2, 3]);
+    expect(user.achievements).toEqual([1, 2]);
   });
 
   // The placeholder is a render-time concern, not a value. 

@@ -74,6 +74,7 @@ pub struct UserInfo {
     pub avatar_url: String,
     pub status: String,
     pub friends: Vec<i32>,
+    pub achievements: Vec<i32>,
 }
 
 #[derive(Deserialize)]

@@ -245,9 +245,11 @@ pub async fn play_game_ws(
 
         // If we just joined as Player 2, trigger match start for both
         if let Some((p1, p2)) = start_match {
-            // Load game script from DB
+            // Load game script from DB and unlock 'Started a game' achievement
             let game = {
                 let mut db_lock = pool_task.database.lock().unwrap();
+                let _ = crate::model::users::unlock_achievements_in_db(&mut db_lock, p1.user_id, &[1]);
+                let _ = crate::model::users::unlock_achievements_in_db(&mut db_lock, p2.user_id, &[1]);
                 get_game_in_db(&mut db_lock, game_id).ok().flatten()
             };
 
