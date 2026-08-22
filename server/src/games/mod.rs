@@ -245,23 +245,28 @@ pub async fn play_game_ws(
 
         // If we just joined as Player 2, trigger match start for both
         if let Some((p1, p2)) = start_match {
-            // Load game script from DB and unlock 'Started a game' achievement
+            // Load game script from DB
             let game = {
                 let mut db_lock = pool_task.database.lock().unwrap();
-                if let Err(e) = crate::model::users::unlock_achievements_in_db(&mut db_lock, p1.user_id, &[1]) {
-                    let player_id = p1.user_id;
-                    let player_name = &p1.name;
-                    log::warn!("Failed to unlock achievement 1 for user {player_id} {player_name}: {e}");
-                }
-                if let Err(e) = crate::model::users::unlock_achievements_in_db(&mut db_lock, p2.user_id, &[1]) {
-                    let player_id = p2.user_id;
-                    let player_name = &p2.name;
-                    log::warn!("Failed to unlock achievement 1 for user {player_id} {player_name}: {e}");
-                }
                 get_game_in_db(&mut db_lock, game_id).ok().flatten()
             };
 
             if let Some(g) = game {
+                // Unlock 'Started a game' achievement
+                {
+                    let mut db_lock = pool_task.database.lock().unwrap();
+                    if let Err(e) = crate::model::users::unlock_achievements_in_db(&mut db_lock, p1.user_id, &[1]) {
+                        let player_id = p1.user_id;
+                        let player_name = &p1.name;
+                        log::warn!("Failed to unlock achievement 1 for user {player_id} {player_name}: {e}");
+                    }
+                    if let Err(e) = crate::model::users::unlock_achievements_in_db(&mut db_lock, p2.user_id, &[1]) {
+                        let player_id = p2.user_id;
+                        let player_name = &p2.name;
+                        log::warn!("Failed to unlock achievement 1 for user {player_id} {player_name}: {e}");
+                    }
+                }
+
                 // Save game_name into the room
                 {
                     let mut lobby_lock = pool_task.lobby.lock().unwrap();
