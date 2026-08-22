@@ -99,6 +99,7 @@ async fn main() -> std::io::Result<()> {
         oauth: OAuthConfig::from_env(),
     });
     let governor_conf = GovernorConfigBuilder::default()
+        .key_extractor(XForwardedForKeyExtractor) 
         .requests_per_second(1)
         .burst_size(5)
         .finish()
