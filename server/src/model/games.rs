@@ -212,10 +212,16 @@ pub fn save_game_history_in_db(
         .returning(DbGameHistoryRecord::as_returning())
         .get_result::<DbGameHistoryRecord>(conn)?;
 
-    let _ = crate::model::users::unlock_achievements_in_db(db, player1_id, &[2]);
-    let _ = crate::model::users::unlock_achievements_in_db(db, player2_id, &[2]);
+    if let Err(e) = crate::model::users::unlock_achievements_in_db(db, player1_id, &[2]) {
+        log::warn!("Failed to unlock achievement 2 for user {player1_id}: {e}");
+    }
+    if let Err(e) = crate::model::users::unlock_achievements_in_db(db, player2_id, &[2]) {
+        log::warn!("Failed to unlock achievement 2 for user {player2_id}: {e}");
+    }
     if let Some(w_id) = winner_id {
-        let _ = crate::model::users::unlock_achievements_in_db(db, w_id, &[3]);
+        if let Err(e) = crate::model::users::unlock_achievements_in_db(db, w_id, &[3]) {
+            log::warn!("Failed to unlock achievement 3 for user {w_id}: {e}");
+        }
     }
 
     Ok(res)

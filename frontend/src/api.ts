@@ -226,7 +226,7 @@ function numberValue(value: unknown): number | null {
   return Number.isFinite(number) ? number : null;
 }
 
-function friendsValue(value: unknown): number[] {
+function numberArrayValue(value: unknown): number[] {
   if (!Array.isArray(value)) return [];
   return value.filter((v): v is number => typeof v === "number");
 }
@@ -270,8 +270,8 @@ export function normalizeUser(payload: unknown): UserProfile {
       textValue(user.avatar_url) ||
       textValue(user.avatar),
     status: normalizedStatus(user.status),
-    friends: friendsValue(user.friends),
-    achievements: friendsValue(user.achievements),
+    friends: numberArrayValue(user.friends),
+    achievements: numberArrayValue(user.achievements),
   };
 }
 
