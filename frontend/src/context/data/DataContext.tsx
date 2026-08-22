@@ -51,6 +51,7 @@ const PAGE_RESOURCES: Record<Page, DataResource[]> = {
   "game-play": ["games", "users"],
   "game-history": ["games", "users"],
   "game-leaderboard": ["games", "users"],
+  "game-achievements": ["games", "users"],
   users: ["users"],
   "user-detail": ["users"],
   friends: ["users"],

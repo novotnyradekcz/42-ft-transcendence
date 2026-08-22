@@ -11,6 +11,8 @@ pub(crate) mod users;
 pub(crate) mod discussions;
 pub(crate) mod mails;
 pub(crate) mod session;
+pub(crate) mod achievements;
 
 pub(crate) use database_initializer::DatabaseInitializer;
+
 

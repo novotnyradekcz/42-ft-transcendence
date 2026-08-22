@@ -13,6 +13,7 @@
 use crate::games::GameInfo;
 use crate::model::database_initializer::{connection, DatabaseInitializer};
 use diesel::prelude::*;
+use chrono::{DateTime, Utc};
 
 // installs the bundled Tic-Tac-Toe, updating it in place if it's already there,
 // so an edited script ships on the next boot instead of inserting a duplicate
@@ -188,6 +189,7 @@ pub struct LeaderboardEntry {
     pub losses: i32,
     pub draws: i32,
     pub win_loss_ratio: f64,
+    pub latest_achievements: Vec<String>,
 }
 
 pub fn save_game_history_in_db(
@@ -251,9 +253,7 @@ pub fn get_game_history_for_user_in_db(
                 player2_name: p2_name,
                 winner_id: r.winner_id,
                 winner_name: w_name,
-                played_at: chrono::DateTime::<chrono::Utc>::from(r.played_at)
-                    .format("%Y-%m-%d %H:%M")
-                    .to_string(),
+                played_at: DateTime::<Utc>::from(r.played_at).format("%Y-%m-%d %H:%M").to_string(),
             }
         })
         .collect();
@@ -265,7 +265,9 @@ pub fn get_game_history_for_user_in_db(
 pub fn get_leaderboard_in_db(
     db: &mut DatabaseInitializer,
 ) -> Result<Vec<LeaderboardEntry>, diesel::result::Error> {
+    use crate::schema::ftt_achievements::dsl as achievements;
     use crate::schema::ftt_game_history::dsl as game_history;
+    use crate::schema::ftt_player_achievements::dsl as player_achievements;
     use crate::schema::ftt_users::dsl as users;
 
     let conn = connection(db);
@@ -345,17 +347,45 @@ pub fn get_leaderboard_in_db(
 
     rows.truncate(10);
 
+    let top_user_ids: Vec<i32> = rows.iter().map(|r| r.user_id).collect();
+
+    let mut emoji_map: std::collections::HashMap<i32, Vec<String>> =
+        std::collections::HashMap::new();
+    if !top_user_ids.is_empty() {
+        let player_emojis: Vec<(i32, String)> = player_achievements::ftt_player_achievements
+            .inner_join(achievements::ftt_achievements)
+            .filter(player_achievements::user_id.eq_any(&top_user_ids))
+            .order((
+                player_achievements::user_id.asc(),
+                player_achievements::unlocked_at.desc(),
+                player_achievements::achievement_id.desc(),
+            ))
+            .select((player_achievements::user_id, achievements::emoji))
+            .load::<(i32, String)>(conn)?;
+
+        for (uid, emoji) in player_emojis {
+            let list = emoji_map.entry(uid).or_default();
+            if list.len() < 3 {
+                list.push(emoji);
+            }
+        }
+    }
+
     let entries = rows
         .into_iter()
         .enumerate()
-        .map(|(idx, r)| LeaderboardEntry {
-            rank: (idx + 1) as i32,
-            user_id: r.user_id,
-            user_name: r.user_name,
-            wins: r.wins,
-            losses: r.losses,
-            draws: r.draws,
-            win_loss_ratio: r.win_loss_ratio,
+        .map(|(idx, r)| {
+            let latest_achievements = emoji_map.remove(&r.user_id).unwrap_or_default();
+            LeaderboardEntry {
+                rank: (idx + 1) as i32,
+                user_id: r.user_id,
+                user_name: r.user_name,
+                wins: r.wins,
+                losses: r.losses,
+                draws: r.draws,
+                win_loss_ratio: r.win_loss_ratio,
+                latest_achievements,
+            }
         })
         .collect();
 
