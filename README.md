@@ -64,8 +64,10 @@ docker compose up --build -d
 
 #### 3. Access Points & Seeded Accounts
 Once containers are running, access the services:
-- **Web Interface (Frontend):** [http://localhost:3000](http://localhost:3000)
-- **REST API Backend:** [http://localhost:8080](http://localhost:8080) (or via Nginx proxy at `http://localhost:3000/api`)
+- **Web Interface (Frontend):** [http://localhost:443](http://localhost:443)
+- **REST API Backend:** [http://localhost:443/api](http://localhost:443/api) (via Nginx proxy at `http://localhost:443/api`)
+tests for api rate limit: `python3 tests/rate_limit_test.py`
+
 
 Default seeded test accounts created on backend startup (if they do not already exist):
 
@@ -460,4 +462,3 @@ The application features a terminal-style command interface. Below are the prima
 This project is licensed under the MIT License.
 
 Copyright (c) 2026 [nspalevi](https://github.com/nspalevic9), [rludvik](https://github.com/aHumbleCultist), [rnovotny](https://github.com/novotnyradekcz), [voparkan](https://github.com/czarte)
-
