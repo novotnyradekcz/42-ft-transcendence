@@ -1,3 +1,6 @@
+// Another user's profile, and the one action available on it: friend/unfriend.
+// The same job the `addfriend` command does, as a button.
+
 import { useState } from "react";
 import { addFriend, removeFriend } from "../api";
 import AvatarImage from "./AvatarImage";
@@ -8,12 +11,15 @@ import { useSession } from "../context/session/useSession";
 import { useTerminal } from "../context/terminal/useTerminal";
 import { useTranslation } from "../context/language/i18n";
 
+// rendered from the user `enter` selected, not from the :id in the URL, so a
+// direct link or a reload lands on the empty state
 export default function UserDetail() {
   const { selectedUser: user } = useData();
   const { sessionUser, updateSessionUser, refreshUsers } = useSession();
   const { statusOf } = useStatus();
   const { addLine } = useTerminal();
   const { t } = useTranslation();
+  // blocks a second click while the first request is out
   const [busy, setBusy] = useState(false);
 
   if (!user) {
@@ -21,10 +27,15 @@ export default function UserDetail() {
   }
 
   const isFriend = sessionUser?.friends.includes(user.id) ?? false;
+  // no button for guests, and none on your own profile
   const canManageFriendship = Boolean(
     sessionUser && sessionUser.id !== user.id,
   );
 
+  // The session user's own friend list is updated from what was just sent
+  // rather than from the response, because the friend endpoints answer with a
+  // receipt and not a profile. refreshUsers() afterwards is for everyone else's
+  // rows, and is allowed to fail — the local view is already correct.
   async function handleToggleFriend() {
     if (!sessionUser || busy) return;
     setBusy(true);

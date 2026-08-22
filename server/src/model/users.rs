@@ -1,5 +1,13 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
+//! The `ftt_users` table: registration, lookup, seeding, and the OAuth upsert.
+//!
+//! Two things worth knowing before editing. Friends are stored as a JSON array in
+//! a TEXT column instead of a join table, which is what `FriendList` below exists
+//! to marshal in and out. And passwords are salted Argon2 hashes, so they can only
+//! ever be *compared* by the encoder — never matched with a SQL `=`. See the note
+//! on `find_user_by_name_in_db` for what that mistake cost last time.
+
 use crate::model::database_initializer::{connection, DatabaseInitializer};
 use crate::users::{CreateUser, UserInfo};
 use actix_security::prelude::{Argon2PasswordEncoder, PasswordEncoder};
@@ -81,6 +89,9 @@ impl From<diesel::result::Error> for OAuthUserError {
     }
 }
 
+// looks a user up by (provider, provider_user_id) and creates one if there's no
+// match. the name may already be taken by a local account, so it's suffixed until
+// it's free rather than failing the login
 pub fn find_or_create_oauth_user(
     db: &mut DatabaseInitializer,
     profile: &OAuthProfile,
@@ -139,6 +150,8 @@ pub fn find_or_create_oauth_user(
         candidate = format!("{}-{}-{}", profile.login, profile.provider, attempt);
     }
 
+    // an OAuth account has no password, but the column needs one. a random
+    // secret nobody holds means the row can never be logged into with Basic auth
     let unreachable_secret: String = rand::thread_rng()
         .sample_iter(&rand::distributions::Alphanumeric)
         .take(48)
@@ -193,6 +206,8 @@ pub enum CreateUserError {
     DatabaseError(diesel::result::Error),
 }
 
+// test/admin/guest, inserted only when missing, so a redeploy keeps whatever
+// those accounts have accumulated
 pub fn seed_users_in_db(db: &mut DatabaseInitializer) -> Result<(), diesel::result::Error> {
     use crate::schema::ftt_users::dsl::*;
     let encoder = Argon2PasswordEncoder::new();
@@ -390,7 +405,7 @@ pub enum FriendlistUpdateError {
     NotFound,
     /// You can't befriend yourself
     SelfReference,
-    /// A race occured - best for the client to just try again.
+    /// A race occurred - best for the client to just try again.
     Conflict,
     /// An unforeseen DB error
     DatabaseError(diesel::result::Error),

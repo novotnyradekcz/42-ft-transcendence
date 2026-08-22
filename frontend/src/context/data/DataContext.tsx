@@ -1,3 +1,14 @@
+// The board's content — discussions, mail, games, users — and the rule for when
+// each one gets fetched.
+//
+// Loading follows the page on screen rather than the command that navigated
+// there, so a page never waits on the network to render and every failure
+// arrives as a log line instead of a blocked prompt.
+//
+// Two kinds of data, treated differently: content is refetched on every visit
+// so other people's posts show up, while the user list is reference data and
+// loads once per session. Overlapping callers share one request either way.
+
 import {
   useCallback,
   useEffect,
@@ -46,6 +57,7 @@ const PAGE_RESOURCES: Record<Page, DataResource[]> = {
   profile: ["users"],
 };
 
+// fallback line per resource, used when the error carries no message of its own
 const LOAD_FAILURE: Record<DataResource, string> = {
   discussions: "could not load discussions.",
   games: "could not load games.",
@@ -82,6 +94,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // between pages, from firing the same request twice.
   const inFlight = useRef<Map<DataResource, Promise<void>>>(new Map());
 
+  // mail is dropped rather than kept because it belongs to one user; the rest
+  // is public and will be refetched on the next visit anyway
   const invalidate = useCallback(() => {
     usersLoaded.current = false;
     setMail([]);
@@ -98,6 +112,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     invalidate();
   }, [sessionUser?.id, invalidate]);
 
+  // the actual fetch per resource. users goes through SessionContext because
+  // that's where knownUsers lives
   const loadResource = useCallback(
     async (resource: DataResource, user: SessionUser | null): Promise<void> => {
       switch (resource) {
@@ -135,6 +151,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     [loadResource],
   );
 
+  // shared body of ensureForPage and refreshForPage. collects failures instead
+  // of throwing, so one dead endpoint doesn't take the whole page with it
   const load = useCallback(
     async (page: Page, force: boolean): Promise<string[]> => {
       // the whole board is behind login now, so a guest has nothing to load

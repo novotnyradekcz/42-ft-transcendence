@@ -1,3 +1,9 @@
+//! The `ftt_mail` table: the row types and the queries the mail routes need.
+//!
+//! A message is stored once and read from both ends — `list_mail_in_db` matches
+//! sender *or* recipient — so the inbox and the sent list are the same query, and
+//! the client works out the direction per row.
+
 use diesel::prelude::*;
 use crate::mails::{CreateMail, MailInfo};
 use crate::model::database_initializer::DatabaseInitializer;
@@ -108,6 +114,7 @@ impl<'a> NewMail<'a> {
     }
 }
 
+// everything the user sent or received, oldest first
 pub fn list_mail_in_db(
     db: &mut DatabaseInitializer,
     user_id: i32,
@@ -141,6 +148,8 @@ pub fn get_mail_in_db(
     Ok(row.map(MailInfo::from))
 }
 
+// both ids are resolved by the caller — `to` may arrive as a name, and looking
+// it up is the router's job, not this one's
 pub fn create_mail_in_db(
     db: &mut DatabaseInitializer,
     new_mail: &CreateMail,

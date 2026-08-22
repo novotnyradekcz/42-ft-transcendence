@@ -1,3 +1,8 @@
+// The inbox — one list holding both directions.
+//
+// /mail/show returns everything the user sent and received together, so each
+// row works out which way it went instead of the page having a "from" column.
+
 import TerminalSection from "../components/TerminalSection";
 import WriteStatus from "../components/WriteStatus";
 import { displayName } from "../api";

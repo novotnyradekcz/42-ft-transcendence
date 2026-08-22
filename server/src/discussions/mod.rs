@@ -1,5 +1,13 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
+//! The discussion shapes that cross the HTTP boundary, plus the two helpers that
+//! keep the marker trick out of sight.
+//!
+//! Posts are linked to a thread by a `discussion:<id>` string in their `images`
+//! column — see `model::discussions`. `discussion_marker` builds it and
+//! `public_post` strips it back off, so a post that carries one reports no image
+//! and the internal link never reaches a client.
+
 pub(crate) mod discussion_response_factory;
 
 use serde::{Deserialize, Serialize};
@@ -39,10 +47,13 @@ pub struct DiscussionInfo {
     pub posts: Vec<DiscussionPostInfo>,
 }
 
+// the string that ties a post to its thread. the only place this format is
+// written; every query that reads it goes through here
 pub fn discussion_marker(discussion_id: i32) -> String {
     format!("discussion:{}", discussion_id)
 }
 
+// a post as the API shows it, with the marker hidden again
 pub fn public_post(post: Post) -> DiscussionPostInfo {
     let images = if post.get_images().starts_with("discussion:") {
         String::new()

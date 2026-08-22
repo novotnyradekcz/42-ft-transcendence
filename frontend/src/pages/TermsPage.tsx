@@ -1,8 +1,9 @@
+// The terms of service, as static text. Guest-readable and English-only for the
+// same reasons as the privacy policy.
+
 import TerminalSection from "../components/TerminalSection";
 import { useTranslation } from "../context/language/i18n";
 
-// Guest-readable for the same reason as the privacy policy: these are the
-// terms you agree to by registering, so they have to be readable before you do.
 export default function TermsPage() {
   const { t } = useTranslation();
 

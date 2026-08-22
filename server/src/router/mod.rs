@@ -1,5 +1,16 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
+//! Every HTTP route, one handler each.
+//!
+//! The handlers are deliberately thin and all the same shape: take what the
+//! request carries, lock the database, and map the model's `Result` onto a status
+//! code. Business rules live in `model::*`; which routes are reachable without a
+//! token is decided by the scopes in `main.rs`, not here.
+//!
+//! `refresh_token` is the one worth reading before changing anything — it is
+//! mounted outside the authenticated scope on purpose, for the reason documented
+//! on it.
+
 use crate::authenticator::{get_user_from_store, register_user, TokenResponse};
 use crate::discussions::{CreateDiscussion, CreatePost};
 use crate::games::CreateGame;
@@ -342,7 +353,7 @@ pub async fn update_user_profile(
 
 /// Authorizes user against the caller id
 ///
-/// Identity comse from JWT, never the path.
+/// Identity comes from JWT, never the path.
 fn authorize_self(
     db: &mut DatabaseInitializer,
     username: &str,
@@ -723,6 +734,11 @@ pub async fn create_game(
         }));
     }
 
+    // 100 KB. the body is the Lua source itself, and it travels in bulk:
+    // /games/show returns every game's body in one response, and match_start
+    // sends the whole script to both players. so this bounds those payloads
+    // rather than what a game can express — the bundled Tic-Tac-Toe is ~4 KB,
+    // so it leaves a script room to be an order of magnitude larger.
     if script_body.len() > 100 * 1024 {
         return HttpResponse::BadRequest().json(serde_json::json!({
             "message": "Game script body exceeds maximum allowed size of 100 KB.",
@@ -819,6 +835,7 @@ pub async fn get_leaderboard(pool: web::Data<Arc<AppState>>) -> impl Responder {
     }
 }
 
+// liveness only: no database, no auth, so it still answers when the DB is down
 #[get("/health")]
 pub async fn health() -> impl Responder {
     HttpResponse::Ok().json(serde_json::json!({"status" : "ok"}))

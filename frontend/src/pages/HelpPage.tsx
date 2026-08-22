@@ -1,3 +1,9 @@
+// The full command reference — every command, its aliases and its usage.
+//
+// The ? popover is the other half of this: it lists only what the current page
+// accepts, while this lists everything. Both are filtered by session, so help
+// never documents a command that would be refused.
+
 import { commandDefinitions, isGuestCommand } from "../commands";
 import TerminalSection from "../components/TerminalSection";
 import { useSession } from "../context/session/useSession";
@@ -8,6 +14,7 @@ export default function HelpPage() {
   const { t } = useTranslation();
   const isLoggedIn = Boolean(sessionUser);
 
+  // mirrors the gate in executeCommand()
   const visibleCommands = commandDefinitions.filter((command) => {
     if (isLoggedIn) {
       return command.command !== "login" && command.command !== "register";

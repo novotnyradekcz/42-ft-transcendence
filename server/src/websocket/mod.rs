@@ -1,5 +1,16 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
+//! Authenticating a WebSocket handshake.
+//!
+//! A browser can't set an `Authorization` header on a WS handshake, so credentials
+//! arrive hex-encoded in `Sec-WebSocket-Protocol` instead and are unpacked here.
+//! Both the game and status sockets go through this, which is also why those
+//! scopes are mounted outside the HTTP security middleware in `main.rs`.
+//!
+//! Whichever scheme is used, the identity it proves must match the `user_id` in
+//! the query string — otherwise a valid token would let anyone open a socket as
+//! anybody.
+
 use std::sync::Arc;
 use actix_web::{Error, error::ErrorInternalServerError};
 use base64::Engine;
@@ -137,6 +148,8 @@ pub fn extract_auth_from_protocols(req: &actix_web::HttpRequest) -> Option<(Stri
     None
 }
 
+// the subprotocol header is a comma-separated token list, so the credentials are
+// hex rather than base64: base64 padding and `+/` don't survive it intact
 fn decode_hex(s: &str) -> Option<Vec<u8>> {
     if s.len() % 2 != 0 {
         return None;

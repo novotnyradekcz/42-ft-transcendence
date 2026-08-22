@@ -1,3 +1,7 @@
+// Fixed values used in more than one file. The two storage keys matter most:
+// api.ts writes them and SessionContext reads them, so they can't be inlined
+// in either without the risk of the two drifting apart.
+
 // bundled placeholder for users with no avatar
 export const PH_USER_IMAGE = "/images/profile.png";
 

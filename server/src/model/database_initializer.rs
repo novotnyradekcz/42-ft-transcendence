@@ -1,5 +1,13 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
+//! Startup: environment, database connection, migrations, seed data, and the
+//! OAuth provider table.
+//!
+//! Split deliberately on how failure is treated. The database and its three
+//! environment variables are required, so a missing one panics here rather than
+//! turning into a puzzling 500 later. OAuth credentials are optional — a provider
+//! without them is simply never offered, and the server still boots.
+
 use super::database_migrations::run_migrations;
 use crate::model::games::seed_games_in_db;
 use crate::model::users::seed_users_in_db;
@@ -25,6 +33,7 @@ impl ServerEnvironment {
 }
 
 impl ServerEnvironment {
+    // every one of these is required: failing at boot beats failing per-request
     fn new() -> ServerEnvironment {
         dotenv().ok();
         Self {
@@ -170,6 +179,7 @@ impl OAuthConfig {
     }
 }
 
+// connect, migrate, seed — in that order, and all of it fatal on failure
 pub fn initialize_db() -> DatabaseInitializer {
     let mut dbinitializer = DatabaseInitializer::new();
     dbinitializer.connect();

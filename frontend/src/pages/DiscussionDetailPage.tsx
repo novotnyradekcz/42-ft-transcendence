@@ -1,3 +1,5 @@
+// One thread and its posts, plus the reply prompt when `write` is running.
+
 import TerminalSection from "../components/TerminalSection";
 import WriteStatus from "../components/WriteStatus";
 import { useData } from "../context/data/useData";
@@ -5,12 +7,15 @@ import { useSession } from "../context/session/useSession";
 import { useTerminal } from "../context/terminal/useTerminal";
 import { useTranslation } from "../context/language/i18n";
 
+// like MailDetailPage, this renders whatever `enter` selected rather than the
+// :id in the URL, so a direct link or a reload lands on the empty state
 export default function DiscussionDetailPage() {
   const { selectedDiscussion: discussion } = useData();
   const { knownUsers } = useSession();
   const { writeFlow, writeError } = useTerminal();
   const { t } = useTranslation();
 
+  // posts carry an author id, not a name
   const userName = (id: number) =>
     knownUsers.find((u) => u.id === id)?.name ?? `user#${id}`;
 

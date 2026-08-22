@@ -1,5 +1,21 @@
 // Copyright (c) 2026, ft_transcendence (https://42.fr) and/or its affiliates. All rights reserved
 
+//! Signing in through an external provider (42, Google, GitHub).
+//!
+//! The browser is sent to the provider, comes back to `/callback` with a code, and
+//! that code is swapped server-side for a profile. A local user is found or
+//! created from it, and the result is handed over as the same JWT pair a password
+//! login produces — so nothing downstream needs to know which way someone signed
+//! in.
+//!
+//! This is the one flow that still needs a cookie: `state` has to be tied to the
+//! browser that started it, and at that point there is no token to tie it to. The
+//! cookie carries only a user id and is spent on first read, because anything put
+//! in a redirect URL ends up in browser history, referrers and proxy logs.
+//!
+//! The three providers agree on almost nothing in their profile payloads, which is
+//! what `parse_profile` is for.
+
 use crate::authenticator::{get_user_from_store, register_user, TokenResponse};
 use crate::model::database_initializer::OAuthProvider;
 use crate::model::users::{
