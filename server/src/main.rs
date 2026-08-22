@@ -15,13 +15,13 @@ mod discussions;
 mod games;
 mod mails;
 mod model;
+mod oauth;
 mod router;
 mod schema;
 mod session;
 mod status;
 mod users;
 mod websocket;
-mod oauth;
 
 use crate::authenticator::{create_authenticator, create_authorizer, init_user_store};
 use crate::games::{play_game_ws, Lobby};
@@ -32,6 +32,7 @@ use crate::session::load_valid_blacklisted_tokens;
 use crate::status::{status_ws, StatusRegistry};
 use model::database_initializer::{initialize_db, OAuthConfig};
 
+use actix_governor::{Governor, GovernorConfigBuilder, KeyExtractor, SimpleKeyExtractionError};
 use actix_security::http::security::middleware::SecurityTransform;
 use actix_security::http::security::Argon2PasswordEncoder;
 use actix_security::prelude::{JwtAuthenticator, JwtConfig, JwtTokenService, User};
@@ -39,6 +40,7 @@ use actix_session::{storage::CookieSessionStore, SessionMiddleware};
 use actix_web::web::Data;
 use actix_web::{cookie, web, App, HttpServer};
 use std::collections::HashSet;
+use std::net::IpAddr;
 use std::sync::{Arc, Mutex, RwLock};
 
 // shared by every handler. the mutexes are the reason handlers keep their
@@ -54,6 +56,50 @@ struct AppState {
     /// In-memory blacklist of invalidated token JTIs (or raw tokens when jti is absent).
     token_blacklist: RwLock<HashSet<String>>,
     oauth: OAuthConfig,
+}
+
+/// Rate-limiting key extractor that reads the real client IP from the
+/// `X-Real-IP` header set by nginx (`proxy_set_header X-Real-IP $remote_addr`).
+/// Falls back to the first address in `X-Forwarded-For`, and finally to the
+/// TCP peer address when neither header is present.
+#[derive(Clone)]
+struct XForwardedForKeyExtractor;
+
+impl KeyExtractor for XForwardedForKeyExtractor {
+    type Key = IpAddr;
+    type KeyExtractionError = SimpleKeyExtractionError<&'static str>;
+
+    fn extract(
+        &self,
+        req: &actix_web::dev::ServiceRequest,
+    ) -> Result<Self::Key, Self::KeyExtractionError> {
+        // Prefer X-Real-IP — nginx sets this to $remote_addr (the direct
+        // client or the outermost proxy), so it is a single, trusted value.
+        if let Some(ip) = req
+            .headers()
+            .get("X-Real-IP")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.trim().parse::<IpAddr>().ok())
+        {
+            return Ok(ip);
+        }
+
+        // Fall back to the first entry of X-Forwarded-For.
+        if let Some(ip) = req
+            .headers()
+            .get("X-Forwarded-For")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.split(',').next())
+            .and_then(|s| s.trim().parse::<IpAddr>().ok())
+        {
+            return Ok(ip);
+        }
+
+        // Last resort: use the TCP peer address.
+        req.peer_addr()
+            .map(|addr| addr.ip())
+            .ok_or_else(|| SimpleKeyExtractionError::new("Could not determine client IP address"))
+    }
 }
 
 #[actix_web::main]
@@ -97,11 +143,18 @@ async fn main() -> std::io::Result<()> {
         token_blacklist,
         oauth: OAuthConfig::from_env(),
     });
+    let governor_conf = GovernorConfigBuilder::default()
+        .key_extractor(XForwardedForKeyExtractor)
+        .requests_per_second(10)
+        .burst_size(10)
+        .finish()
+        .unwrap();
 
     init_user_store(users);
 
     HttpServer::new(move || {
         App::new()
+            .wrap(Governor::new(&governor_conf))
             .app_data(Data::new(state.clone()))
             // Public: registration must be reachable without credentials.
             .service(create_user)
