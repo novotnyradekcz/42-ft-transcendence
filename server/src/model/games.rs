@@ -13,6 +13,7 @@
 use crate::games::GameInfo;
 use crate::model::database_initializer::{connection, DatabaseInitializer};
 use diesel::prelude::*;
+use chrono::{DateTime, Utc};
 
 // installs the bundled Tic-Tac-Toe, updating it in place if it's already there,
 // so an edited script ships on the next boot instead of inserting a duplicate
@@ -213,8 +214,6 @@ pub fn save_game_history_in_db(
         .returning(DbGameHistoryRecord::as_returning())
         .get_result::<DbGameHistoryRecord>(conn)
 }
-
-use chrono::{DateTime, Utc};
 
 // every match the user played, newest first. names are joined in here so the
 // client needs no user list to render a row
