@@ -202,6 +202,11 @@ describe("useWebSocket reconnection", () => {
     render(<Switcher />);
     expect(FakeWebSocket.instances).toHaveLength(1);
 
+    act(() => {
+       container.querySelector("button")!.click();
+    });
+    act(() => void vi.advanceTimersByTime(60_000));
+
     expect(FakeWebSocket.instances).toHaveLength(1);
   });
 
@@ -255,5 +260,43 @@ describe("useWebSocket reconnection", () => {
     });
 
     expect(ws.readyState).toBe(FakeWebSocket.CLOSED);
+  });
+
+  it("edge case: late onclose on a replaced CLOSING socket does not trigger callbacks", () => {
+    const onClose = vi.fn();
+    function TestComponent() {
+      useWebSocket(
+        "/status/ws",
+        { user_id: 1 },
+        { reconnectMaxDelayMs: 10_000, onClose },
+      );
+      return null;
+    }
+    render(<TestComponent />);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    const oldWs = FakeWebSocket.instances[0];
+
+    // Put old socket in CLOSING state
+    oldWs.readyState = FakeWebSocket.CLOSING;
+
+    // Wakeup triggers replacement socket creation
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    // New replacement socket created
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    const newWs = FakeWebSocket.instances[1];
+    act(() => {
+      newWs.fireOpen();
+    });
+
+    // Late close event fires on old socket
+    act(() => {
+      oldWs.fireClose();
+    });
+
+    // onClose should NOT have been called when oldWs fired close
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

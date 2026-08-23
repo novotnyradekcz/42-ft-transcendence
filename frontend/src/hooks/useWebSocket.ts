@@ -172,7 +172,11 @@ export function useWebSocket<IncomingMessage = unknown, OutgoingMessage = unknow
       window.removeEventListener("pageshow", handleWakeup);
       document.removeEventListener("visibilitychange", handleWakeup);
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
-      if (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN) {
+      ws.onopen = null;
+      ws.onmessage = null;
+      ws.onclose = null;
+      ws.onerror = null;
+      if (ws.readyState !== WebSocket.CLOSED) {
         ws.close();
       }
     };
