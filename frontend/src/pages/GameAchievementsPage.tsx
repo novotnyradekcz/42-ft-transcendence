@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getAchievements } from "../api";
 import TerminalSection from "../components/TerminalSection";
 import { useTranslation } from "../context/language/i18n";
+import { errMsg } from "../errors";
 import type { UserAchievement } from "../types";
 
 export default function GameAchievementsPage() {
@@ -17,7 +18,7 @@ export default function GameAchievementsPage() {
         setError("");
       })
       .catch((err) => {
-        setError(err instanceof Error ? err.message : t("Could not load achievements."));
+        setError(errMsg(err, "Could not load achievements.", t));
       })
       .finally(() => {
         setLoading(false);

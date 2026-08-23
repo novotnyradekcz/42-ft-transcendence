@@ -23,7 +23,9 @@ mod status;
 mod users;
 mod websocket;
 
-use crate::authenticator::{create_authenticator, create_authorizer, init_user_store};
+use crate::authenticator::{
+    create_authenticator, create_authorizer, init_user_store, json_401_handler,
+};
 use crate::games::{play_game_ws, Lobby};
 use crate::model::users::get_all_users_from_db;
 use crate::model::DatabaseInitializer;
@@ -203,6 +205,10 @@ async fn main() -> std::io::Result<()> {
                             .config_authenticator(create_authenticator)
                             .config_authorizer(create_authorizer),
                     )
+                    // outside SecurityTransform on purpose: middleware runs
+                    // outward-in on the way back, so this sees the 401 the
+                    // transform produced and fills in its empty body
+                    .wrap(json_401_handler())
                     .route("/", web::get().to(index))
                     .service(
                         web::scope("/users")

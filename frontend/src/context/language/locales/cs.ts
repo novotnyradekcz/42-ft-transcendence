@@ -29,6 +29,10 @@ export const cs: Record<string, string> = {
   Unlocked: "Odemčeno",
   Locked: "Zamčeno",
   "Latest achievements": "Nejnovější úspěchy",
+  "No achievements available.": "Žádné úspěchy nejsou k dispozici.",
+  "Could not load achievements.": "Úspěchy se nepodařilo načíst.",
+  "Achievement Unlocked!": "Úspěch odemčen!",
+  "[ OK ]": "[ OK ]",
   "Enter `history` for match history, `leaderboard` for top players, or `achievements` for badges:":
     "Zadejte `history` pro historii zápasů, `leaderboard` pro nejlepší hráče nebo `achievements` pro odznaky:",
   "DRAW": "REMÍZA",
@@ -42,6 +46,14 @@ export const cs: Record<string, string> = {
   "Enter `history` for your game history or `leaderboard` for top 10 players:": "Zadejte `history` pro historii her nebo `leaderboard` pro žebříček 10 nejlepších hráčů:",
   "[ history ]": "[ historie ]",
   "[ leaderboard ]": "[ žebříček ]",
+  "[ achievements ]": "[ úspěchy ]",
+  "Type `upload` or click below to install a new .lua game:":
+    "Napište `upload` nebo klikněte níže pro instalaci nové .lua hry:",
+  "[ upload game (.lua) ]": "[ nahrát hru (.lua) ]",
+  "uploading...": "nahrávání...",
+  "Game must be a .lua file.": "Hra musí být soubor .lua.",
+  "uploaded game '{name}'.": "hra '{name}' nahrána.",
+  "login first to upload games.": "nejprve se přihlaste pro nahrání her.",
   "Type `menu` to enter the board.": "Napište `menu` pro vstup na nástěnku.",
   "Type `login` or `register` to enter.":
     "Napište `login` nebo `register` pro vstup.",
@@ -49,6 +61,13 @@ export const cs: Record<string, string> = {
     "Pouze pro členy. Přihlaste se pro vstup na nástěnku.",
   "sign in to an existing account": "přihlášení k existujícímu účtu",
   "create a new account": "vytvoření nového účtu",
+  "sign in with {label}": "přihlášení přes {label}",
+  "redirecting to {label}...": "přesměrování na {label}...",
+  "unknown provider: {name}": "neznámý poskytovatel: {name}",
+  "use `oauth <provider>` to continue.":
+    "pro pokračování použijte `oauth <provider>`.",
+  "no external sign-in providers are configured.":
+    "nejsou nastaveni žádní externí poskytovatelé přihlášení.",
   "Welcome {name}.": "Vítejte {name}.",
   "Welcome {name}. Choose a board section with commands.":
     "Vítejte {name}. Vyberte sekci nástěnky pomocí příkazů.",
@@ -177,6 +196,8 @@ export const cs: Record<string, string> = {
     "přihlášení selhalo. stiskněte Ctrl+C nebo Esc pro ukončení, nebo znovu zadejte jméno.",
   "name accepted. enter email.": "jméno přijato. zadejte e-mail.",
   "email accepted. enter password.": "e-mail přijat. zadejte heslo.",
+  "account created. enter password to log in.":
+    "účet vytvořen. zadejte heslo pro přihlášení.",
   "registered and logged in as {name}.":
     "registrován a přihlášen jako {name}.",
   "registration failed. press Ctrl+C or Esc to quit, or enter name again.":
@@ -230,6 +251,10 @@ export const cs: Record<string, string> = {
   "Could not post reply.": "Odpověď se nepodařilo odeslat.",
   "Login failed.": "Přihlášení selhalo.",
   "Registration failed.": "Registrace selhala.",
+  "Your session expired. Sign in again.":
+    "Vaše relace vypršela. Přihlaste se znovu.",
+  "Something went wrong. Please try again.":
+    "Něco se pokazilo. Zkuste to prosím znovu.",
   "Connecting to server...": "Připojování k serveru...",
   "Game or session details missing.": "Chybí údaje o hře nebo relaci.",
   "Connected, searching for an opponent...": "Připojeno, hledání soupeře...",
@@ -239,10 +264,6 @@ export const cs: Record<string, string> = {
   "Connection to server closed.": "Připojení k serveru bylo ukončeno.",
   "WebSocket connection error.": "Chyba připojení WebSocket.",
   "Exit Game": "Ukončit hru",
-
-  // produced in the browser: thrown by api.ts, or the fallback used when a
-  // failure carries no message. a couple double as server strings — same
-  // English, so one key serves both
   "Name, email, and password are required.":
     "Jméno, e-mail a heslo jsou povinné.",
   "Name and password are required.": "Jméno a heslo jsou povinné.",
@@ -260,10 +281,6 @@ export const cs: Record<string, string> = {
   "Could not load match history.": "Historii zápasů se nepodařilo načíst.",
   "Could not load leaderboard.": "Žebříček se nepodařilo načíst.",
   "could not upload game.": "hru se nepodařilo nahrát.",
-
-  // messages the server sends back. keys are the English the server emits,
-  // matched exactly — see errMsg in errors.ts
-  // a receipt, not display text: api.ts compares it, nothing calls t() on it
   "Logged out successfully": "Odhlášení proběhlo úspěšně",
   "Email contains the unsupported NULL char.": "E-mail obsahuje nepodporovaný znak NULL.",
   "Could not load users.": "Seznam uživatelů se nepodařilo načíst.",
@@ -305,6 +322,23 @@ export const cs: Record<string, string> = {
   "Could not complete the login": "Přihlášení se nepodařilo dokončit",
   "Could not start the OAuth flow":
     "Přihlášení přes OAuth se nepodařilo zahájit",
+  "{provider} sign-in is not configured on this server":
+    "Přihlášení přes poskytovatele {provider} není na tomto serveru nastaveno.",
+  "{provider} refused the authorization":
+    "Poskytovatel {provider} odmítl autorizaci.",
+  "{provider} rejected the authorization code":
+    "Poskytovatel {provider} odmítl autorizační kód.",
+  "Could not reach {provider}": "Poskytovatel {provider} je nedostupný.",
+  "Unexpected response from {provider}":
+    "Neočekávaná odpověď od poskytovatele {provider}.",
+  "Unexpected profile response from {provider}":
+    "Neočekávaná odpověď profilu od poskytovatele {provider}.",
+  "Could not read your {provider} profile":
+    "Nepodařilo se načíst váš profil u poskytovatele {provider}.",
+  "{provider} did not give us a verified email address — check that you granted the email permission and that your account has one.":
+    "Poskytovatel {provider} nám neposkytl ověřenou e-mailovou adresu — zkontrolujte, že jste udělili oprávnění k e-mailu a že váš účet nějaký má.",
+  "There is already a User with that email. Try logging in with your password instead of {provider}":
+    "Uživatel s tímto e-mailem již existuje. Zkuste se přihlásit heslem místo poskytovatele {provider}.",
   "Could not start your session": "Vaši relaci se nepodařilo zahájit",
   "Database lock failed.": "Zámek databáze selhal.",
   "Database lock poisoned.": "Zámek databáze je poškozený.",

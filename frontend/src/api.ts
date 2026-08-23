@@ -52,13 +52,23 @@ type UserPayload = {
   friends?: unknown;
 };
 
+// provides a default error message based on the HTTP status
+function fallbackMessage(status: number): string {
+  return status === 401
+    ? "Your session expired. Sign in again."
+    : "Something went wrong. Please try again.";
+}
+
 export class ApiRequestError extends Error {
   status: number;
+  statusText: string;
 
   constructor(status: number, statusText: string, detail?: string) {
-    // prefer the server's message over the bare status line
-    super(detail || `${status} ${statusText}`);
+    // prefer the server's message over the fallback
+    super(detail || fallbackMessage(status));
     this.status = status;
+    // kept for logging; deliberately never shown to the user
+    this.statusText = statusText;
   }
 }
 
@@ -610,11 +620,13 @@ export async function exchangeOAuthSession(): Promise<SessionUser | null> {
   return { ...user, status: "online" };
 }
 
-// Read at import time: the guest catch-all route replaces the URL, so the query
+// read at import time: the guest catch-all route replaces the URL, so the query
 // string is gone before any component mounts.
-export const oauthError: string | null = new URLSearchParams(
-  window.location.search,
-).get("oauth_error");
+const oauthParams = new URLSearchParams(window.location.search);
+export const oauthError: string | null = oauthParams.get("oauth_error");
+// the provider's own name, sent as its own parameter so the message stays a
+// fixed dictionary key —> see `oauth_failed` in server/src/oauth/mod.rs.
+export const oauthProvider: string | null = oauthParams.get("oauth_provider");
 
 export interface OAuthProvider {
   id: string;
