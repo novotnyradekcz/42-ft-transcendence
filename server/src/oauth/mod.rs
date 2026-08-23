@@ -18,9 +18,7 @@
 
 use crate::authenticator::{get_user_from_store, register_user, TokenResponse};
 use crate::model::database_initializer::OAuthProvider;
-use crate::model::users::{
-    find_or_create_oauth_user, get_user_in_db, OAuthProfile, OAuthUserError,
-};
+use crate::model::users::{find_or_create_oauth_user, get_user_in_db, OAuthProfile};
 use crate::AppState;
 use actix_security::prelude::User;
 use actix_session::Session;
@@ -303,7 +301,7 @@ pub async fn oauth_callback(
             .expect("oauth_callback expects DatabaseInitializer");
         match find_or_create_oauth_user(&mut db, &profile, &pool.encoder) {
             Ok(u) => u,
-            Err(OAuthUserError::DatabaseError(e)) => {
+            Err(e) => {
                 log::error!("could not resolve the {provider_id} identity to a user: {e}");
                 return oauth_failed(&pool, "Could not complete the login");
             }

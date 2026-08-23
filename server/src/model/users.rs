@@ -19,6 +19,7 @@ use diesel::serialize::{self, IsNull, Output, ToSql};
 use diesel::sql_types::Text;
 use rand::Rng;
 use std::convert::From;
+use std::fmt::Error;
 use std::io::Write;
 
 /// `Vec<i32>` stored in PostgreSQL as a JSON text array (e.g. `[1,2,3]`).
@@ -63,8 +64,20 @@ pub struct OAuthProfile {
     pub email: String,
 }
 
+#[derive(Debug)]
 pub enum OAuthUserError {
+    // The provider gave us no address, so there is nothing to identify them by.
+    NoEmail(Error),
     DatabaseError(diesel::result::Error),
+}
+
+impl std::fmt::Display for OAuthUserError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OAuthUserError::NoEmail(e) => write!(f, "no email from provider: {e}"),
+            OAuthUserError::DatabaseError(e) => write!(f, "database error: {e}"),
+        }
+    }
 }
 
 impl From<diesel::result::Error> for OAuthUserError {
@@ -88,6 +101,12 @@ pub fn find_or_create_oauth_user(
     let conn = connection(db);
 
     let email_normalized = profile.email.trim().to_lowercase();
+
+    // the callback refuses a blank address already. belt and braces, because the
+    // lookup below would otherwise match any row that happened to have one.
+    if email_normalized.is_empty() {
+        return Err(OAuthUserError::NoEmail(Error));
+    }
 
     // Email is the identity — if an account already has it, just log them in.
     if let Some(user) = ftt_users
