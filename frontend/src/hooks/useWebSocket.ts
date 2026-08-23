@@ -128,6 +128,16 @@ export function useWebSocket<IncomingMessage = unknown, OutgoingMessage = unknow
       }
     };
 
+    const handleFreezeOrHide = () => {
+      if (
+        wsRef.current &&
+        (wsRef.current.readyState === WebSocket.CONNECTING ||
+          wsRef.current.readyState === WebSocket.OPEN)
+      ) {
+        wsRef.current.close(1000, "Tab frozen");
+      }
+    };
+
     const handleWakeup = (event?: Event) => {
       const pageEvent = event as PageTransitionEvent | undefined;
       const isBfCacheRestore = pageEvent?.persisted ?? false;
@@ -150,11 +160,15 @@ export function useWebSocket<IncomingMessage = unknown, OutgoingMessage = unknow
       }
     };
 
+    window.addEventListener("freeze", handleFreezeOrHide);
+    window.addEventListener("pagehide", handleFreezeOrHide);
     window.addEventListener("pageshow", handleWakeup);
     document.addEventListener("visibilitychange", handleWakeup);
 
     return () => {
       tornDown = true;
+      window.removeEventListener("freeze", handleFreezeOrHide);
+      window.removeEventListener("pagehide", handleFreezeOrHide);
       window.removeEventListener("pageshow", handleWakeup);
       document.removeEventListener("visibilitychange", handleWakeup);
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);

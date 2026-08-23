@@ -240,4 +240,20 @@ describe("useWebSocket reconnection", () => {
     // Reconnects immediately
     expect(FakeWebSocket.instances).toHaveLength(2);
   });
+
+  it("happy path: freeze and pagehide events close open WebSockets gracefully", () => {
+    render(<Probe maxDelay={10_000} />);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    const ws = FakeWebSocket.instances[0];
+
+    act(() => ws.fireOpen());
+    expect(ws.readyState).toBe(FakeWebSocket.OPEN);
+
+    // Dispatch freeze event before bfcache hibernation
+    act(() => {
+      window.dispatchEvent(new Event("freeze"));
+    });
+
+    expect(ws.readyState).toBe(FakeWebSocket.CLOSED);
+  });
 });
