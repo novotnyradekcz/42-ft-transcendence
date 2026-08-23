@@ -56,7 +56,7 @@ export const cs: Record<string, string> = {
   "users - board member list": "users - seznam členů nástěnky",
   "friends - saved users and online status": "friends - uložení uživatelé a stav online",
   "mail - non-live personal messages": "mail - osobní zprávy mimo živý chat",
-  "games - empty for now": "games - zatím prázdné",
+  "games - you can play with your mates": "games - můžeš si zahrát s přáteli",
   "logout - end this session": "logout - ukončit toto sezení",
   "login / register - account access": "login / register - přístup k účtu",
   "No users available.": "Žádní uživatelé nejsou k dispozici.",

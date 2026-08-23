@@ -22,7 +22,7 @@ export default function HomePage() {
         <li>{t("users - board member list")}</li>
         <li>{t("friends - saved users and online status")}</li>
         <li>{t("mail - non-live personal messages")}</li>
-        <li>{t("games - empty for now")}</li>
+        <li>{t("games - you can play with your mates")}</li>
         <li>
           {sessionUser
             ? t("logout - end this session")
