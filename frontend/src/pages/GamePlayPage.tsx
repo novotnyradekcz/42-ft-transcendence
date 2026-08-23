@@ -154,11 +154,13 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
   const queryParams: Record<string, string | number> = game && sessionUser
     ? { game_id: game.id, user_id: sessionUser.id }
     : {};
+  const isLobby = status === "connecting" || status === "waiting";
 
   const { sendMessage } = useWebSocket<GameServerMessage>(
     game && sessionUser ? "/games/play/ws" : null,
     queryParams,
     {
+      reconnectMaxDelayMs: isLobby ? 5000 : undefined,
       onOpen: () => {
         setStatus("connecting");
         setStatusMessage(tRef.current("Connected, searching for an opponent..."));
@@ -262,7 +264,7 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
             }
           } else if (msg.type === "opponent_disconnected") {
             setStatus("disconnected");
-            setStatusMessage(tRef.current("Opponent disconnected. Game ended."));
+            setStatusMessage(tRef.current("Opponent disconnected. Match won by forfeit."));
             cleanupLua();
           }
         } catch (err) {
@@ -273,15 +275,34 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
         }
       },
       onClose: () => {
-        if (statusRef.current !== "disconnected") {
+        if (statusRef.current === "playing") {
+          setStatus("disconnected");
+          setStatusMessage(
+            tRef.current("Connection lost (tab suspended/network lost). Match forfeited."),
+          );
+        } else if (
+          statusRef.current !== "connecting" &&
+          statusRef.current !== "waiting" &&
+          statusRef.current !== "disconnected"
+        ) {
           setStatus("disconnected");
           setStatusMessage(tRef.current("Connection to server closed."));
         }
         cleanupLua();
       },
       onError: () => {
-        setStatus("error");
-        setStatusMessage(tRef.current("WebSocket connection error."));
+        if (statusRef.current === "playing") {
+          setStatus("disconnected");
+          setStatusMessage(
+            tRef.current("Connection lost (tab suspended/network lost). Match forfeited."),
+          );
+        } else if (
+          statusRef.current !== "connecting" &&
+          statusRef.current !== "waiting"
+        ) {
+          setStatus("error");
+          setStatusMessage(tRef.current("WebSocket connection error."));
+        }
         cleanupLua();
       },
     }

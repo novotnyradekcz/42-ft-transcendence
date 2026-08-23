@@ -238,6 +238,10 @@ export const sl: Record<string, string> = {
   "Playing vs {name}": "Igra proti {name}",
   "Opponent disconnected. Game ended.":
     "Nasprotnik je prekinil povezavo. Igra je končana.",
+  "Opponent disconnected. Match won by forfeit.":
+    "Nasprotnik je prekinil povezavo. Zmaga s predajo.",
+  "Connection lost (tab suspended/network lost). Match forfeited.":
+    "Povezava je bila prekinjena (zavihek zaustavljen/prekinitev omrežja). Poraz s predajo.",
   "Connection to server closed.": "Povezava s strežnikom je bila prekinjena.",
   "WebSocket connection error.": "Napaka povezave WebSocket.",
   "Exit Game": "Izhod iz igre",

@@ -128,8 +128,35 @@ export function useWebSocket<IncomingMessage = unknown, OutgoingMessage = unknow
       }
     };
 
+    const handleWakeup = (event?: Event) => {
+      const pageEvent = event as PageTransitionEvent | undefined;
+      const isBfCacheRestore = pageEvent?.persisted ?? false;
+      const isTabVisible = document.visibilityState === "visible";
+
+      if (
+        (isBfCacheRestore || isTabVisible) &&
+        optionsRef.current.reconnectMaxDelayMs &&
+        !tornDown
+      ) {
+        if (
+          wsRef.current &&
+          (wsRef.current.readyState === WebSocket.CLOSED ||
+            wsRef.current.readyState === WebSocket.CLOSING)
+        ) {
+          if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+          attemptRef.current = 0;
+          setReconnectAttempt((n) => n + 1);
+        }
+      }
+    };
+
+    window.addEventListener("pageshow", handleWakeup);
+    document.addEventListener("visibilitychange", handleWakeup);
+
     return () => {
       tornDown = true;
+      window.removeEventListener("pageshow", handleWakeup);
+      document.removeEventListener("visibilitychange", handleWakeup);
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
       if (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN) {
         ws.close();

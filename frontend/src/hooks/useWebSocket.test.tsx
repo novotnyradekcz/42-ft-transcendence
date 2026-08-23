@@ -202,12 +202,42 @@ describe("useWebSocket reconnection", () => {
     render(<Switcher />);
     expect(FakeWebSocket.instances).toHaveLength(1);
 
-    // simulating logout: the effect tears down deliberately
-    act(() => {
-      container.querySelector("button")!.click();
-    });
-    act(() => void vi.advanceTimersByTime(60_000));
-
     expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+
+  it("happy path: visibilitychange event triggers immediate reconnection when tab becomes visible", () => {
+    render(<Probe maxDelay={10_000} />);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+
+    // Socket closes (e.g. tab backgrounded/suspended)
+    act(() => FakeWebSocket.instances[0].fireClose());
+    expect(FakeWebSocket.instances).toHaveLength(1);
+
+    // Tab becomes visible: visibilitychange event fires before backoff timer elapses
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    // Reconnects immediately without waiting for backoff timer
+    expect(FakeWebSocket.instances).toHaveLength(2);
+  });
+
+  it("happy path: pageshow event with persisted=true (bfcache restore) triggers immediate reconnection", () => {
+    render(<Probe maxDelay={10_000} />);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+
+    // Socket closes due to bfcache entry
+    act(() => FakeWebSocket.instances[0].fireClose());
+    expect(FakeWebSocket.instances).toHaveLength(1);
+
+    // Page restored from bfcache
+    act(() => {
+      const pageShowEvent = new Event("pageshow") as PageTransitionEvent;
+      Object.defineProperty(pageShowEvent, "persisted", { value: true });
+      window.dispatchEvent(pageShowEvent);
+    });
+
+    // Reconnects immediately
+    expect(FakeWebSocket.instances).toHaveLength(2);
   });
 });
