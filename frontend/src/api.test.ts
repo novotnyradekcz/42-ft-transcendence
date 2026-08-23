@@ -359,12 +359,18 @@ describe("login", () => {
 
   it("edge case: 401 propagates as an error (no fallback)", async () => {
     stubFetch(401, null);
-    await expect(login("alice", "s3cr3t")).rejects.toThrow("401");
+    // the message is written copy now, not the raw status line, so it has a
+    // dictionary key; the status itself still rides along on the error
+    await expect(login("alice", "s3cr3t")).rejects.toThrow(
+      "Your session expired. Sign in again.",
+    );
   });
 
   it("edge case: 500 propagates as an error (no fallback)", async () => {
     stubFetch(500, null);
-    await expect(login("alice", "s3cr3t")).rejects.toThrow("500");
+    await expect(login("alice", "s3cr3t")).rejects.toThrow(
+      "Something went wrong. Please try again.",
+    );
   });
 });
 
@@ -599,7 +605,7 @@ describe("register", () => {
     stubFetch(400, null);
     await expect(
       register("alice", "alice@example.com", "s3cr3t"),
-    ).rejects.toThrow("400");
+    ).rejects.toThrow("Something went wrong. Please try again.");
   });
 
   it("edge case: a non-ASCII name registers and signs in", async () => {

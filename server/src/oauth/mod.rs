@@ -51,9 +51,15 @@ struct AccessToken {
 
 /// `/{provider}` and `/{provider}/callback` are top-level navigations, so a JSON
 /// body would be rendered as a page. Send them back to the app with the reason.
-fn oauth_failed(pool: &AppState, message: &str) -> HttpResponse {
+fn oauth_failed(pool: &AppState, message: &str, provider: Option<&str>) -> HttpResponse {
     let base = pool.oauth.after_login_url();
-    let target = Url::parse_with_params(&base, &[("oauth_error", message)])
+    // the provider name travels as its own parameter rather than being spliced
+    // into the sentence for translation purposes
+    let mut params = vec![("oauth_error", message)];
+    if let Some(label) = provider {
+        params.push(("oauth_provider", label));
+    }
+    let target = Url::parse_with_params(&base, &params)
         .map(String::from)
         .unwrap_or(base);
 
@@ -91,7 +97,8 @@ pub async fn oauth_start(
         None => {
             return oauth_failed(
                 &pool,
-                &format!("{provider_id} sign-in is not configured on this server"),
+                "{provider} sign-in is not configured on this server",
+                Some(&provider_id),
             );
         }
     };
@@ -104,7 +111,7 @@ pub async fn oauth_start(
 
     // keyed by provider so two tabs mid-login don't clobber each other
     if session.insert(state_key(&provider_id), &state).is_err() {
-        return oauth_failed(&pool, "Could not start the OAuth flow");
+        return oauth_failed(&pool, "Could not start the OAuth flow", None);
     }
 
     let redirect = match Url::parse_with_params(
@@ -120,7 +127,7 @@ pub async fn oauth_start(
         Ok(url) => url,
         Err(e) => {
             log::error!("could not build the {provider_id} authorize URL: {e}");
-            return oauth_failed(&pool, "Could not start the OAuth flow");
+            return oauth_failed(&pool, "Could not start the OAuth flow", None);
         }
     };
 
@@ -143,15 +150,18 @@ pub async fn oauth_callback(
         None => {
             return oauth_failed(
                 &pool,
-                &format!("{provider_id} sign-in is not configured on this server"),
+                "{provider} sign-in is not configured on this server",
+                Some(&provider_id),
             );
         }
     };
 
     if let Some(err) = &query.error {
+        log::warn!("{provider_id} refused the authorization: {err}");
         return oauth_failed(
             &pool,
-            &format!("{} refused the authorization: {}", provider.spec.label, err),
+            "{provider} refused the authorization",
+            Some(provider.spec.label),
         );
     }
 
@@ -164,7 +174,7 @@ pub async fn oauth_callback(
     match expected {
         Some(ref e) if e == received && !received.is_empty() => {}
         _ => {
-            return oauth_failed(&pool, "Invalid OAuth state — start the login again");
+            return oauth_failed(&pool, "Invalid OAuth state — start the login again", None);
         }
     }
 
@@ -172,7 +182,7 @@ pub async fn oauth_callback(
     let code = match query.code.as_deref() {
         Some(c) if !c.is_empty() => c,
         _ => {
-            return oauth_failed(&pool, "Missing authorization code");
+            return oauth_failed(&pool, "Missing authorization code", None);
         }
     };
 
@@ -198,7 +208,8 @@ pub async fn oauth_callback(
                 log::warn!("{provider_id} token response was not the expected shape: {e}");
                 return oauth_failed(
                     &pool,
-                    &format!("Unexpected response from {}", provider.spec.label),
+                    "Unexpected response from {provider}",
+                    Some(provider.spec.label),
                 );
             }
         },
@@ -209,12 +220,17 @@ pub async fn oauth_callback(
             );
             return oauth_failed(
                 &pool,
-                &format!("{} rejected the authorization code", provider.spec.label),
+                "{provider} rejected the authorization code",
+                Some(provider.spec.label),
             );
         }
         Err(e) => {
             log::warn!("could not reach {provider_id} for the code exchange: {e}");
-            return oauth_failed(&pool, &format!("Could not reach {}", provider.spec.label));
+            return oauth_failed(
+                &pool,
+                "Could not reach {provider}",
+                Some(provider.spec.label),
+            );
         }
     };
 
@@ -234,7 +250,8 @@ pub async fn oauth_callback(
                     log::warn!("{provider_id} profile was not valid JSON: {e}");
                     return oauth_failed(
                         &pool,
-                        &format!("Unexpected profile response from {}", provider.spec.label),
+                        "Unexpected profile response from {provider}",
+                        Some(provider.spec.label),
                     );
                 }
             }
@@ -246,12 +263,17 @@ pub async fn oauth_callback(
             );
             return oauth_failed(
                 &pool,
-                &format!("Could not read your {} profile", provider.spec.label),
+                "Could not read your {provider} profile",
+                Some(provider.spec.label),
             );
         }
         Err(e) => {
             log::warn!("could not reach {provider_id} for the profile: {e}");
-            return oauth_failed(&pool, &format!("Could not reach {}", provider.spec.label));
+            return oauth_failed(
+                &pool,
+                "Could not reach {provider}",
+                Some(provider.spec.label),
+            );
         }
     };
 
@@ -261,7 +283,8 @@ pub async fn oauth_callback(
             log::warn!("{provider_id} profile lacked a usable id: {raw_profile}");
             return oauth_failed(
                 &pool,
-                &format!("Unexpected profile response from {}", provider.spec.label),
+                "Unexpected profile response from {provider}",
+                Some(provider.spec.label),
             );
         }
     };
@@ -287,11 +310,9 @@ pub async fn oauth_callback(
         );
         return oauth_failed(
             &pool,
-            &format!(
-                "{} did not give us a verified email address \u{2014} check that you \
-                 granted the email permission and that your account has one.",
-                provider.spec.label
-            ),
+            "{provider} did not give us a verified email address \u{2014} check that you \
+             granted the email permission and that your account has one.",
+            Some(provider.spec.label),
         );
     }
 
@@ -304,13 +325,15 @@ pub async fn oauth_callback(
         match find_or_create_oauth_user(&mut db, &profile, &pool.encoder) {
             Ok(u) => u,
             Err(OAuthUserError::EmailTaken) => {
-                return oauth_failed(&pool, &format!(
-                    "There is already a User with that email. Try logging in with your password instead of {}",
-                    provider.spec.label))
+                return oauth_failed(
+                    &pool,
+                    "There is already a User with that email. Try logging in with your password instead of {provider}",
+                    Some(provider.spec.label),
+                )
             }
             Err(OAuthUserError::DatabaseError(e)) => {
                 log::error!("could not resolve the {provider_id} identity to a user: {e}");
-                return oauth_failed(&pool, "Could not complete the login");
+                return oauth_failed(&pool, "Could not complete the login", None);
             }
         }
     };
@@ -326,7 +349,7 @@ pub async fn oauth_callback(
     // just the id, and only until /auth/session spends it. tokens in a URL
     // end up in history, referrers and proxy logs
     if session.insert("user_id", db_user.id).is_err() {
-        return oauth_failed(&pool, "Could not start your session");
+        return oauth_failed(&pool, "Could not start your session", None);
     }
 
     HttpResponse::Found()

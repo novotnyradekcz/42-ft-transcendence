@@ -29,6 +29,10 @@ export const sl: Record<string, string> = {
   Unlocked: "Odklenjeno",
   Locked: "Zaklenjeno",
   "Latest achievements": "Zadnji dosežki",
+  "No achievements available.": "Dosežki niso na voljo.",
+  "Could not load achievements.": "Dosežkov ni bilo mogoče naložiti.",
+  "Achievement Unlocked!": "Dosežek odklenjen!",
+  "[ OK ]": "[ OK ]",
   "Enter `history` for match history, `leaderboard` for top players, or `achievements` for badges:":
     "Vnesite `history` za zgodovino tekem, `leaderboard` za najboljše igralce ali `achievements` za značke:",
   "DRAW": "NEODLOČENO",
@@ -42,6 +46,14 @@ export const sl: Record<string, string> = {
   "Enter `history` for your game history or `leaderboard` for top 10 players:": "Vnesite `history` za zgodovino iger ali `leaderboard` za lestvico 10 najboljših igralcev:",
   "[ history ]": "[ zgodovina ]",
   "[ leaderboard ]": "[ lestvica ]",
+  "[ achievements ]": "[ dosežki ]",
+  "Type `upload` or click below to install a new .lua game:":
+    "Vnesite `upload` ali kliknite spodaj za namestitev nove igre .lua:",
+  "[ upload game (.lua) ]": "[ naloži igro (.lua) ]",
+  "uploading...": "nalaganje...",
+  "Game must be a .lua file.": "Igra mora biti datoteka .lua.",
+  "uploaded game '{name}'.": "igra '{name}' naložena.",
+  "login first to upload games.": "najprej se prijavite za nalaganje iger.",
   "Type `menu` to enter the board.": "Vnesite `menu` za vstop na tablo.",
   "Type `login` or `register` to enter.":
     "Vnesite `login` ali `register` za vstop.",
@@ -49,6 +61,13 @@ export const sl: Record<string, string> = {
     "Samo za člane. Prijavite se za vstop na tablo.",
   "sign in to an existing account": "prijava v obstoječi račun",
   "create a new account": "ustvarjanje novega računa",
+  "sign in with {label}": "prijava prek {label}",
+  "redirecting to {label}...": "preusmerjanje na {label}...",
+  "unknown provider: {name}": "neznan ponudnik: {name}",
+  "use `oauth <provider>` to continue.":
+    "za nadaljevanje uporabite `oauth <provider>`.",
+  "no external sign-in providers are configured.":
+    "zunanji ponudniki prijave niso nastavljeni.",
   "Welcome {name}.": "Dobrodošli {name}.",
   "Welcome {name}. Choose a board section with commands.":
     "Dobrodošli {name}. Izberite razdelek table z ukazi.",
@@ -178,6 +197,8 @@ export const sl: Record<string, string> = {
     "prijava ni uspela. pritisnite Ctrl+C ali Esc za izhod ali znova vnesite ime.",
   "name accepted. enter email.": "ime sprejeto. vnesite e-pošto.",
   "email accepted. enter password.": "e-pošta sprejeta. vnesite geslo.",
+  "account created. enter password to log in.":
+    "račun ustvarjen. vnesite geslo za prijavo.",
   "registered and logged in as {name}.":
     "registrirani in prijavljeni kot {name}.",
   "registration failed. press Ctrl+C or Esc to quit, or enter name again.":
@@ -231,6 +252,10 @@ export const sl: Record<string, string> = {
   "Could not post reply.": "Odgovora ni bilo mogoče objaviti.",
   "Login failed.": "Prijava ni uspela.",
   "Registration failed.": "Registracija ni uspela.",
+  "Your session expired. Sign in again.":
+    "Vaša seja je potekla. Ponovno se prijavite.",
+  "Something went wrong. Please try again.":
+    "Nekaj je šlo narobe. Poskusite znova.",
   "Connecting to server...": "Povezovanje s strežnikom...",
   "Game or session details missing.": "Manjkajo podatki o igri ali seji.",
   "Connected, searching for an opponent...": "Povezano, iskanje nasprotnika...",
@@ -241,10 +266,6 @@ export const sl: Record<string, string> = {
   "Connection to server closed.": "Povezava s strežnikom je bila prekinjena.",
   "WebSocket connection error.": "Napaka povezave WebSocket.",
   "Exit Game": "Izhod iz igre",
-
-  // produced in the browser: thrown by api.ts, or the fallback used when a
-  // failure carries no message. a couple double as server strings — same
-  // English, so one key serves both
   "Name, email, and password are required.":
     "Ime, e-pošta in geslo so obvezni.",
   "Name and password are required.": "Ime in geslo sta obvezna.",
@@ -262,10 +283,6 @@ export const sl: Record<string, string> = {
     "Zgodovine dvobojev ni bilo mogoče naložiti.",
   "Could not load leaderboard.": "Lestvice ni bilo mogoče naložiti.",
   "could not upload game.": "igre ni bilo mogoče naložiti.",
-
-  // messages the server sends back. keys are the English the server emits,
-  // matched exactly — see errMsg in errors.ts
-  // a receipt, not display text: api.ts compares it, nothing calls t() on it
   "Logged out successfully": "Odjava je bila uspešna",
   "Email contains the unsupported NULL char.": "E-pošta vsebuje nepodprt znak NULL.",
   "Could not load users.": "Seznama uporabnikov ni bilo mogoče naložiti.",
@@ -306,6 +323,23 @@ export const sl: Record<string, string> = {
     "Uporabnik se ne ujema. Upravljate lahko samo svoje prijatelje.",
   "Could not complete the login": "Prijave ni bilo mogoče dokončati",
   "Could not start the OAuth flow": "Prijave prek OAuth ni bilo mogoče začeti",
+  "{provider} sign-in is not configured on this server":
+    "Prijava prek ponudnika {provider} na tem strežniku ni nastavljena.",
+  "{provider} refused the authorization":
+    "Ponudnik {provider} je zavrnil pooblastitev.",
+  "{provider} rejected the authorization code":
+    "Ponudnik {provider} je zavrnil avtorizacijsko kodo.",
+  "Could not reach {provider}": "Ponudnik {provider} ni dosegljiv.",
+  "Unexpected response from {provider}":
+    "Nepričakovan odgovor ponudnika {provider}.",
+  "Unexpected profile response from {provider}":
+    "Nepričakovan odgovor profila ponudnika {provider}.",
+  "Could not read your {provider} profile":
+    "Vašega profila pri ponudniku {provider} ni bilo mogoče prebrati.",
+  "{provider} did not give us a verified email address — check that you granted the email permission and that your account has one.":
+    "Ponudnik {provider} nam ni posredoval potrjenega e-poštnega naslova — preverite, ali ste dovolili dostop do e-pošte in ali jo vaš račun ima.",
+  "There is already a User with that email. Try logging in with your password instead of {provider}":
+    "Uporabnik s tem e-poštnim naslovom že obstaja. Poskusite se prijaviti z geslom namesto pri ponudniku {provider}.",
   "Could not start your session": "Vaše seje ni bilo mogoče začeti",
   "Database lock failed.": "Zaklepanje baze podatkov je spodletelo.",
   "Database lock poisoned.": "Zaklep baze podatkov je pokvarjen.",

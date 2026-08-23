@@ -15,8 +15,11 @@
 use crate::AppState;
 use actix_security::http::security::{AuthorizationManager, RequestMatcherAuthorizer};
 use actix_security::prelude::{Argon2PasswordEncoder, Authenticator, PasswordEncoder, User};
-use actix_web::dev::ServiceRequest;
+use actix_web::dev::{ServiceRequest, ServiceResponse};
+use actix_web::http::{header, StatusCode};
+use actix_web::middleware::{ErrorHandlerResponse, ErrorHandlers};
 use actix_web::web::Data;
+use actix_web::HttpResponse;
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use serde::Serialize;
@@ -185,6 +188,33 @@ pub fn create_authorizer() -> RequestMatcherAuthorizer {
         .login_url("/register") // public — no auth required for registration
         .http_basic()
     // add more matchers per route as needed
+}
+
+/// middleware 401 handler: if no JSON resposne message, fill it with a JSON message.
+fn json_401<B>(res: ServiceResponse<B>) -> Result<ErrorHandlerResponse<B>, actix_web::Error> {
+    let already_json = res
+        .response()
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.starts_with("application/json"));
+
+    if already_json {
+        return Ok(ErrorHandlerResponse::Response(res.map_into_left_body()));
+    }
+
+    let (req, _) = res.into_parts();
+    let filled = HttpResponse::Unauthorized()
+        .json(serde_json::json!({ "message": "Invalid or expired access token" }))
+        .map_into_right_body();
+
+    Ok(ErrorHandlerResponse::Response(ServiceResponse::new(
+        req, filled,
+    )))
+}
+
+pub fn json_401_handler<B: 'static>() -> ErrorHandlers<B> {
+    ErrorHandlers::new().handler(StatusCode::UNAUTHORIZED, json_401)
 }
 
 #[cfg(test)]
