@@ -236,6 +236,8 @@ export const cs: Record<string, string> = {
   "Waiting for an opponent to join...": "Čekání na připojení soupeře...",
   "Playing vs {name}": "Hra proti {name}",
   "Opponent disconnected. Game ended.": "Soupeř se odpojil. Hra skončila.",
+  "Opponent disconnected. Match won by forfeit.": "Soupeř se odpojil. Výhra kontumačně.",
+  "Connection lost (tab suspended/network lost). Match forfeited.": "Připojení bylo ztraceno (pozastavená záložka/síť). Prohra kontumačně.",
   "Connection to server closed.": "Připojení k serveru bylo ukončeno.",
   "WebSocket connection error.": "Chyba připojení WebSocket.",
   "Exit Game": "Ukončit hru",

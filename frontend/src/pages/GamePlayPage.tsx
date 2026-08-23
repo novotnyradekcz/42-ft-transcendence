@@ -103,6 +103,8 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
   const statusRef = useRef(status);
   const tRef = useRef(t);
 
+  const matchFinishedRef = useRef(false);
+
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
@@ -154,11 +156,13 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
   const queryParams: Record<string, string | number> = game && sessionUser
     ? { game_id: game.id, user_id: sessionUser.id }
     : {};
+  const isLobby = status === "connecting" || status === "waiting";
 
   const { sendMessage } = useWebSocket<GameServerMessage>(
     game && sessionUser ? "/games/play/ws" : null,
     queryParams,
     {
+      reconnectMaxDelayMs: isLobby ? 5000 : undefined,
       onOpen: () => {
         setStatus("connecting");
         setStatusMessage(tRef.current("Connected, searching for an opponent..."));
@@ -169,6 +173,7 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
             setStatus("waiting");
             setStatusMessage(tRef.current("Waiting for an opponent to join..."));
           } else if (msg.type === "match_start") {
+            matchFinishedRef.current = false;
             setStatus("playing");
             setStatusMessage(
               tRef.current("Playing vs {name}", { name: msg.opponent_name }),
@@ -219,6 +224,9 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
             lua.global.set("send_message", (payload: unknown) => {
               const str = String(payload ?? "");
               if (str.length > MAX_PAYLOAD_LEN) return;
+              if (str.startsWith("game_over:")) {
+                matchFinishedRef.current = true;
+              }
               sendMessage({ type: "game_action", data: str });
             });
 
@@ -238,6 +246,9 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
               cleanupLua();
             }
           } else if (msg.type === "game_action") {
+            if (msg.data.startsWith("game_over:")) {
+              matchFinishedRef.current = true;
+            }
             if (luaEngineRef.current) {
               const onNetworkMessage =
                 luaEngineRef.current.global.get("on_network_message");
@@ -261,9 +272,11 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
               setUnlockedToasts((prev) => [...prev, ...msg.achievements]);
             }
           } else if (msg.type === "opponent_disconnected") {
-            setStatus("disconnected");
-            setStatusMessage(tRef.current("Opponent disconnected. Game ended."));
-            cleanupLua();
+            if (!matchFinishedRef.current) {
+              setStatus("disconnected");
+              setStatusMessage(tRef.current("Opponent disconnected. Match won by forfeit."));
+              cleanupLua();
+            }
           }
         } catch (err) {
           console.error("Error in onMessage handler:", err);
@@ -273,15 +286,34 @@ export default function GamePlayPage({ game }: { game: GameSummary | null }) {
         }
       },
       onClose: () => {
-        if (statusRef.current !== "disconnected") {
+        if (statusRef.current === "playing" && !matchFinishedRef.current) {
+          setStatus("disconnected");
+          setStatusMessage(
+            tRef.current("Connection lost (tab suspended/network lost). Match forfeited."),
+          );
+        } else if (
+          statusRef.current !== "connecting" &&
+          statusRef.current !== "waiting" &&
+          statusRef.current !== "disconnected"
+        ) {
           setStatus("disconnected");
           setStatusMessage(tRef.current("Connection to server closed."));
         }
         cleanupLua();
       },
       onError: () => {
-        setStatus("error");
-        setStatusMessage(tRef.current("WebSocket connection error."));
+        if (statusRef.current === "playing" && !matchFinishedRef.current) {
+          setStatus("disconnected");
+          setStatusMessage(
+            tRef.current("Connection lost (tab suspended/network lost). Match forfeited."),
+          );
+        } else if (
+          statusRef.current !== "connecting" &&
+          statusRef.current !== "waiting"
+        ) {
+          setStatus("error");
+          setStatusMessage(tRef.current("WebSocket connection error."));
+        }
         cleanupLua();
       },
     }
