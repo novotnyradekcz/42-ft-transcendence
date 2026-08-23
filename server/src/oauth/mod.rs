@@ -18,9 +18,7 @@
 
 use crate::authenticator::{get_user_from_store, register_user, TokenResponse};
 use crate::model::database_initializer::OAuthProvider;
-use crate::model::users::{
-    find_or_create_oauth_user, get_user_in_db, OAuthProfile, OAuthUserError,
-};
+use crate::model::users::{find_or_create_oauth_user, get_user_in_db, OAuthProfile};
 use crate::AppState;
 use actix_security::prelude::User;
 use actix_session::Session;
@@ -303,12 +301,7 @@ pub async fn oauth_callback(
             .expect("oauth_callback expects DatabaseInitializer");
         match find_or_create_oauth_user(&mut db, &profile, &pool.encoder) {
             Ok(u) => u,
-            Err(OAuthUserError::EmailTaken) => {
-                return oauth_failed(&pool, &format!(
-                    "There is already a User with that email. Try logging in with your password instead of {}",
-                    provider.spec.label))
-            }
-            Err(OAuthUserError::DatabaseError(e)) => {
+            Err(e) => {
                 log::error!("could not resolve the {provider_id} identity to a user: {e}");
                 return oauth_failed(&pool, "Could not complete the login");
             }
@@ -406,26 +399,19 @@ fn parse_profile(provider: &OAuthProvider, raw: &serde_json::Value) -> Option<OA
         .unwrap_or_default()
         .to_string();
 
-    let (id, login) = match provider.spec.id {
+    let login = match provider.spec.id {
         // both give a numeric id and a username
         "42" | "github" => {
             let id = raw.get("id").and_then(json_id)?;
-            let login = raw
-                .get("login")
+            raw.get("login")
                 .and_then(|v| v.as_str())
                 .map(str::to_string)
-                .unwrap_or_else(|| id.clone());
-            (id, login)
+                .unwrap_or(id)
         }
         _ => return None,
     };
 
-    Some(OAuthProfile {
-        provider: provider.spec.id.to_string(),
-        provider_user_id: id,
-        login,
-        email,
-    })
+    Some(OAuthProfile { login, email })
 }
 
 /// Ids come back as numbers or strings depending on who you ask. Take either.
