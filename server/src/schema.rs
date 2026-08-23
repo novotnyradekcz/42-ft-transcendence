@@ -59,8 +59,6 @@ diesel::table! {
         bio -> Text,
         avatar_url -> Text,
         friends -> Text,
-        provider_user_id -> Text,
-        provider -> Text,
     }
 }
 
@@ -111,4 +109,3 @@ diesel::allow_tables_to_appear_in_same_query!(
     ftt_token_blacklist,
     ftt_users,
 );
-
