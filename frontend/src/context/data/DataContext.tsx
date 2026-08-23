@@ -19,6 +19,7 @@ import {
 } from "react";
 import { listDiscussions, listGames, listMail } from "../../api";
 import { errMsg } from "../../errors";
+import { useTranslation } from "../language/i18n";
 import { useSession } from "../session/useSession";
 import type {
   DiscussionThread,
@@ -58,7 +59,8 @@ const PAGE_RESOURCES: Record<Page, DataResource[]> = {
   profile: ["users"],
 };
 
-// fallback line per resource, used when the error carries no message of its own
+// fallback line per resource, used when the error carries no message of its own.
+// English here because the keys are the English strings — errMsg translates it
 const LOAD_FAILURE: Record<DataResource, string> = {
   discussions: "could not load discussions.",
   games: "could not load games.",
@@ -68,6 +70,7 @@ const LOAD_FAILURE: Record<DataResource, string> = {
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const { sessionUser, isRestoring, refreshUsers, knownUsers } = useSession();
+  const { t } = useTranslation();
 
   const [discussions, setDiscussions] = useState<DiscussionThread[]>([]);
   const [selectedDiscussion, setSelectedDiscussion] =
@@ -183,12 +186,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (result.status === "fulfilled") {
           if (resource === "users") usersLoaded.current = true;
         } else {
-          errors.push(errMsg(result.reason, LOAD_FAILURE[resource]));
+          errors.push(errMsg(result.reason, LOAD_FAILURE[resource], t));
         }
       });
       return errors;
     },
-    [startLoad, sessionUser, knownUsers.length, isRestoring],
+    [startLoad, sessionUser, knownUsers.length, isRestoring, t],
   );
 
   const ensureForPage = useCallback((page: Page) => load(page, false), [load]);

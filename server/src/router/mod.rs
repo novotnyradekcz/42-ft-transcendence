@@ -43,9 +43,12 @@ pub async fn show_users(pool: web::Data<Arc<AppState>>) -> impl Responder {
         .expect("show_users expect DatabaseInitializer");
     match list_users_in_db(&mut db) {
         Ok(users) => HttpResponse::Ok().json(users),
-        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "message": format!("Could not load users: {}", err),
-        })),
+        Err(err) => {
+            log::error!("could not load users: {err}");
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Could not load users.",
+            }))
+        }
     }
 }
 
@@ -98,9 +101,12 @@ pub async fn login_user(
         Ok(None) => HttpResponse::Unauthorized().json(serde_json::json!({
             "message": "Unexisting user",
         })),
-        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "message": format!("Could not load user: {}", err),
-        })),
+        Err(err) => {
+            log::error!("could not load user: {err}");
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Could not load user.",
+            }))
+        }
     }
 }
 
@@ -219,9 +225,13 @@ pub async fn refresh_token(
 #[post("/register")]
 pub async fn create_user(
     pool: web::Data<Arc<AppState>>,
-    body: web::Json<CreateUser>,
+    mut body: web::Json<CreateUser>,
 ) -> impl Responder {
-    // validate first — no DB needed. The rules live on CreateUser so they are
+    // trim first: the row, the auth store and the response all read body.name,
+    // and Basic auth looks an account up by exact name
+    body.normalize();
+
+    // validate second — no DB needed. The rules live on CreateUser so they are
     // stated (and unit-tested) once, rather than restated here.
     if let Err(message) = body.validate() {
         return HttpResponse::BadRequest().json(serde_json::json!({
@@ -260,9 +270,10 @@ pub async fn create_user(
             "email": body.email,
         })),
         Err(CreateUserError::DatabaseError(e)) => {
+            log::error!("registration failed: {e}");
             HttpResponse::InternalServerError().json(serde_json::json!({
                 "success": false,
-                "message": format!("Registration failed: {}", e),
+                "message": "Registration failed.",
             }))
         }
     }
@@ -279,11 +290,14 @@ pub async fn user_detail(
     match get_user_in_db(&mut db, user_id) {
         Ok(Some(user)) => HttpResponse::Ok().json(user),
         Ok(None) => HttpResponse::NotFound().json(serde_json::json!({
-            "message": format!("User {} was not found.", user_id),
+            "message": "User not found.",
         })),
-        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "message": format!("Could not load user {}: {}", user_id, err),
-        })),
+        Err(err) => {
+            log::error!("could not load user {user_id}: {err}");
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Could not load user.",
+            }))
+        }
     }
 }
 
@@ -321,8 +335,9 @@ pub async fn update_user_profile(
             }));
         }
         Err(err) => {
+            log::error!("user lookup failed: {err}");
             return HttpResponse::InternalServerError().json(serde_json::json!({
-                "message": format!("User lookup failed: {}", err),
+                "message": "User lookup failed.",
             }));
         }
     };
@@ -343,11 +358,14 @@ pub async fn update_user_profile(
         // This is just a shizo precaution. Row would need to be deleted
         // between this and the lookup. Kept so the server does not panic.
         Ok(None) => HttpResponse::NotFound().json(serde_json::json!({
-            "message": format!("User {} was not found.", target_id),
+            "message": "User not found.",
         })),
-        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "message": format!("Could not update user {}: {}", target_id, err),
-        })),
+        Err(err) => {
+            log::error!("could not update user {target_id}: {err}");
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Could not update user.",
+            }))
+        }
     }
 }
 
@@ -369,9 +387,10 @@ fn authorize_self(
             ));
         }
         Err(err) => {
+            log::error!("user lookup failed: {err}");
             return Err(HttpResponse::InternalServerError().json(
                     serde_json::json! ({
-                        "message" : format!("User lookup failed: {}", err)
+                        "message" : "User lookup failed."
                     })
             ));
         }
@@ -402,15 +421,16 @@ fn handle_friendlist_response(result: Result<UserInfo, FriendlistUpdateError>) -
             }))
         }
         // Written for the person who clicked, not for the log: the frontend
-        // shows this string to them verbatim.
+        // shows this one to them, translated through its dictionary.
         Err(FriendlistUpdateError::Conflict) => {
             HttpResponse::Conflict().json(serde_json::json!({
                 "message" : "Your friendlist changed just a tiny moment ago. Please try again."
             }))
         }
         Err(FriendlistUpdateError::DatabaseError(err)) => {
+            log::error!("could not update friendlist: {err}");
             HttpResponse::InternalServerError().json(serde_json::json!({
-                "message" : format!("Could not update friendlist: {}", err)
+                "message" : "Could not update friendlist."
             }))
         }
     }
@@ -481,9 +501,12 @@ pub async fn show_discussions(pool: web::Data<Arc<AppState>>) -> impl Responder 
         .expect("show_discussions expect DatabaseInitializer");
     match discussions::list_discussions_in_db(&mut db) {
         Ok(discussions) => HttpResponse::Ok().json(discussions),
-        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "message": format!("Could not load discussions: {}", err),
-        })),
+        Err(err) => {
+            log::error!("could not load discussions: {err}");
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Could not load discussions.",
+            }))
+        }
     }
 }
 
@@ -501,11 +524,14 @@ pub async fn discussion_detail(
     match discussions::get_discussion_in_db(&mut db, discussion_id) {
         Ok(Some(discussion)) => HttpResponse::Ok().json(discussion),
         Ok(None) => HttpResponse::NotFound().json(serde_json::json!({
-            "message": format!("Discussion {} was not found.", discussion_id),
+            "message": "Discussion not found.",
         })),
-        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "message": format!("Could not load discussion {}: {}", discussion_id, err),
-        })),
+        Err(err) => {
+            log::error!("could not load discussion {discussion_id}: {err}");
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Could not load discussion.",
+            }))
+        }
     }
 }
 
@@ -535,9 +561,12 @@ pub async fn create_discussion(
         .expect("create_discussion expect DatabaseInitializer");
     match discussions::create_discussion_in_db(&mut db, &body, author_id) {
         Ok(discussion) => HttpResponse::Created().json(discussion),
-        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "message": format!("Could not create discussion: {}", err),
-        })),
+        Err(err) => {
+            log::error!("could not create discussion: {err}");
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Could not create discussion.",
+            }))
+        }
     }
 }
 
@@ -571,9 +600,12 @@ pub async fn create_discussion_post(
         Err(diesel::result::Error::NotFound) => HttpResponse::NotFound().json(serde_json::json!({
             "message": "Discussion was not found.",
         })),
-        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "message": format!("Could not create post: {}", err),
-        })),
+        Err(err) => {
+            log::error!("could not create post: {err}");
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Could not create post.",
+            }))
+        }
     }
 }
 
@@ -593,9 +625,12 @@ pub async fn show_mail(
         .expect("show_mail expect DatabaseInitializer");
     match mails::list_mail_in_db(&mut db, user_id) {
         Ok(mail) => HttpResponse::Ok().json(mail),
-        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "message": format!("Could not load mail: {}", err),
-        })),
+        Err(err) => {
+            log::error!("could not load mail: {err}");
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Could not load mail.",
+            }))
+        }
     }
 }
 
@@ -613,11 +648,14 @@ pub async fn mail_detail(
     match mails::get_mail_in_db(&mut db, mail_id) {
         Ok(Some(mail)) => HttpResponse::Ok().json(mail),
         Ok(None) => HttpResponse::NotFound().json(serde_json::json!({
-            "message": format!("Mail {} was not found.", mail_id),
+            "message": "Mail not found.",
         })),
-        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "message": format!("Could not load mail {}: {}", mail_id, err),
-        })),
+        Err(err) => {
+            log::error!("could not load mail {mail_id}: {err}");
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Could not load mail.",
+            }))
+        }
     }
 }
 
@@ -651,12 +689,13 @@ pub async fn create_mail(
             Ok(Some(recipient_id)) => recipient_id,
             Ok(None) => {
                 return HttpResponse::NotFound().json(serde_json::json!({
-                    "message": format!("Recipient {} was not found.", to),
+                    "message": "Recipient not found.",
                 }))
             }
             Err(err) => {
+                log::error!("could not resolve recipient: {err}");
                 return HttpResponse::InternalServerError().json(serde_json::json!({
-                    "message": format!("Could not resolve recipient: {}", err),
+                    "message": "Could not resolve recipient.",
                 }))
             }
         },
@@ -669,9 +708,12 @@ pub async fn create_mail(
 
     match mails::create_mail_in_db(&mut db, &body, sender_id, recipient_id) {
         Ok(mail) => HttpResponse::Created().json(mail),
-        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "message": format!("Could not create mail: {}", err),
-        })),
+        Err(err) => {
+            log::error!("could not create mail: {err}");
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Could not create mail.",
+            }))
+        }
     }
 }
 
@@ -684,9 +726,12 @@ pub async fn show_games(pool: web::Data<Arc<AppState>>) -> impl Responder {
         .expect("show_games expect DatabaseInitializer");
     match list_games_in_db(&mut db) {
         Ok(games) => HttpResponse::Ok().json(games),
-        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "message": format!("Could not load games: {}", err),
-        })),
+        Err(err) => {
+            log::error!("could not load games: {err}");
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Could not load games.",
+            }))
+        }
     }
 }
 
@@ -704,11 +749,14 @@ pub async fn game_detail(
     match get_game_in_db(&mut db, game_id) {
         Ok(Some(game)) => HttpResponse::Ok().json(game),
         Ok(None) => HttpResponse::NotFound().json(serde_json::json!({
-            "message": format!("Game {} was not found.", game_id),
+            "message": "Game not found.",
         })),
-        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "message": format!("Could not load game {}: {}", game_id, err),
-        })),
+        Err(err) => {
+            log::error!("could not load game {game_id}: {err}");
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Could not load game.",
+            }))
+        }
     }
 }
 
@@ -764,17 +812,21 @@ pub async fn create_game(
             }))
         }
         Err(err) => {
+            log::error!("could not lookup user: {err}");
             return HttpResponse::InternalServerError().json(serde_json::json!({
-                "message": format!("Could not lookup user: {}", err),
+                "message": "Could not lookup user.",
             }))
         }
     };
 
     match create_game_in_db(&mut db, author_id, name, script_body) {
         Ok(game) => HttpResponse::Created().json(game),
-        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "message": format!("Could not create game: {}", err),
-        })),
+        Err(err) => {
+            log::error!("could not create game: {err}");
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Could not create game.",
+            }))
+        }
     }
 }
 
@@ -802,17 +854,21 @@ pub async fn get_game_history(
             }))
         }
         Err(err) => {
+            log::error!("could not lookup user: {err}");
             return HttpResponse::InternalServerError().json(serde_json::json!({
-                "message": format!("Could not lookup user: {}", err),
+                "message": "Could not lookup user.",
             }))
         }
     };
 
     match crate::model::games::get_game_history_for_user_in_db(&mut db, user_id) {
         Ok(history) => HttpResponse::Ok().json(history),
-        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "message": format!("Could not load game history: {}", err),
-        })),
+        Err(err) => {
+            log::error!("could not load game history: {err}");
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Could not load game history.",
+            }))
+        }
     }
 }
 
@@ -829,9 +885,12 @@ pub async fn get_leaderboard(pool: web::Data<Arc<AppState>>) -> impl Responder {
 
     match crate::model::games::get_leaderboard_in_db(&mut db) {
         Ok(leaderboard) => HttpResponse::Ok().json(leaderboard),
-        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "message": format!("Could not load leaderboard: {}", err),
-        })),
+        Err(err) => {
+            log::error!("could not load leaderboard: {err}");
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "message": "Could not load leaderboard.",
+            }))
+        }
     }
 }
 

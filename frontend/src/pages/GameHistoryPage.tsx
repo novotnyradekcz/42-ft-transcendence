@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from "react";
 import { getGameHistory } from "../api";
+import { errMsg } from "../errors";
 import TerminalSection from "../components/TerminalSection";
 import { useSession } from "../context/session/useSession";
 import { useTranslation } from "../context/language/i18n";
@@ -34,7 +35,7 @@ export default function GameHistoryPage() {
         setError("");
       })
       .catch((err) => {
-        setError(err instanceof Error ? err.message : t("Could not load match history."));
+        setError(errMsg(err, "Could not load match history.", t));
       })
       .finally(() => {
         setLoading(false);

@@ -7,6 +7,7 @@
 
 import { PAGE_PATHS } from "../../router";
 import type { TerminalDeps } from "./deps";
+import { nameProblem, RegisteredNotSignedInError } from "../../api";
 import { errMsg } from "../../errors";
 
 export function createAuthFlowHandlers(deps: TerminalDeps) {
@@ -56,7 +57,7 @@ export function createAuthFlowHandlers(deps: TerminalDeps) {
       } catch (error) {
         // a cancelled flow shouldn't report a failure the user isn't waiting on
         if (flowEpoch.current !== loginEpoch) return;
-        setAuthError(errMsg(error, t("Login failed.")));
+        setAuthError(errMsg(error, "Login failed.", t));
         addLine(
           t("login failed. press Ctrl+C or Esc to quit, or enter name again."),
         );
@@ -68,6 +69,14 @@ export function createAuthFlowHandlers(deps: TerminalDeps) {
 
     // register
     if (authFlow.step === "name") {
+      // caught here, not after the password step: one line instead of three
+      const problem = nameProblem(rawInput);
+      if (problem) {
+        setAuthError(t(problem));
+        addLine(t(problem));
+        return;
+      }
+      setAuthError("");
       setAuthFlow({ ...authFlow, step: "email", name: rawInput });
       addLine(t("name accepted. enter email."));
       return;
@@ -89,7 +98,14 @@ export function createAuthFlowHandlers(deps: TerminalDeps) {
       addLine(t("registered and logged in as {name}.", { name: nextUser.name }));
     } catch (error) {
       if (flowEpoch.current !== registerEpoch) return;
-      setAuthError(errMsg(error, t("Registration failed.")));
+      setAuthError(errMsg(error, "Registration failed.", t));
+      // the account is there, only the sign-in failed. carry on as a login
+      // rather than ask for a name that is now taken
+      if (error instanceof RegisteredNotSignedInError) {
+        addLine(t("account created. enter password to log in."));
+        setAuthFlow({ mode: "login", step: "password", name: authFlow.name });
+        return;
+      }
       addLine(
         t("registration failed. press Ctrl+C or Esc to quit, or enter name again."),
       );

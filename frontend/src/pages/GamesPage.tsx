@@ -6,6 +6,7 @@
 
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { createGame } from "../api";
+import { errMsg } from "../errors";
 import TerminalSection from "../components/TerminalSection";
 import { useData } from "../context/data/useData";
 import { useSession } from "../context/session/useSession";
@@ -93,7 +94,7 @@ export default function GamesPage() {
       setStatusMsg(successStr);
       addLine(successStr);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : t("could not upload game.");
+      const msg = errMsg(err, "could not upload game.", t);
       setErrorMsg(msg);
       addLine(msg);
     } finally {

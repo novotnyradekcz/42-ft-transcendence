@@ -9,6 +9,7 @@
 
 import { type ChangeEvent, type FormEvent, useState } from "react";
 import { updateCurrentUserProfile } from "../api";
+import { errMsg } from "../errors";
 import { AVATAR_MAX_PX, avatarToData } from "../avatar";
 import AvatarImage from "../components/AvatarImage";
 import TerminalSection from "../components/TerminalSection";
@@ -51,10 +52,7 @@ export default function ProfilePage() {
       setAvatarUrl(await avatarToData(file));
       setMessage(t("avatar ready. save the profile to keep it."));
     } catch (caughtError) {
-      const msg =
-        caughtError instanceof Error
-          ? t(caughtError.message)
-          : t("could not read that image.");
+      const msg = errMsg(caughtError, "could not read that image.", t);
       setError(msg);
       addLine(msg);
     }
@@ -76,10 +74,7 @@ export default function ProfilePage() {
       addLine(t("profile updated."));
       setMessage(t("saved."));
     } catch (caughtError) {
-      const msg =
-        caughtError instanceof Error
-          ? caughtError.message
-          : t("could not save profile.");
+      const msg = errMsg(caughtError, "could not save profile.", t);
       setError(msg);
       addLine(msg);
     }

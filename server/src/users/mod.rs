@@ -9,6 +9,17 @@ use serde::{Deserialize, Serialize};
 
 // ----------------Consts----------------
 
+/// Max length of a new user's name
+///
+/// Counted in chars rather than bytes, like the bio. The frontend mirrors it,
+/// but that check only saves a round trip — this is the one that counts.
+const MAX_NAME_LEN: usize = 20;
+
+// validate returns a &'static str, so the limit can't be formatted in.
+// this fails the build if the two drift apart
+const _: () = assert!(MAX_NAME_LEN == 20, "update NAME_TOO_LONG to match");
+const NAME_TOO_LONG: &str = "Name must be 20 characters or fewer.";
+
 /// Max length of the incoming URL in bytes
 ///
 /// It's checked against the string before any decoding
@@ -47,13 +58,34 @@ pub struct CreateUser {
 }
 
 impl CreateUser {
-    /// Returns `Err` with a message if any required field is blank.
+    /// Trims the fields looked up by value. Call before `validate`.
+    ///
+    /// The password is left alone: trimming a secret changes it, and login
+    /// keeps sending what was typed.
+    pub fn normalize(&mut self) {
+        self.name = self.name.trim().to_string();
+        self.email = self.email.trim().to_string();
+    }
+
+    /// Returns `Err` with a message if any required field is blank, or if the
+    /// name is longer than `MAX_NAME_LEN` or carries a NUL.
     pub fn validate(&self) -> Result<(), &'static str> {
         if self.name.trim().is_empty() {
             return Err("Name is required.");
         }
+        if self.name.trim().chars().count() > MAX_NAME_LEN {
+            return Err(NAME_TOO_LONG);
+        }
+        // Postgres does not support null char. checked untrimmed, NUL is not
+        // whitespace
+        if self.name.contains('\0') {
+            return Err("Name contains the unsupported NULL char.");
+        }
         if self.email.trim().is_empty() {
             return Err("Email is required.");
+        }
+        if self.email.contains('\0') {
+            return Err("Email contains the unsupported NULL char.");
         }
         if self.password.trim().is_empty() {
             return Err("Password is required.");
@@ -174,6 +206,91 @@ mod tests {
         assert_eq!(user.validate(), Err("Name is required."));
     }
 
+    /// A padded name could never be logged into: Basic auth matches exactly.
+    #[test]
+    fn normalize_trims_name_and_email() {
+        let mut user = CreateUser {
+            name: "  alice  ".to_string(),
+            email: "  alice@example.com\n".to_string(),
+            password: "secret123".to_string(),
+        };
+        user.normalize();
+        assert_eq!(user.name, "alice");
+        assert_eq!(user.email, "alice@example.com");
+    }
+
+    /// Trimming a secret would change it, and login sends what was typed.
+    #[test]
+    fn normalize_leaves_the_password_alone() {
+        let mut user = CreateUser {
+            name: "alice".to_string(),
+            email: "alice@example.com".to_string(),
+            password: "  pad ded  ".to_string(),
+        };
+        user.normalize();
+        assert_eq!(user.password, "  pad ded  ");
+    }
+
+    /// Padding is not a way past the limit.
+    #[test]
+    fn normalized_name_is_measured_after_trimming() {
+        let mut user = CreateUser {
+            name: format!("  {}  ", "a".repeat(MAX_NAME_LEN)),
+            email: "alice@example.com".to_string(),
+            password: "secret123".to_string(),
+        };
+        user.normalize();
+        assert!(user.validate().is_ok());
+        assert_eq!(user.name.chars().count(), MAX_NAME_LEN);
+    }
+
+    #[test]
+    fn overlong_name_fails_validation() {
+        let user = CreateUser {
+            name: "a".repeat(MAX_NAME_LEN + 1),
+            email: "alice@example.com".to_string(),
+            password: "secret123".to_string(),
+        };
+        assert_eq!(user.validate(), Err(NAME_TOO_LONG));
+    }
+
+    #[test]
+    fn name_at_the_limit_passes_validation() {
+        let user = CreateUser {
+            name: "a".repeat(MAX_NAME_LEN),
+            email: "alice@example.com".to_string(),
+            password: "secret123".to_string(),
+        };
+        assert!(user.validate().is_ok());
+    }
+
+    /// Chars, not bytes: 20 two-byte letters are 40 bytes and still fit.
+    #[test]
+    fn non_ascii_name_is_counted_in_chars() {
+        let name = "č".repeat(MAX_NAME_LEN);
+        assert_eq!(name.len(), MAX_NAME_LEN * 2);
+        let user = CreateUser {
+            name,
+            email: "pico@42.fr".to_string(),
+            password: "secret123".to_string(),
+        };
+        assert!(user.validate().is_ok());
+    }
+
+    /// Postgres `TEXT` cannot store NUL, so this must be a 400 and not a 500.
+    #[test]
+    fn name_with_nul_byte_fails_validation() {
+        let user = CreateUser {
+            name: "ali\0ce".to_string(),
+            email: "alice@example.com".to_string(),
+            password: "secret123".to_string(),
+        };
+        assert_eq!(
+            user.validate(),
+            Err("Name contains the unsupported NULL char.")
+        );
+    }
+
     #[test]
     fn empty_email_fails_validation() {
         let user = CreateUser {
@@ -182,6 +299,20 @@ mod tests {
             password: "secret123".to_string(),
         };
         assert_eq!(user.validate(), Err("Email is required."));
+    }
+
+    /// Without this the NUL reaches Postgres and comes back a 500, not a 400.
+    #[test]
+    fn email_with_nul_byte_fails_validation() {
+        let user = CreateUser {
+            name: "alice".to_string(),
+            email: "ali\0ce@example.com".to_string(),
+            password: "secret123".to_string(),
+        };
+        assert_eq!(
+            user.validate(),
+            Err("Email contains the unsupported NULL char.")
+        );
     }
 
     #[test]
