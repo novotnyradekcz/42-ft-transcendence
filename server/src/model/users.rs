@@ -58,26 +58,14 @@ pub struct DbUser {
     pub friends: FriendList,
 }
 
-#[derive(Insertable)]
-#[diesel(table_name = crate::schema::ftt_users)]
-struct NewOAuthUser<'a> {
-    name: &'a str,
-    email: &'a str,
-    password: &'a str,
-    provider: &'a str,
-    provider_user_id: &'a str,
-}
-
 pub struct OAuthProfile {
-    pub provider: String,
-    pub provider_user_id: String,
     pub login: String,
     pub email: String,
 }
 
 pub enum OAuthUserError {
-    /// The address already belongs to an account this login cannot prove it owns.
-    EmailTaken,
+    /// The provider gave us no address, so there is nothing to identify them by.
+    NoEmail,
     DatabaseError(diesel::result::Error),
 }
 
@@ -87,9 +75,10 @@ impl From<diesel::result::Error> for OAuthUserError {
     }
 }
 
-// looks a user up by (provider, provider_user_id) and creates one if there's no
-// match. the name may already be taken by a local account, so it's suffixed until
-// it's free rather than failing the login
+// the email address is the identity: an OAuth login lands on the account that
+// already holds it rather than creating a parallel one. only when no account has
+// that address is a user created, with the name suffixed until it's free rather
+// than failing the login
 pub fn find_or_create_oauth_user(
     db: &mut DatabaseInitializer,
     profile: &OAuthProfile,
@@ -101,38 +90,20 @@ pub fn find_or_create_oauth_user(
 
     let email_normalized = profile.email.trim().to_lowercase();
 
+    // the callback refuses a blank address already. belt and braces, because the
+    // lookup below would otherwise match any row that happened to have one.
+    if email_normalized.is_empty() {
+        return Err(OAuthUserError::NoEmail);
+    }
+
     let existing = ftt_users
-        .filter(
-            provider
-                .eq(&profile.provider)
-                .and(provider_user_id.eq(&profile.provider_user_id)),
-        )
+        .filter(email.eq(&email_normalized))
         .select(DbUser::as_select())
         .first::<DbUser>(conn)
         .optional()?;
 
     if let Some(user) = existing {
-        if user.email.is_empty() && !email_normalized.is_empty() {
-            // FIXME: user always has to have email
-            diesel::update(ftt_users.filter(id.eq(user.id)))
-                .set(email.eq(&email_normalized))
-                .execute(conn)?;
-            return Ok(DbUser {
-                email: email_normalized.clone(),
-                ..user
-            });
-        }
         return Ok(user);
-    }
-    let email_taken = ftt_users
-        .filter(email.eq(&email_normalized))
-        .select(id)
-        .first::<i32>(conn)
-        .optional()?
-        .is_some();
-
-    if email_taken {
-        return Err(OAuthUserError::EmailTaken);
     }
 
     let mut candidate = profile.login.clone();
@@ -145,7 +116,7 @@ pub fn find_or_create_oauth_user(
         .is_some()
     {
         attempt += 1;
-        candidate = format!("{}-{}-{}", profile.login, profile.provider, attempt);
+        candidate = format!("{}-{}", profile.login, attempt);
     }
 
     // an OAuth account has no password, but the column needs one. a random
@@ -157,12 +128,10 @@ pub fn find_or_create_oauth_user(
         .collect();
 
     let inserted: DbUser = diesel::insert_into(ftt_users)
-        .values(&NewOAuthUser {
+        .values(&NewUser {
             name: &candidate,
             email: &email_normalized,
             password: &encoder.encode(&unreachable_secret),
-            provider: &profile.provider,
-            provider_user_id: &profile.provider_user_id,
         })
         .returning(DbUser::as_returning())
         .get_result(conn)?;
