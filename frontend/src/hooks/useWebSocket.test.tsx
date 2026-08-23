@@ -203,7 +203,7 @@ describe("useWebSocket reconnection", () => {
     expect(FakeWebSocket.instances).toHaveLength(1);
 
     act(() => {
-       container.querySelector("button")!.click();
+      container.querySelector("button")!.click();
     });
     act(() => void vi.advanceTimersByTime(60_000));
 
